@@ -25,6 +25,13 @@ def send(chat, text, keyboard=None):
     if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
     return api("sendMessage",d)
 
+def notify_user(uid,message):
+    try:
+        if db.notifications_enabled(uid):
+            send(uid,message)
+    except Exception:
+        log.exception("Falha ao enviar notificação ao usuário %s",uid)
+
 BANNER_BYTES=None
 
 def send_photo(chat,photo,caption,keyboard=None):
@@ -84,7 +91,8 @@ def menu():
             [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
             [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
-            [btn("📜 Extrato","history"),btn("❓ Ajuda","help")],
+            [btn("📜 Extrato","history"),btn("🔔 Notificações","notifications")],
+            [btn("❓ Ajuda","help")],
             [btn("📋 Tarefas disponíveis","tasks")]]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
@@ -104,12 +112,12 @@ def start(m):
     if created and refid and POINTS_PER_REFERRAL:
         if review_id:
             try:
-                send(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Os pontos serão liberados após a revisão.")
+                notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Os pontos serão liberados após a revisão.")
                 for aid in ADMIN_IDS:
                     send(aid,f"🛡️ <b>INDICAÇÃO EM ANÁLISE #{review_id}</b>\nIndicador: <code>{refid}</code>\nNovo usuário: <code>{u['id']}</code>\nMotivo: conta de bot ou volume elevado de cadastros.",[[btn("Ver análise","admin:fraud")]])
             except Exception: log.exception("Falha ao notificar análise antifraude")
         else:
-            try: send(refid,f"🎉 Você ganhou {POINTS_PER_REFERRAL} pontos por uma indicação!")
+            try: notify_user(refid,f"🎉 Você ganhou {POINTS_PER_REFERRAL} pontos por uma indicação!")
             except Exception: log.exception("Falha ao notificar indicador")
     global BOT_USERNAME
     pr=db.get_profile(u["id"])
@@ -188,6 +196,13 @@ def history(chat,uid):
     send(chat,"\n".join(lines),back())
 def redeem_help(chat):
     send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\n━━━━━━━━━━━━━━━━━━\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
+
+def notifications_page(chat,uid):
+    enabled=db.notifications_enabled(uid)
+    state="ATIVADAS ✅" if enabled else "DESATIVADAS 🔕"
+    action="notifications:off" if enabled else "notifications:on"
+    label="🔕 Desativar notificações" if enabled else "🔔 Ativar notificações"
+    send(chat,f"🔔 <b>NOTIFICAÇÕES</b>\n\nStatus atual: <b>{state}</b>\n\nVocê pode escolher se deseja receber avisos sobre aprovações de tarefas, indicações, saques e resgates.",[[btn(label,action)],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA</b>\n━━━━━━━━━━━━━━━━━━\n💰 Pontos: acumule participando das ações.\n🎁 Check-in: bônus uma vez por dia.\n🚀 Indicações: compartilhe seu link pessoal.\n🏆 Ranking: veja os participantes com mais pontos.\n🎟️ Resgates: /resgatar PONTOS DESCRIÇÃO. Mínimo {MIN_REDEEM_POINTS} pontos.\n💎 VIP: ativação pela administração.",back())
@@ -280,7 +295,7 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -331,7 +346,13 @@ def callback(c):
                 kb=[[btn("✅ Confirmar Pix pago","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar pedido","payout:"+str(r["id"])+":no")]]
                 send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         return
-    if data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
+    if data=="notifications":
+        notifications_page(chat,uid)
+    elif data=="notifications:on":
+        db.set_notifications(uid,True); notifications_page(chat,uid)
+    elif data=="notifications:off":
+        db.set_notifications(uid,False); notifications_page(chat,uid)
+    elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
     elif data.startswith("task:"):
         try:
@@ -385,7 +406,7 @@ def callback(c):
             api("editMessageCaption",{"chat_id":chat,"message_id":msg["message_id"],"caption":msg.get("caption","")+f"\n\n<b>Status:</b> {status}","parse_mode":"HTML"})
         else:
             api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\n<b>Status:</b> {status}","parse_mode":"HTML"})
-        try: send(result["user_id"],f"📋 Sua comprovação da tarefa <b>{escape(result['title'])}</b> foi {status}.")
+        try: notify_user(result["user_id"],f"📋 Sua comprovação da tarefa <b>{escape(result['title'])}</b> foi {status}.")
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
@@ -394,8 +415,8 @@ def callback(c):
         status="aprovada" if decision=="yes" else "rejeitada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         try:
-            if decision=="yes": send(result["referrer_id"],"🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira.")
-            else: send(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
+            if decision=="yes": notify_user(result["referrer_id"],"🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira.")
+            else: notify_user(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
         except Exception: log.exception("Falha ao notificar resultado da análise")
     elif data.startswith("payout:"):
         if not admin(uid): return
@@ -405,8 +426,8 @@ def callback(c):
         status="aprovado" if approved else "rejeitado; os pontos foram devolvidos"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
         try:
-            if approved: send(result["user_id"],f"🎉 <b>Parabéns! Seu saque foi aprovado!</b>\n\nO pagamento de <b>R$ {result['amount_cents']/100:.2f}</b> foi enviado para sua chave Pix. Obrigado por participar do PIT PRÊMIOS! 🐾")
-            else: send(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
+            if approved: notify_user(result["user_id"],f"🎉 <b>Parabéns! Seu saque foi aprovado!</b>\n\nO pagamento de <b>R$ {result['amount_cents']/100:.2f}</b> foi enviado para sua chave Pix. Obrigado por participar do PIT PRÊMIOS! 🐾")
+            else: notify_user(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
         except Exception: log.exception("Falha ao avisar usuário sobre saque")
     elif data.startswith("review:"):
         if not admin(uid): return
@@ -414,7 +435,7 @@ def callback(c):
         if not result: return
         status="aprovado" if decision=="yes" else "rejeitado; pontos devolvidos"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
-        try: send(result["user_id"],f"Seu resgate #{rid} foi {status}.")
+        try: notify_user(result["user_id"],f"Seu resgate #{rid} foi {status}.")
         except Exception: log.exception("Falha ao avisar usuário")
 
 def main():
