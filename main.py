@@ -1,4 +1,4 @@
-import json, logging, time, urllib.parse, urllib.request, urllib.error
+import json, logging, time, threading, urllib.parse, urllib.request, urllib.error
 from html import escape
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_REDEEM_POINTS
@@ -19,10 +19,26 @@ def api(method, data=None):
     if not result.get("ok"): raise RuntimeError(str(result))
     return result.get("result")
 
+def schedule_delete(chat,message_id):
+    try:
+        settings=db.get_auto_delete_settings()
+        if settings["enabled"]:
+            timer=threading.Timer(settings["seconds"],lambda: delete_bot_message(chat,message_id))
+            timer.daemon=True
+            timer.start()
+    except Exception:
+        log.exception("Falha ao agendar exclusão automática")
+
+def delete_bot_message(chat,message_id):
+    try: api("deleteMessage",{"chat_id":chat,"message_id":message_id})
+    except Exception: log.warning("Não foi possível apagar mensagem %s no chat %s",message_id,chat)
+
 def send(chat, text, keyboard=None):
     d={"chat_id":chat,"text":text,"parse_mode":"HTML"}
     if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
-    return api("sendMessage",d)
+    result=api("sendMessage",d)
+    schedule_delete(chat,result["message_id"])
+    return result
 
 BANNER_BYTES=None
 
@@ -70,7 +86,9 @@ def send_photo(chat,photo,caption,keyboard=None):
             raise RuntimeError(f"Telegram sendPhoto HTTP {e.code}: {detail}") from e
         if not result.get("ok"):
             raise RuntimeError(str(result))
-        return result.get("result")
+        sent=result.get("result")
+        schedule_delete(chat,sent["message_id"])
+        return sent
     except Exception:
         log.exception("Não foi possível enviar o banner; enviando boas-vindas em texto.")
         fallback="🐾 <b>PIT PRÊMIOS</b>\n\n"+caption
@@ -91,6 +109,7 @@ def admin_menu():
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
             [btn("🛡️ Análise antifraude","admin:fraud")],
+            [btn("🗑️ Limpeza automática","admin:autodel")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("⬅️ Fechar painel","home")]]
 
@@ -260,6 +279,33 @@ def callback(c):
             for r in rows:
                 kb=[[btn("✅ Aprovar","review:"+str(r["id"])+":yes"),btn("❌ Rejeitar","review:"+str(r["id"])+":no")]]
                 send(chat,f"🎟️ <b>RESGATE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
+        elif action=="autodel":
+            cfg=db.get_auto_delete_settings()
+            state="ATIVADA" if cfg["enabled"] else "DESATIVADA"
+            kb=[[btn("🟢 Ativar" if not cfg["enabled"] else "🔴 Desativar","admin:autodel_toggle")],
+                [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
+                [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
+                [btn("⬅️ Painel admin","admin:back")]]
+            send(chat,f"🗑️ <b>LIMPEZA AUTOMÁTICA</b>\\nStatus: <b>{state}</b>\\nTempo atual: <b>{cfg['seconds']} segundos</b>\\n\\nApaga somente mensagens enviadas pelo bot. Comandos e mensagens dos usuários não serão apagados.",kb)
+        elif action=="autodel_toggle":
+            cfg=db.get_auto_delete_settings(); db.set_auto_delete_settings(enabled=not cfg["enabled"])
+            cfg=db.get_auto_delete_settings()
+            state="ATIVADA" if cfg["enabled"] else "DESATIVADA"
+            kb=[[btn("🔴 Desativar" if cfg["enabled"] else "🟢 Ativar","admin:autodel_toggle")],
+                [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
+                [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
+                [btn("⬅️ Painel admin","admin:back")]]
+            send(chat,f"🗑️ Limpeza automática <b>{state}</b>.\\nTempo: {cfg['seconds']} segundos.",kb)
+        elif action.startswith("autodel_time:"):
+            seconds=int(action.split(":")[1]); db.set_auto_delete_settings(seconds=seconds)
+            cfg=db.get_auto_delete_settings()
+            kb=[[btn("🟢 Ativar" if not cfg["enabled"] else "🔴 Desativar","admin:autodel_toggle")],
+                [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
+                [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
+                [btn("⬅️ Painel admin","admin:back")]]
+            send(chat,f"⏱️ Tempo de exclusão definido para <b>{seconds} segundos</b>.\\nLimpeza: {'ATIVADA' if cfg['enabled'] else 'DESATIVADA'}.",kb)
+        elif action=="back":
+            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\\nEscolha uma função abaixo:",admin_menu())
         elif action=="fraud":
             rows=db.pending_referral_reviews()
             if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
