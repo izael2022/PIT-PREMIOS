@@ -286,7 +286,7 @@ def callback(c):
                 [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
                 [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
                 [btn("⬅️ Painel admin","admin:back")]]
-            send(chat,f"🗑️ <b>LIMPEZA AUTOMÁTICA</b>\\nStatus: <b>{state}</b>\\nTempo atual: <b>{cfg['seconds']} segundos</b>\\n\\nApaga somente mensagens enviadas pelo bot. Comandos e mensagens dos usuários não serão apagados.",kb)
+            send(chat,f"🗑️ <b>LIMPEZA AUTOMÁTICA</b>\nStatus: <b>{state}</b>\\nTempo atual: <b>{cfg['seconds']} segundos</b>\n\nApaga somente mensagens enviadas pelo bot. Comandos e mensagens dos usuários não serão apagados.",kb)
         elif action=="autodel_toggle":
             cfg=db.get_auto_delete_settings(); db.set_auto_delete_settings(enabled=not cfg["enabled"])
             cfg=db.get_auto_delete_settings()
@@ -295,7 +295,7 @@ def callback(c):
                 [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
                 [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
                 [btn("⬅️ Painel admin","admin:back")]]
-            send(chat,f"🗑️ Limpeza automática <b>{state}</b>.\\nTempo: {cfg['seconds']} segundos.",kb)
+            send(chat,f"🗑️ Limpeza automática <b>{state}</b>.\nTempo: {cfg['seconds']} segundos.",kb)
         elif action.startswith("autodel_time:"):
             seconds=int(action.split(":")[1]); db.set_auto_delete_settings(seconds=seconds)
             cfg=db.get_auto_delete_settings()
@@ -303,9 +303,9 @@ def callback(c):
                 [btn("30 segundos","admin:autodel_time:30"),btn("60 segundos","admin:autodel_time:60")],
                 [btn("2 minutos","admin:autodel_time:120"),btn("5 minutos","admin:autodel_time:300")],
                 [btn("⬅️ Painel admin","admin:back")]]
-            send(chat,f"⏱️ Tempo de exclusão definido para <b>{seconds} segundos</b>.\\nLimpeza: {'ATIVADA' if cfg['enabled'] else 'DESATIVADA'}.",kb)
+            send(chat,f"⏱️ Tempo de exclusão definido para <b>{seconds} segundos</b>.\nLimpeza: {'ATIVADA' if cfg['enabled'] else 'DESATIVADA'}.",kb)
         elif action=="back":
-            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\\nEscolha uma função abaixo:",admin_menu())
+            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif action=="fraud":
             rows=db.pending_referral_reviews()
             if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
