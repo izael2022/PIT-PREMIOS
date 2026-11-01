@@ -347,7 +347,18 @@ def admin_user_details(user_id,history_limit=5):
                 (SELECT COUNT(*) FROM task_submissions WHERE user_id=? AND status='pending') AS pending_tasks,
                 (SELECT COUNT(*) FROM redemptions WHERE user_id=? AND status='pending') AS pending_redemptions
         """,(user_id,user_id,user_id,user_id)).fetchone()
-        return {"user":dict(user),"history":[dict(x) for x in history],"pending":dict(counts)}
+        totals=db.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM task_submissions WHERE user_id=? AND status='approved') AS tasks_approved,
+                (SELECT COUNT(*) FROM task_submissions WHERE user_id=? AND status='rejected') AS tasks_rejected,
+                (SELECT COUNT(*) FROM reward_orders WHERE user_id=? AND status='approved') AS rewards_approved,
+                (SELECT COUNT(*) FROM reward_orders WHERE user_id=? AND status='rejected') AS rewards_rejected,
+                (SELECT COUNT(*) FROM payout_requests WHERE user_id=? AND status='approved') AS payouts_approved,
+                (SELECT COUNT(*) FROM payout_requests WHERE user_id=? AND status='rejected') AS payouts_rejected,
+                (SELECT COUNT(*) FROM redemptions WHERE user_id=? AND status='approved') AS redemptions_approved,
+                (SELECT COUNT(*) FROM redemptions WHERE user_id=? AND status='rejected') AS redemptions_rejected
+        """,(user_id,user_id,user_id,user_id,user_id,user_id,user_id,user_id)).fetchone()
+        return {"user":dict(user),"history":[dict(x) for x in history],"pending":dict(counts),"totals":dict(totals)}
 
 def user_referrals(user_id,limit=15):
     with connect() as db:
