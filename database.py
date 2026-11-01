@@ -158,3 +158,80 @@ def stats():
     with connect() as db:
         total=dict(db.execute("SELECT COUNT(*) users,COALESCE(SUM(points),0) points FROM users").fetchone())
         total.update(dict(db.execute("SELECT COUNT(*) pending FROM redemptions WHERE status='pending'").fetchone())); return total
+
+def referral_milestone_status(uid):
+    milestones={1:100,5:650,10:1400}
+    with connect() as db:
+        row=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=?",(uid,)).fetchone()
+        claimed={r["milestone"] for r in db.execute("SELECT milestone FROM referral_milestones WHERE user_id=?",(uid,))}
+        total=row["total"]
+        return [{"milestone":m,"bonus":bonus,"reached":total>=m,"claimed":m in claimed} for m,bonus in milestones.items()]
+
+def claim_referral_milestone(uid,milestone):
+    bonuses={1:100,5:650,10:1400}
+    if milestone not in bonuses: raise ValueError("Meta inválida.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        total=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=?",(uid,)).fetchone()["total"]
+        if total<milestone:
+            db.rollback(); raise ValueError("Meta ainda não foi concluída.")
+        try:
+            db.execute("INSERT INTO referral_milestones(user_id,milestone,bonus_points) VALUES(?,?,?)",(uid,milestone,bonuses[milestone]))
+        except sqlite3.IntegrityError:
+            db.rollback(); raise ValueError("Essa recompensa já foi recebida.")
+        db.execute("UPDATE users SET points=points+? WHERE user_id=?",(bonuses[milestone],uid))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,bonuses[milestone],f"Bônus da meta de {milestone} indicações"))
+        db.commit(); return bonuses[milestone]
+
+def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
+    pix_key=pix_key.strip()
+    if points<min_points or points%100!=0: raise ValueError("O saque mínimo é 1.000 pontos e o valor deve ser múltiplo de 100.")
+    if not pix_key or len(pix_key)>200: raise ValueError("Chave Pix inválida.")
+    if pix_key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): raise ValueError("Tipo de chave Pix inválido.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
+        if not row or row["points"]<points:
+            db.rollback(); raise ValueError("Saldo insuficiente.")
+        pending=db.execute("SELECT 1 FROM payout_requests WHERE user_id=? AND status='pending'",(uid,)).fetchone()
+        if pending:
+            db.rollback(); raise ValueError("Você já possui um saque aguardando análise.")
+        db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
+        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points, pix_key,pix_key_type))
+        rid=cur.lastrowid
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
+        db.commit(); return rid
+
+def pending_payouts():
+    with connect() as db:
+        return db.execute("SELECT * FROM payout_requests WHERE status='pending' ORDER BY id").fetchall()
+
+def review_payout(rid,admin_id,approve):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
+        if not row:
+            db.rollback(); return None
+        status="approved" if approve else "rejected"
+        db.execute("UPDATE payout_requests SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,rid))
+        if not approve:
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points"],row["user_id"]))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points"],f"Estorno do saque #{rid}"))
+        db.commit(); return dict(row)
+
+def pending_referral_reviews():
+    with connect() as db:
+        return db.execute("SELECT * FROM referral_reviews WHERE status='pending' ORDER BY id").fetchall()
+
+def review_referral(rid,admin_id,approve):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM referral_reviews WHERE id=? AND status='pending'",(rid,)).fetchone()
+        if not row:
+            db.rollback(); return None
+        status="approved" if approve else "rejected"
+        db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,rid))
+        if approve:
+            db.execute("UPDATE users SET points=points+100 WHERE user_id=?",(row["referrer_id"],))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],100,f"Indicação aprovada #{rid}"))
+        db.commit(); return dict(row)
