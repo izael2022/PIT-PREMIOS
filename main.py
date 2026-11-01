@@ -55,8 +55,11 @@ def ranking(chat):
     send(chat,"\n".join(lines))
 
 def daily(chat,uid):
-    ok=db.daily_claim(uid,DAILY_REWARD)
-    send(chat,f"🎉 Você recebeu {DAILY_REWARD} pontos!" if ok else "⏳ Você já coletou o bônus de hoje.")
+    ok,streak=db.daily_claim(uid,DAILY_REWARD)
+    if ok:
+        send(chat,f"🎉 <b>CHECK-IN CONFIRMADO!</b>\nVocê recebeu <b>+{DAILY_REWARD} pontos</b>.\n🔥 Sequência atual: <b>{streak} dias</b>\n\n<i>Volte amanhã para manter sua sequência!</i>",back())
+    else:
+        send(chat,f"⏳ <b>Check-in já realizado!</b>\nSua sequência atual é de <b>{streak} dias</b>. Volte amanhã.",back())
 
 def profile(chat,uid):
     p=db.get_profile(uid); u=db.get_user(uid)
