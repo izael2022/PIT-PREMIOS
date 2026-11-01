@@ -271,8 +271,8 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem"}
-    if data in navigation_actions and msg.get("message_id"):
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks"}
+    if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
     if data.startswith("admin:"):
