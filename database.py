@@ -449,8 +449,17 @@ def claim_referral_vip(uid,milestone):
 
 def stats():
     with connect() as db:
-        total=dict(db.execute("SELECT COUNT(*) users,COALESCE(SUM(points),0) points FROM users").fetchone())
-        total.update(dict(db.execute("SELECT COUNT(*) pending FROM redemptions WHERE status='pending'").fetchone())); return total
+        row=db.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM users) AS users,
+                (SELECT COALESCE(SUM(points),0) FROM users) AS points,
+                (SELECT COUNT(*) FROM redemptions WHERE status='pending') AS pending_redemptions,
+                (SELECT COUNT(*) FROM payout_requests WHERE status='pending') AS pending_payouts,
+                (SELECT COUNT(*) FROM reward_orders WHERE status='pending') AS pending_reward_orders,
+                (SELECT COUNT(*) FROM task_submissions WHERE status='pending') AS pending_tasks,
+                (SELECT COUNT(*) FROM referral_reviews WHERE status='pending') AS pending_fraud
+        """).fetchone()
+        return dict(row)
 
 def referral_milestone_status(uid):
     milestones={1:100,5:650,10:1400}
