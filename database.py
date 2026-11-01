@@ -483,6 +483,15 @@ def pending_payouts():
     with connect() as db:
         return db.execute("SELECT * FROM payout_requests WHERE status='pending' ORDER BY id").fetchall()
 
+def user_payout_requests(user_id,limit=10):
+    with connect() as db:
+        return db.execute("""
+            SELECT id,points,amount_cents,pix_key_type,pix_key,status,created_at,reviewed_at
+            FROM payout_requests
+            WHERE user_id=?
+            ORDER BY id DESC LIMIT ?
+        """,(user_id,limit)).fetchall()
+
 def review_payout(rid,admin_id,approve):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
