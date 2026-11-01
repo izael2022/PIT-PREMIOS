@@ -31,7 +31,7 @@ async def init_db():
         """)
         await db.commit()
 
-async def register_user(uid, username, first_name, referrer=None):
+async def register_user(uid, username, first_name, referrer=None, referral_reward=0):
     async with await connect() as db:
         cur=await db.execute("SELECT user_id FROM users WHERE user_id=?",(uid,))
         if await cur.fetchone():
@@ -43,6 +43,9 @@ async def register_user(uid, username, first_name, referrer=None):
             cur=await db.execute("SELECT user_id FROM users WHERE user_id=?",(referrer,))
             if not await cur.fetchone(): referrer=None
         await db.execute("INSERT INTO users(user_id,username,first_name,referred_by) VALUES(?,?,?,?)",(uid,username,first_name,referrer))
+        if referrer and referral_reward > 0:
+            await db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
+            await db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
         await db.commit()
         return True,referrer
 
