@@ -99,7 +99,8 @@ def start(m):
     send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
-    u=db.get_user(uid); send(chat,f"💰 Saldo: <b>{u['points'] if u else 0} pontos</b>")
+    u=db.get_user(uid); points=u["points"] if u else 0
+    send(chat,f"💰 <b>SUA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\nSaldo: <b>{points:,} pontos</b>\nValor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 Conversão: 100 pontos = R$ 1,00\n💸 Saque mínimo: 1.000 pontos (R$ 10,00)\n\nPara solicitar: <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>\nExemplo: <code>/sacar 1000 CPF 12345678900</code>\nTipos: CPF, CNPJ, EMAIL, TELEFONE ou ALEATORIA.",back())
 
 def ranking(chat):
     lines=["🏆 <b>TOP 10 PIT PRÊMIOS</b>"]
@@ -129,7 +130,16 @@ def toprefs(chat):
     send(chat,"\n".join(lines),back())
 def missions(chat,uid):
     p=db.get_profile(uid); state="Disponível" if p["last_daily"]!=db.today() else "Concluída hoje"
-    send(chat,f"🎯 <b>MISSÕES DO PIT</b>\n━━━━━━━━━━━━━━━━━━\n✅ Criar sua conta — <i>Concluída</i>\n🎁 Coletar bônus diário — <i>{state}</i>\n🚀 Convidar amigos — <i>{p['referrals']} confirmado(s)</i>\n📜 Consultar extrato — <i>Disponível</i>\n\n<i>Novas campanhas serão anunciadas nesta área.</i>",[[btn("🎁 Fazer check-in","daily"),btn("🚀 Convidar","invite")],btn("⬅️ Menu principal","home")])
+    milestones=db.referral_milestone_status(uid)
+    lines=["🎯 <b>MISSÕES DO PIT</b>","━━━━━━━━━━━━━━━━━━",f"🎁 Check-in diário — <i>{state}</i>",f"🚀 Indicações válidas: <b>{p['referrals']}</b>","", "🏆 <b>METAS DE INDICAÇÃO</b>"]
+    for item in milestones:
+        status="Resgatar bônus" if item["reached"] and not item["claimed"] else ("✅ Recebido" if item["claimed"] else "🔒 Em andamento")
+        lines.append(f"{item['milestone']} amigo(s) — bônus de {item['bonus']} pontos — <b>{status}</b>")
+    kb=[[btn("🎁 Fazer check-in","daily"),btn("🚀 Convidar","invite")]]
+    for item in milestones:
+        if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar meta de {item['milestone']} amigo(s)","milestone:"+str(item["milestone"]))])
+    kb.append([btn("⬅️ Menu principal","home")])
+    send(chat,"\\n".join(lines),kb)
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows: lines.append("Nenhuma movimentação registrada.")
@@ -150,6 +160,17 @@ def command(m):
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking(chat)
     elif cmd=="/diario": daily(chat,uid)
+    elif cmd=="/sacar":
+        args=t.split(maxsplit=3)
+        if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
+        pts=int(args[1]); key_type=args[2].upper(); pix_key=args[3].strip()
+        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS)
+        except ValueError as e: send(chat,escape(str(e))); return
+        amount=pts/100
+        send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
+        for aid in ADMIN_IDS:
+            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>",[[btn("✅ Aprovar","payout:"+str(rid)+":yes"),btn("❌ Rejeitar","payout:"+str(rid)+":no")]])
+            except Exception: log.exception("Falha ao notificar admin sobre saque")
     elif cmd=="/resgatar":
         if len(p)<3 or not p[1].isdigit(): send(chat,"Use /resgatar PONTOS DESCRIÇÃO"); return
         pts=int(p[1]); reward=p[2].strip()
@@ -160,8 +181,8 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/broadcast","/usuario") and admin(uid):
-        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO</b>\n/stats\n/usuario ID\n/addpoints ID QUANTIDADE\n/setvip ID on|off\n/pedidos\n/broadcast MENSAGEM")
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario") and admin(uid):
+        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO</b>\n/stats\n/usuario ID\n/addpoints ID QUANTIDADE\n/setvip ID on|off\n/pedidos\n/saques\n/broadcast MENSAGEM")
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); u=db.get_user(target)
@@ -189,13 +210,20 @@ def command(m):
         elif cmd=="/setvip":
             if len(p)<3 or not p[1].isdigit() or p[2].lower() not in ("on","off"): send(chat,"Use /setvip ID on|off"); return
             db.set_vip(int(p[1]),p[2].lower()=="on"); send(chat,"✅ VIP atualizado.")
+        elif cmd=="/saques":
+            rows=db.pending_payouts()
+            if not rows: send(chat,"Nenhum saque pendente."); return
+            for r in rows:
+                amount=r["amount_cents"]/100
+                kb=[[btn("✅ Aprovar","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar","payout:"+str(r["id"])+":no")]]
+                send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         elif cmd=="/pedidos":
             rows=db.pending_redemptions()
             if not rows: send(chat,"Nenhum pedido pendente."); return
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/broadcast","/usuario"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c):
@@ -217,6 +245,22 @@ def callback(c):
     elif data=="vip":
         u=db.get_user(uid); send(chat,"💎 VIP: "+("ATIVO" if u and u["is_vip"] else "INATIVO")+". Consulte a administração.")
     elif data=="help_redeem": send(chat,f"Para solicitar: /resgatar PONTOS DESCRIÇÃO\nMínimo: {MIN_REDEEM_POINTS} pontos.")
+    elif data.startswith("milestone:"):
+        try:
+            milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
+            send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
+        except (ValueError,IndexError) as e: send(chat,escape(str(e)))
+    elif data.startswith("payout:"):
+        if not admin(uid): return
+        _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes")
+        if not result: send(chat,"Este pedido já foi analisado."); return
+        approved=decision=="yes"
+        status="aprovado" if approved else "rejeitado; os pontos foram devolvidos"
+        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
+        try:
+            if approved: send(result["user_id"],f"✅ Seu saque #{rid} foi aprovado. A equipe deverá realizar o pagamento via Pix manualmente.")
+            else: send(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
+        except Exception: log.exception("Falha ao avisar usuário sobre saque")
     elif data.startswith("review:"):
         if not admin(uid): return
         _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes")
