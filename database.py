@@ -48,6 +48,23 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
+        CREATE TABLE IF NOT EXISTS account_blocks(
+            user_id INTEGER PRIMARY KEY,
+            reason TEXT NOT NULL,
+            blocked_by INTEGER NOT NULL,
+            blocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE TABLE IF NOT EXISTS account_block_history(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK(action IN ('blocked','unblocked')),
+            reason TEXT NOT NULL DEFAULT '',
+            admin_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
         CREATE TABLE IF NOT EXISTS referral_manual_holds(
             referrer_id INTEGER PRIMARY KEY,
             reason TEXT NOT NULL DEFAULT 'Monitoramento manual da equipe',
@@ -714,6 +731,38 @@ def get_referral_manual_hold(referrer_id):
     with connect() as db:
         row=db.execute("SELECT * FROM referral_manual_holds WHERE referrer_id=?",(referrer_id,)).fetchone()
         return dict(row) if row else None
+
+
+def get_account_block(user_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM account_blocks WHERE user_id=?",(user_id,)).fetchone()
+        return dict(row) if row else None
+
+def block_account(user_id,admin_id,reason):
+    reason=(reason or "").strip()[:300]
+    if not reason:
+        raise ValueError("Informe o motivo do bloqueio.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if not db.execute("SELECT 1 FROM users WHERE user_id=?",(user_id,)).fetchone():
+            db.rollback()
+            return False
+        db.execute("INSERT INTO account_blocks(user_id,reason,blocked_by) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason,blocked_by=excluded.blocked_by,blocked_at=CURRENT_TIMESTAMP",(user_id,reason,admin_id))
+        db.execute("INSERT INTO account_block_history(user_id,action,reason,admin_id) VALUES(?,'blocked',?,?)",(user_id,reason,admin_id))
+        db.commit()
+        return True
+
+def unblock_account(user_id,admin_id):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(user_id,)).fetchone()
+        if not row:
+            db.rollback()
+            return False
+        db.execute("DELETE FROM account_blocks WHERE user_id=?",(user_id,))
+        db.execute("INSERT INTO account_block_history(user_id,action,reason,admin_id) VALUES(?,'unblocked',?,?)",(user_id,row["reason"],admin_id))
+        db.commit()
+        return True
 
 
 def get_account_block(user_id):
