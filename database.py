@@ -65,6 +65,20 @@ def init_db():
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
         db.commit()
 
+def get_auto_delete_settings():
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS bot_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        rows={r["key"]:r["value"] for r in db.execute("SELECT key,value FROM bot_settings WHERE key IN ('auto_delete_enabled','auto_delete_seconds')")}
+        return {"enabled":rows.get("auto_delete_enabled","0")=="1","seconds":int(rows.get("auto_delete_seconds","60"))}
+
+def set_auto_delete_settings(enabled=None,seconds=None):
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS bot_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        if enabled is not None: db.execute("INSERT INTO bot_settings(key,value) VALUES('auto_delete_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("1" if enabled else "0",))
+        if seconds is not None:
+            if seconds not in (30,60,120,300): raise ValueError("Tempo inválido.")
+            db.execute("INSERT INTO bot_settings(key,value) VALUES('auto_delete_seconds',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(seconds),))
+        db.commit()
 def today():
     from datetime import datetime, timezone, timedelta
     return datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
