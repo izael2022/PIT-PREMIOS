@@ -272,6 +272,7 @@ def today():
 
 def get_profile(uid):
     with connect() as db:
+        db.execute("UPDATE users SET is_vip=0,vip_expires_at=NULL WHERE user_id=? AND vip_expires_at IS NOT NULL AND vip_expires_at<=datetime('now')",(uid,))
         row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=u.user_id AND (rr.status IS NULL OR rr.status='approved')) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
         return dict(row) if row else {"points":0,"referrals":0,"daily_streak":0,"created_at":today(),"last_daily":None}
 
@@ -304,7 +305,9 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
                 db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
         db.commit(); return True,referrer,review_id
 def get_user(uid):
-    with connect() as db: return db.execute("SELECT * FROM users WHERE user_id=?",(uid,)).fetchone()
+    with connect() as db:
+        db.execute("UPDATE users SET is_vip=0,vip_expires_at=NULL WHERE user_id=? AND vip_expires_at IS NOT NULL AND vip_expires_at<=datetime('now')",(uid,))
+        return db.execute("SELECT * FROM users WHERE user_id=?",(uid,)).fetchone()
 
 def all_user_ids():
     with connect() as db:
