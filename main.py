@@ -6,6 +6,8 @@ from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
+BOT_USERNAME=""
+BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
 
 def api(method, data=None):
     payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
@@ -21,6 +23,11 @@ def send(chat, text, keyboard=None):
     d={"chat_id":chat,"text":text,"parse_mode":"HTML"}
     if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
     return api("sendMessage",d)
+
+def send_photo(chat,photo,caption,keyboard=None):
+    data={"chat_id":chat,"photo":photo,"caption":caption,"parse_mode":"HTML"}
+    if keyboard: data["reply_markup"]={"inline_keyboard":keyboard}
+    return api("sendPhoto",data)
 
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
@@ -42,7 +49,7 @@ def start(m):
     global BOT_USERNAME
     pr=db.get_profile(u["id"])
     first=escape((u.get("first_name") or "participante")[:40])
-    send(chat,f"🐾 <b>PIT PRÊMIOS</b>  <code>REWARDS CLUB</code>\nOlá, <b>{first}</b>! Bem-vindo à sua central de recompensas.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites confirmados: <b>{pr['referrals']}</b>\n🔥 Sequência diária: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
+    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
     u=db.get_user(uid); send(chat,f"💰 Saldo: <b>{u['points'] if u else 0} pontos</b>")
