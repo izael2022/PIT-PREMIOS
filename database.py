@@ -1,11 +1,19 @@
 import sqlite3
+from contextlib import contextmanager
 from config import DATABASE_PATH
 
+@contextmanager
 def connect():
     DATABASE_PATH.parent.mkdir(parents=True,exist_ok=True)
-    db=sqlite3.connect(str(DATABASE_PATH),timeout=20); db.row_factory=sqlite3.Row
-    db.execute("PRAGMA foreign_keys=ON"); db.execute("PRAGMA journal_mode=WAL"); db.execute("PRAGMA busy_timeout=20000")
-    return db
+    db=sqlite3.connect(str(DATABASE_PATH),timeout=20)
+    db.row_factory=sqlite3.Row
+    db.execute("PRAGMA foreign_keys=ON")
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=20000")
+    try:
+        yield db
+    finally:
+        db.close()
 
 def init_db():
     with connect() as db:
@@ -15,7 +23,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,points INTEGER NOT NULL,reward TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP,reviewed_by INTEGER,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE INDEX IF NOT EXISTS idx_history_user ON point_history(user_id);
         CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status);
-        """); db.commit()
+        """)
+        db.commit()
 
 def register_user(uid,username,first_name,referrer=None,referral_reward=0):
     with connect() as db:
