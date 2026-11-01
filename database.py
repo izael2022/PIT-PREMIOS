@@ -60,6 +60,73 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_payout_status ON payout_requests(status);
         CREATE TABLE IF NOT EXISTS bot_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS tasks(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            reward_points INTEGER NOT NULL CHECK(reward_points>0),
+            requires_proof INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS task_submissions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            proof TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            reviewed_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TEXT,
+            UNIQUE(task_id,user_id),
+            FOREIGN KEY(task_id) REFERENCES tasks(id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_submissions_status ON task_submissions(status);
+        CREATE TABLE IF NOT EXISTS weekly_earnings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            points INTEGER NOT NULL CHECK(points>0),
+            source TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_weekly_earnings_created ON weekly_earnings(created_at,user_id);
+        CREATE TABLE IF NOT EXISTS referral_vip_milestones(
+            user_id INTEGER NOT NULL,
+            milestone INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id,milestone),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE TABLE IF NOT EXISTS rewards(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            points_cost INTEGER NOT NULL CHECK(points_cost>0),
+            stock INTEGER NOT NULL DEFAULT -1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS reward_orders(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reward_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            points_spent INTEGER NOT NULL CHECK(points_spent>0),
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            FOREIGN KEY(reward_id) REFERENCES rewards(id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_reward_orders_status ON reward_orders(status);
+        CREATE TABLE IF NOT EXISTS notification_preferences(
+            user_id INTEGER PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
         """)
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
