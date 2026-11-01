@@ -326,6 +326,29 @@ def get_profile(uid):
         row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=u.user_id AND (rr.status IS NULL OR rr.status='approved')) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
         return dict(row) if row else {"points":0,"referrals":0,"daily_streak":0,"created_at":today(),"last_daily":None}
 
+def admin_user_details(user_id,history_limit=5):
+    with connect() as db:
+        user=db.execute("""
+            SELECT u.*,
+                   (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id
+                    WHERE x.referred_by=u.user_id AND (rr.status IS NULL OR rr.status='approved')) AS referrals
+            FROM users u WHERE u.user_id=?
+        """,(user_id,)).fetchone()
+        if not user:
+            return None
+        history=db.execute("""
+            SELECT amount,reason,created_at FROM point_history
+            WHERE user_id=? ORDER BY id DESC LIMIT ?
+        """,(user_id,history_limit)).fetchall()
+        counts=db.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM payout_requests WHERE user_id=? AND status='pending') AS pending_payouts,
+                (SELECT COUNT(*) FROM reward_orders WHERE user_id=? AND status='pending') AS pending_reward_orders,
+                (SELECT COUNT(*) FROM task_submissions WHERE user_id=? AND status='pending') AS pending_tasks,
+                (SELECT COUNT(*) FROM redemptions WHERE user_id=? AND status='pending') AS pending_redemptions
+        """,(user_id,user_id,user_id,user_id)).fetchone()
+        return {"user":dict(user),"history":[dict(x) for x in history],"pending":dict(counts)}
+
 def user_referrals(user_id,limit=15):
     with connect() as db:
         return db.execute("""
