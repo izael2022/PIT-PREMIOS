@@ -391,7 +391,8 @@ def callback(c):
         if not admin(uid): return
         action=data.split(":",1)[1]
         if action=="stats":
-            st=db.stats(); send(chat,f"📊 <b>ESTATÍSTICAS DO PIT</b>\nUsuários: <b>{st['users']}</b>\nPontos em circulação: <b>{st['points']}</b>\nResgates pendentes: <b>{st['pending']}</b>",admin_menu())
+            st=db.stats()
+            send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
