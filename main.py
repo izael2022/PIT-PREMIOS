@@ -89,7 +89,7 @@ def btn(label,data): return {"text":label,"callback_data":data}
 def menu():
     return [[btn("👤 Meu perfil","profile"),btn("💰 Carteira","wallet")],
             [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
-            [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
+            [btn("🚀 Convidar","invite"),btn("👥 Meus convidados","myrefs")],\n            [btn("🏆 Ranking","ranking")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
             [btn("🎁 Loja de prêmios","shop"),btn("📦 Meus pedidos","myorders")],
             [btn("📜 Extrato","history"),btn("💸 Meus saques","mypayouts")],
@@ -169,6 +169,20 @@ def profile(chat,uid):
 def invite(chat,uid):
     p=db.get_profile(uid); link=f"https://t.me/{BOT_USERNAME}?start={uid}"
     send(chat,f"🚀 <b>SEU LINK EXCLUSIVO</b>\n━━━━━━━━━━━━━━━━━━\nConvide amigos. Quando uma pessoa nova iniciar o bot pelo seu link, a indicação será registrada.\n\n🔗 <code>{link}</code>\n👥 Indicações confirmadas: <b>{p['referrals']}</b>\n🎁 Recompensa por indicação: <b>{POINTS_PER_REFERRAL} pontos</b>",[[btn("🏆 Top indicadores","toprefs")],[btn("⬅️ Menu principal","home")]])
+def my_referrals(chat,uid):
+    rows=db.user_referrals(uid,15)
+    lines=["👥 <b>MEUS CONVIDADOS</b>","━━━━━━━━━━━━━━━━━━"]
+    if not rows:
+        lines.append("Você ainda não possui convidados.")
+    labels={"pending":"⏳ Em análise","approved":"✅ Válida","rejected":"❌ Não aprovada"}
+    for r in rows:
+        name=escape((r["first_name"] or "Participante")[:35])
+        username="@"+escape(r["username"]) if r["username"] else "sem username"
+        status=labels.get(r["referral_status"],r["referral_status"])
+        lines.append(f"\n<b>{name}</b> ({username})\nID: <code>{r['user_id']}</code>\nStatus: {status}\nCadastro: {r['created_at']}")
+    lines.append("\n<i>Mostrando os últimos 15 convidados.</i>")
+    send(chat,"\n".join(lines),[[btn("🚀 Voltar a convidar","invite")],[btn("⬅️ Menu principal","home")]])
+
 def toprefs(chat):
     rows=db.top_referrals(); lines=["🚀 <b>CAMPEÕES DE INDICAÇÃO</b>","━━━━━━━━━━━━━━━━━━"]
     for i,r in enumerate(rows,1): lines.append(f"{i}. <b>{escape((r['first_name'] or str(r['user_id']))[:24])}</b> — {r['referrals']} amigos")
@@ -383,7 +397,7 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -462,6 +476,7 @@ def callback(c):
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
     elif data=="mytasks": my_task_submissions(chat,uid)
+    elif data=="myrefs": my_referrals(chat,uid)
     elif data=="shop": shop(chat,uid)
     elif data=="myorders": my_reward_orders(chat,uid)
     elif data=="mypayouts": my_payouts(chat,uid)
