@@ -71,29 +71,37 @@ def today():
 
 def get_profile(uid):
     with connect() as db:
-        row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x WHERE x.referred_by=u.user_id) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
+        row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=u.user_id AND (rr.status IS NULL OR rr.status='approved')) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
         return dict(row) if row else {"points":0,"referrals":0,"daily_streak":0,"created_at":today(),"last_daily":None}
 
 def top_referrals(limit=10):
     with connect() as db:
-        return db.execute("SELECT u.user_id,u.first_name,COUNT(x.user_id) referrals FROM users u JOIN users x ON x.referred_by=u.user_id GROUP BY u.user_id ORDER BY referrals DESC LIMIT ?",(limit,)).fetchall()
+        return db.execute("SELECT u.user_id,u.first_name,COUNT(x.user_id) referrals FROM users u JOIN users x ON x.referred_by=u.user_id LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE rr.status IS NULL OR rr.status='approved' GROUP BY u.user_id ORDER BY referrals DESC LIMIT ?",(limit,)).fetchall()
 
 def history(uid,limit=8):
     with connect() as db:
         return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
 
-def register_user(uid,username,first_name,referrer=None,referral_reward=0):
+def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM users WHERE user_id=?",(uid,)).fetchone():
-            db.execute("UPDATE users SET username=?,first_name=? WHERE user_id=?",(username,first_name,uid)); db.commit(); return False,None
+            db.execute("UPDATE users SET username=?,first_name=? WHERE user_id=?",(username,first_name,uid)); db.commit(); return False,None,None
         if referrer==uid or (referrer and not db.execute("SELECT 1 FROM users WHERE user_id=?",(referrer,)).fetchone()): referrer=None
         db.execute("INSERT INTO users(user_id,username,first_name,referred_by) VALUES(?,?,?,?)",(uid,username,first_name,referrer))
-        if referrer and referral_reward>0:
-            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
-            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
-        db.commit(); return True,referrer
-
+        review_id=None
+        if referrer:
+            reasons=[]
+            if is_bot: reasons.append("Conta do Telegram identificada como bot")
+            recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
+            if recent>=3: reasons.append("Volume elevado de cadastros em 10 minutos")
+            if reasons:
+                cur=db.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,risk_reason,status) VALUES(?,?,?,?, 'pending')",(referrer,uid,"review","; ".join(reasons)))
+                review_id=cur.lastrowid
+            elif referral_reward>0:
+                db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
+                db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
+        db.commit(); return True,referrer,review_id
 def get_user(uid):
     with connect() as db: return db.execute("SELECT * FROM users WHERE user_id=?",(uid,)).fetchone()
 
@@ -162,7 +170,7 @@ def stats():
 def referral_milestone_status(uid):
     milestones={1:100,5:650,10:1400}
     with connect() as db:
-        row=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=?",(uid,)).fetchone()
+        row=db.execute("SELECT COUNT(*) total FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()
         claimed={r["milestone"] for r in db.execute("SELECT milestone FROM referral_milestones WHERE user_id=?",(uid,))}
         total=row["total"]
         return [{"milestone":m,"bonus":bonus,"reached":total>=m,"claimed":m in claimed} for m,bonus in milestones.items()]
@@ -172,7 +180,7 @@ def claim_referral_milestone(uid,milestone):
     if milestone not in bonuses: raise ValueError("Meta inválida.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
-        total=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=?",(uid,)).fetchone()["total"]
+        total=db.execute("SELECT COUNT(*) total FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()["total"]
         if total<milestone:
             db.rollback(); raise ValueError("Meta ainda não foi concluída.")
         try:
@@ -221,7 +229,7 @@ def review_payout(rid,admin_id,approve):
 
 def pending_referral_reviews():
     with connect() as db:
-        return db.execute("SELECT * FROM referral_reviews WHERE status='pending' ORDER BY id").fetchall()
+        return db.execute("SELECT rr.*,u.first_name,u.username FROM referral_reviews rr JOIN users u ON u.user_id=rr.referred_user_id WHERE rr.status='pending' ORDER BY rr.id").fetchall()
 
 def review_referral(rid,admin_id,approve):
     with connect() as db:
