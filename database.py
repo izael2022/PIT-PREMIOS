@@ -326,6 +326,18 @@ def get_profile(uid):
         row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=u.user_id AND (rr.status IS NULL OR rr.status='approved')) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
         return dict(row) if row else {"points":0,"referrals":0,"daily_streak":0,"created_at":today(),"last_daily":None}
 
+def user_referrals(user_id,limit=15):
+    with connect() as db:
+        return db.execute("""
+            SELECT u.user_id,u.first_name,u.username,u.created_at,
+                   COALESCE(rr.status,'approved') AS referral_status
+            FROM users u
+            LEFT JOIN referral_reviews rr ON rr.referred_user_id=u.user_id
+            WHERE u.referred_by=?
+            ORDER BY u.created_at DESC,u.user_id DESC
+            LIMIT ?
+        """,(user_id,limit)).fetchall()
+
 def top_referrals(limit=10):
     with connect() as db:
         return db.execute("SELECT u.user_id,u.first_name,COUNT(x.user_id) referrals FROM users u JOIN users x ON x.referred_by=u.user_id LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE rr.status IS NULL OR rr.status='approved' GROUP BY u.user_id ORDER BY referrals DESC LIMIT ?",(limit,)).fetchall()
