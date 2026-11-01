@@ -30,9 +30,22 @@ def send_photo(chat,photo,caption,keyboard=None):
     global BANNER_BYTES
     try:
         if BANNER_BYTES is None:
-            req=urllib.request.Request(photo,headers={"User-Agent":"PIT-PREMIOS-Bot/1.0"})
-            with urllib.request.urlopen(req,timeout=20) as response:
-                BANNER_BYTES=response.read()
+            urls=[photo,"https://cdn.jsdelivr.net/gh/izael2022/PIT-PREMIOS@main/assets/pit_premios_banner.jpg"]
+            last_error=None
+            for image_url in urls:
+                try:
+                    req=urllib.request.Request(image_url,headers={"User-Agent":"Mozilla/5.0"})
+                    with urllib.request.urlopen(req,timeout=20) as response:
+                        image_data=response.read()
+                    if not (image_data.startswith(bytes([255,216])) or image_data.startswith(bytes([137,80,78,71]))):
+                        raise ValueError("O endereço não retornou uma imagem JPG/PNG válida.")
+                    BANNER_BYTES=image_data
+                    break
+                except Exception as download_error:
+                    last_error=download_error
+                    log.warning("Falha ao baixar banner de %s: %s",image_url,download_error)
+            if BANNER_BYTES is None:
+                raise RuntimeError(f"Não foi possível obter o banner: {last_error}")
         boundary="----PITPREMIOSBoundary7MA4YWxk"
         fields={"chat_id":str(chat),"caption":caption,"parse_mode":"HTML"}
         if keyboard:
