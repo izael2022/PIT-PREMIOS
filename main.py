@@ -238,10 +238,15 @@ def my_reward_orders(chat,uid):
     lines=["📦 <b>MEUS PEDIDOS DA LOJA</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows:
         lines.append("Você ainda não solicitou nenhum prêmio.")
+    kb=[]
+    labels={"pending":"⏳ Aguardando análise","approved":"✅ Aprovado","rejected":"❌ Rejeitado","cancelled":"🚫 Cancelado — pontos devolvidos"}
     for r in rows:
-        status={"pending":"⏳ Aguardando análise","approved":"✅ Aprovado","rejected":"❌ Rejeitado"}.get(r["status"],r["status"])
+        status=labels.get(r["status"],r["status"])
         lines.append(f"\n<b>Pedido #{r['id']}</b> — {escape(r['title'])}\n💰 {r['points_spent']} pontos\nStatus: {status}\nData: {r['created_at']}")
-    send(chat,"\n".join(lines),[[btn("🎁 Voltar à loja","shop")],[btn("⬅️ Menu principal","home")]])
+        if r["status"]=="pending":
+            kb.append([btn("🚫 Cancelar pedido #"+str(r["id"]),"rewardcancel:"+str(r["id"]))])
+    kb.extend([[btn("🎁 Voltar à loja","shop")],[btn("⬅️ Menu principal","home")]])
+    send(chat,"\n".join(lines),kb)
 
 def my_payouts(chat,uid):
     rows=db.user_payout_requests(uid)
@@ -567,6 +572,16 @@ def callback(c):
     elif data.startswith("rewardinfo:"):
         if not admin(uid): return
         send(chat,"Este prêmio está inativo. Os registros foram mantidos.",[[btn("🗂️ Gerenciar prêmios","admin:managerewards")]])
+    elif data.startswith("rewardcancel:"):
+        try:
+            order_id=int(data.split(":",1)[1])
+            result=db.cancel_reward_order(uid,order_id)
+            if not result:
+                send(chat,"Este pedido não está mais pendente ou não pertence à sua conta. Atualize a tela Meus pedidos.")
+            else:
+                send(chat,f"✅ <b>Pedido #{order_id} cancelado.</b>\n\n{result['points_spent']:,} pontos foram devolvidos à sua carteira e o estoque foi restaurado, quando limitado.",[[btn("📦 Ver meus pedidos","myorders")],[btn("⬅️ Menu principal","home")]])
+        except (ValueError,IndexError):
+            send(chat,"Não foi possível cancelar este pedido.")
     elif data.startswith("rewardreview:"):
         if not admin(uid): return
         _,rid,decision=data.split(":")
