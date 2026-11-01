@@ -86,6 +86,13 @@ def menu():
             [btn("📜 Extrato","history"),btn("❓ Ajuda","help")]]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
+def admin_menu():
+    return [[btn("📊 Estatísticas","admin:stats"),btn("👤 Consultar usuário","admin:user")],
+            [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
+            [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
+            [btn("📢 Enviar comunicado","admin:broadcast")],
+            [btn("⬅️ Fechar painel","home")]]
+
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
     ref=int(p[1]) if len(p)>1 and p[1].isdigit() else None
@@ -182,7 +189,7 @@ def command(m):
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
     elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario") and admin(uid):
-        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO</b>\n/stats\n/usuario ID\n/addpoints ID QUANTIDADE\n/setvip ID on|off\n/pedidos\n/saques\n/broadcast MENSAGEM")
+        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); u=db.get_user(target)
@@ -230,6 +237,29 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
+    if data.startswith("admin:"):
+        if not admin(uid): return
+        action=data.split(":",1)[1]
+        if action=="stats":
+            st=db.stats(); send(chat,f"📊 <b>ESTATÍSTICAS DO PIT</b>\nUsuários: <b>{st['users']}</b>\nPontos em circulação: <b>{st['points']}</b>\nResgates pendentes: <b>{st['pending']}</b>",admin_menu())
+        elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
+        elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
+        elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
+        elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu())
+        elif action=="orders":
+            rows=db.pending_redemptions()
+            if not rows: send(chat,"Nenhum resgate pendente.",admin_menu())
+            for r in rows:
+                kb=[[btn("✅ Aprovar","review:"+str(r["id"])+":yes"),btn("❌ Rejeitar","review:"+str(r["id"])+":no")]]
+                send(chat,f"🎟️ <b>RESGATE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
+        elif action=="payouts":
+            rows=db.pending_payouts()
+            if not rows: send(chat,"Nenhum saque pendente.",admin_menu())
+            for r in rows:
+                amount=r["amount_cents"]/100
+                kb=[[btn("✅ Aprovar","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar","payout:"+str(r["id"])+":no")]]
+                send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
+        return
     if data=="home": api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.","parse_mode":"HTML","reply_markup":{"inline_keyboard":menu()}})
     elif data=="profile": profile(chat,uid)
     elif data=="wallet": balance(chat,uid)
