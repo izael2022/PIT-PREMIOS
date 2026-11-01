@@ -59,6 +59,7 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_payout_status ON payout_requests(status);
+        CREATE TABLE IF NOT EXISTS bot_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
         """)
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
