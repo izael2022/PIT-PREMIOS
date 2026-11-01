@@ -92,7 +92,8 @@ def menu():
             [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
             [btn("🎁 Loja de prêmios","shop"),btn("📦 Meus pedidos","myorders")],
-            [btn("📜 Extrato","history"),btn("🔔 Notificações","notifications")],
+            [btn("📜 Extrato","history"),btn("💸 Meus saques","mypayouts")],
+            [btn("🔔 Notificações","notifications")],
             [btn("❓ Ajuda","help")],
             [btn("📋 Tarefas disponíveis","tasks"),btn("📨 Minhas tarefas enviadas","mytasks")]]
 def back(): return [[btn("⬅️ Menu principal","home")]]
@@ -242,6 +243,18 @@ def my_reward_orders(chat,uid):
         lines.append(f"\n<b>Pedido #{r['id']}</b> — {escape(r['title'])}\n💰 {r['points_spent']} pontos\nStatus: {status}\nData: {r['created_at']}")
     send(chat,"\n".join(lines),[[btn("🎁 Voltar à loja","shop")],[btn("⬅️ Menu principal","home")]])
 
+def my_payouts(chat,uid):
+    rows=db.user_payout_requests(uid)
+    lines=["💸 <b>MEUS SAQUES</b>","━━━━━━━━━━━━━━━━━━"]
+    if not rows:
+        lines.append("Você ainda não solicitou nenhum saque.")
+    labels={"pending":"⏳ Aguardando análise","approved":"✅ Pagamento confirmado","rejected":"❌ Rejeitado — pontos devolvidos"}
+    for row in rows:
+        pix=row["pix_key"] or ""
+        masked=(pix[:2]+"••••"+pix[-2:]) if len(pix)>6 else ("••••" if pix else "não informada")
+        lines.append(f"\n<b>Saque #{row['id']}</b> — R$ {row['amount_cents']/100:.2f}\n💰 {row['points']:,} pontos\nStatus: <b>{labels.get(row['status'],row['status'])}</b>\nChave {escape(row['pix_key_type'])}: <code>{escape(masked)}</code>\nSolicitado: {row['created_at']}")
+    send(chat,"\n".join(lines),[[btn("⬅️ Menu principal","home")]])
+
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows: lines.append("Nenhuma movimentação registrada.")
@@ -361,7 +374,7 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -441,6 +454,7 @@ def callback(c):
     elif data=="mytasks": my_task_submissions(chat,uid)
     elif data=="shop": shop(chat,uid)
     elif data=="myorders": my_reward_orders(chat,uid)
+    elif data=="mypayouts": my_payouts(chat,uid)
     elif data.startswith("shopbuy:"):
         try:
             reward_id=int(data.split(":",1)[1])
