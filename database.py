@@ -23,6 +23,42 @@ def init_db():
         CREATE TABLE IF NOT EXISTS redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,points INTEGER NOT NULL,reward TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP,reviewed_by INTEGER,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE INDEX IF NOT EXISTS idx_history_user ON point_history(user_id);
         CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status);
+        CREATE TABLE IF NOT EXISTS referral_milestones(
+            user_id INTEGER NOT NULL,
+            milestone INTEGER NOT NULL,
+            bonus_points INTEGER NOT NULL,
+            claimed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id,milestone),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE TABLE IF NOT EXISTS referral_reviews(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER NOT NULL,
+            referred_user_id INTEGER NOT NULL UNIQUE,
+            risk_level TEXT NOT NULL DEFAULT 'normal',
+            risk_reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            FOREIGN KEY(referrer_id) REFERENCES users(user_id),
+            FOREIGN KEY(referred_user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_referral_reviews_status ON referral_reviews(status);
+        CREATE TABLE IF NOT EXISTS payout_requests(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            points INTEGER NOT NULL CHECK(points > 0),
+            amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+            pix_key TEXT NOT NULL,
+            pix_key_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_payout_status ON payout_requests(status);
         """)
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
