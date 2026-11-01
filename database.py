@@ -208,6 +208,17 @@ def review_task_submission(submission_id,admin_id,approve):
             db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["user_id"],points,"task"))
         db.commit(); return dict(row)
 
+
+def user_task_submissions(user_id,limit=20):
+    with connect() as db:
+        return db.execute("""
+            SELECT s.id,s.status,s.created_at,s.reviewed_at,t.title,t.reward_points
+            FROM task_submissions s
+            JOIN tasks t ON t.id=s.task_id
+            WHERE s.user_id=?
+            ORDER BY s.id DESC LIMIT ?
+        """,(user_id,limit)).fetchall()
+
 def weekly_ranking(limit=10):
     with connect() as db:
         return db.execute("SELECT u.user_id,u.first_name,u.username,COALESCE(SUM(w.points),0) points FROM weekly_earnings w JOIN users u ON u.user_id=w.user_id WHERE w.created_at>=datetime('now','-7 days') GROUP BY u.user_id ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
