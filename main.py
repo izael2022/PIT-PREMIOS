@@ -278,13 +278,21 @@ def my_payouts(chat,uid):
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
 
-def history(chat,uid):
-    rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
-    if not rows: lines.append("Nenhuma movimentação registrada.")
+def history(chat,uid,page=0):
+    page=max(0,int(page)); page_size=8
+    rows=db.history(uid,page_size,page*page_size)
+    lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━",f"Página <b>{page+1}</b>"]
+    if not rows:
+        lines.append("Nenhuma movimentação registrada nesta página.")
     for r in rows:
         sign="+" if r["amount"]>0 else ""; icon="🟢" if r["amount"]>0 else "🔴"
         lines.append(f"{icon} <b>{sign}{r['amount']} pts</b> — {escape(r['reason'][:50])}\n<i>{r['created_at']}</i>")
-    send(chat,"\n".join(lines),back())
+    kb=[]
+    if page>0: kb.append(btn("⬅️ Anterior","history:"+str(page-1)))
+    if len(rows)==page_size: kb.append(btn("Próxima ➡️","history:"+str(page+1)))
+    keyboard=[kb] if kb else []
+    keyboard.append([btn("⬅️ Menu principal","home")])
+    send(chat,"\n".join(lines),keyboard)
 def redeem_help(chat):
     send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\n━━━━━━━━━━━━━━━━━━\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
 
@@ -405,7 +413,7 @@ def callback(c):
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
     navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
-    if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
+    if (data in navigation_actions or data.startswith("task:") or data.startswith("history:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
     if data.startswith("admin:"):
@@ -509,7 +517,10 @@ def callback(c):
     elif data=="invite": invite(chat,uid)
     elif data=="toprefs": toprefs(chat)
     elif data=="missions": missions(chat,uid)
-    elif data=="history": history(chat,uid)
+    elif data=="history": history(chat,uid,0)
+    elif data.startswith("history:"):
+        try: history(chat,uid,int(data.split(":",1)[1]))
+        except (ValueError,IndexError): history(chat,uid,0)
     elif data=="help": help_page(chat)
     elif data=="redeem_info": redeem_help(chat)
     elif data=="balance": balance(chat,uid)
