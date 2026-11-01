@@ -366,7 +366,9 @@ def review_redemption(rid,admin_id,approve):
         db.commit(); return dict(row)
 
 def set_vip(uid,enabled):
-    with connect() as db: db.execute("UPDATE users SET is_vip=? WHERE user_id=?",(int(enabled),uid)); db.commit()
+    with connect() as db:
+        db.execute("UPDATE users SET is_vip=?,vip_expires_at=NULL WHERE user_id=?",(int(enabled),uid))
+        db.commit()
 
 def referral_vip_status(uid):
     goals=[{"milestone":25,"days":7},{"milestone":50,"days":30}]
