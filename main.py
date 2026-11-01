@@ -159,7 +159,7 @@ def missions(chat,uid):
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
 def task_list(chat,uid):
-    rows=db.active_tasks()
+    rows=db.active_tasks_for_user(uid)
     if not rows:
         send(chat,"📋 <b>TAREFAS</b>\n\nNo momento não há tarefas disponíveis.",back()); return
     lines=["📋 <b>TAREFAS DISPONÍVEIS</b>","━━━━━━━━━━━━━━━━━━"]
@@ -320,7 +320,7 @@ def callback(c):
     elif data.startswith("task:"):
         try:
             task_id=int(data.split(":")[1])
-            task=next((x for x in db.active_tasks() if x["id"]==task_id),None)
+            task=next((x for x in db.active_tasks_for_user(uid) if x["id"]==task_id),None)
             if not task: send(chat,"Essa tarefa não está mais disponível."); return
             PENDING_TASK_PROOFS[uid]=task_id
             send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\nTarefa: {escape(task['title'])}\nRecompensa: {task['reward_points']} pontos\n\nEnvie agora o <b>PRINT (FOTO) OU UMA MENSAGEM</b> como comprovante. A equipe vai analisar antes de liberar os pontos.")
