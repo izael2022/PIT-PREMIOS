@@ -354,9 +354,9 @@ def command(m):
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); details=db.admin_user_details(target)
             if not details: send(chat,"Usuário não encontrado."); return
-            u=details["user"]; pending=details["pending"]
+            u=details["user"]; pending=details["pending"]; totals=details["totals"]
             vip="Ativo" if u["is_vip"] else "Inativo"
-            lines=[f"👤 <b>FICHA DO MEMBRO</b>","━━━━━━━━━━━━━━━━━━",f"ID: <code>{target}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')}",f"Username: @{escape(u['username'] or 'não informado')}",f"Saldo: <b>{u['points']:,} pontos</b>",f"Indicações válidas: {u['referrals']}",f"VIP: {vip}",f"Cadastro: {u['created_at']}","","⏳ <b>PENDÊNCIAS DO USUÁRIO</b>",f"Saques: {pending['pending_payouts']}",f"Pedidos da loja: {pending['pending_reward_orders']}",f"Tarefas: {pending['pending_tasks']}",f"Resgates: {pending['pending_redemptions']}","","📜 <b>ÚLTIMAS MOVIMENTAÇÕES</b>"]
+            lines=[f"👤 <b>FICHA DO MEMBRO</b>","━━━━━━━━━━━━━━━━━━",f"ID: <code>{target}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')}",f"Username: @{escape(u['username'] or 'não informado')}",f"Saldo: <b>{u['points']:,} pontos</b>",f"Indicações válidas: {u['referrals']}",f"VIP: {vip}",f"Cadastro: {u['created_at']}","","⏳ <b>PENDÊNCIAS DO USUÁRIO</b>",f"Saques: {pending['pending_payouts']}",f"Pedidos da loja: {pending['pending_reward_orders']}",f"Tarefas: {pending['pending_tasks']}",f"Resgates: {pending['pending_redemptions']}","","📊 <b>HISTÓRICO DE ANÁLISES</b>",f"📋 Tarefas: {totals['tasks_approved']} aprovadas / {totals['tasks_rejected']} rejeitadas",f"🎁 Loja: {totals['rewards_approved']} aprovados / {totals['rewards_rejected']} rejeitados",f"💸 Saques: {totals['payouts_approved']} aprovados / {totals['payouts_rejected']} rejeitados",f"🎟️ Resgates: {totals['redemptions_approved']} aprovados / {totals['redemptions_rejected']} rejeitados","","📜 <b>ÚLTIMAS MOVIMENTAÇÕES</b>"]
             if details["history"]:
                 for item in details["history"]:
                     sign="+" if item["amount"]>0 else ""
