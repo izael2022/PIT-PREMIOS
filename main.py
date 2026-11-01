@@ -7,6 +7,7 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(m
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
+PENDING_TASK_PROOFS={}
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
 
 def api(method, data=None):
@@ -83,7 +84,8 @@ def menu():
             [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
             [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
-            [btn("📜 Extrato","history"),btn("❓ Ajuda","help")]]
+            [btn("📜 Extrato","history"),btn("❓ Ajuda","help")],
+            [btn("📋 Tarefas disponíveis","tasks")]]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def admin_menu():
@@ -91,6 +93,7 @@ def admin_menu():
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
             [btn("🛡️ Análise antifraude","admin:fraud")],
+            [btn("📋 Revisar tarefas","admin:tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("⬅️ Fechar painel","home")]]
 
@@ -155,6 +158,18 @@ def missions(chat,uid):
         if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar meta de {item['milestone']} amigo(s)","milestone:"+str(item["milestone"]))])
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
+def task_list(chat,uid):
+    rows=db.active_tasks()
+    if not rows:
+        send(chat,"📋 <b>TAREFAS</b>\n\nNo momento não há tarefas disponíveis.",back()); return
+    lines=["📋 <b>TAREFAS DISPONÍVEIS</b>","━━━━━━━━━━━━━━━━━━"]
+    kb=[]
+    for task in rows:
+        lines.append(f"\n<b>#{task['id']} — {escape(task['title'])}</b>\n{escape(task['description'])}\n🎁 Recompensa: <b>{task['reward_points']} pontos</b>")
+        kb.append([btn(f"Enviar tarefa #{task['id']}","task:"+str(task["id"]))])
+    kb.append([btn("⬅️ Menu principal","home")])
+    send(chat,"\n".join(lines),kb)
+
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows: lines.append("Nenhuma movimentação registrada.")
@@ -175,6 +190,17 @@ def command(m):
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking(chat)
     elif cmd=="/diario": daily(chat,uid)
+    elif cmd=="/novatarefa" and admin(uid):
+        raw=t.split(maxsplit=1)
+        if len(raw)<2 or "|" not in raw[1]:
+            send(chat,"Use: /novatarefa PONTOS | TITULO | DESCRICAO"); return
+        parts=[x.strip() for x in raw[1].split("|",2)]
+        if len(parts)<3 or not parts[0].isdigit():
+            send(chat,"Use: /novatarefa PONTOS | TITULO | DESCRICAO"); return
+        try:
+            task_id=db.create_task(parts[1],parts[2],int(parts[0]),True)
+            send(chat,f"✅ Tarefa #{task_id} cadastrada com {int(parts[0])} pontos.")
+        except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/sacar":
         args=t.split(maxsplit=3)
         if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
@@ -264,6 +290,12 @@ def callback(c):
             for r in rows:
                 kb=[[btn("✅ Aprovar","review:"+str(r["id"])+":yes"),btn("❌ Rejeitar","review:"+str(r["id"])+":no")]]
                 send(chat,f"🎟️ <b>RESGATE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
+        elif action=="tasks":
+            rows=db.pending_task_submissions()
+            if not rows: send(chat,"📋 Nenhuma tarefa aguardando revisão.",admin_menu()); return
+            for row in rows:
+                kb=[[btn("✅ Aprovar pontos","taskreview:"+str(row["id"])+":yes"),btn("❌ Rejeitar","taskreview:"+str(row["id"])+":no")]]
+                send(chat,f"📋 <b>COMPROVAÇÃO DE TAREFA #{row['id']}</b>\nTarefa: {escape(row['title'])}\nUsuário: <code>{row['user_id']}</code> ({escape(row['first_name'] or 'Sem nome')})\nRecompensa: {row['reward_points']} pontos\nComprovação: {escape(row['proof'])}",kb)
         elif action=="fraud":
             rows=db.pending_referral_reviews()
             if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
@@ -279,6 +311,15 @@ def callback(c):
                 send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         return
     if data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
+    elif data=="tasks": task_list(chat,uid)
+    elif data.startswith("task:"):
+        try:
+            task_id=int(data.split(":")[1])
+            task=next((x for x in db.active_tasks() if x["id"]==task_id),None)
+            if not task: send(chat,"Essa tarefa não está mais disponível."); return
+            PENDING_TASK_PROOFS[uid]=task_id
+            send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\nTarefa: {escape(task['title'])}\nRecompensa: {task['reward_points']} pontos\n\nEnvie agora uma mensagem com a comprovação (link, descrição ou referência).")
+        except (ValueError,IndexError): send(chat,"Tarefa inválida.")
     elif data=="profile": profile(chat,uid)
     elif data=="wallet": balance(chat,uid)
     elif data=="invite": invite(chat,uid)
@@ -298,6 +339,15 @@ def callback(c):
             milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
             send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
         except (ValueError,IndexError) as e: send(chat,escape(str(e)))
+    elif data.startswith("taskreview:"):
+        if not admin(uid): return
+        _,sid,decision=data.split(":")
+        result=db.review_task_submission(int(sid),uid,decision=="yes")
+        if not result: send(chat,"Essa tarefa já foi analisada."); return
+        status="aprovada; pontos creditados" if decision=="yes" else "rejeitada"
+        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
+        try: send(result["user_id"],f"📋 Sua comprovação da tarefa <b>{escape(result['title'])}</b> foi {status}.")
+        except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
         _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes")
@@ -342,7 +392,16 @@ def main():
                     if "message" in update:
                         m=update["message"]
                         if (m.get("text") or "").startswith("/"): command(m)
-                        elif m.get("chat",{}).get("type")=="private": send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
+                        elif m.get("chat",{}).get("type")=="private":
+                            uid=m.get("from",{}).get("id"); task_id=PENDING_TASK_PROOFS.pop(uid,None)
+                            if task_id:
+                                try:
+                                    submission_id=db.submit_task(task_id,uid,m.get("text",""))
+                                    send(m["chat"]["id"],"✅ Comprovação enviada! A equipe vai analisar sua tarefa.")
+                                    for aid in ADMIN_IDS:
+                                        send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(m.get('text','')[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                                except ValueError as e: send(m["chat"]["id"],escape(str(e)))
+                            else: send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
                     elif "callback_query" in update: callback(update["callback_query"])
                 except Exception: log.exception("Erro ao processar atualização %s",update.get("update_id"))
         except KeyboardInterrupt: break
