@@ -159,6 +159,18 @@ def active_tasks():
     with connect() as db:
         return db.execute("SELECT * FROM tasks WHERE active=1 ORDER BY id DESC").fetchall()
 
+def active_tasks_for_user(user_id):
+    with connect() as db:
+        return db.execute("""
+            SELECT t.* FROM tasks t
+            WHERE t.active=1
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_submissions s
+                  WHERE s.task_id=t.id AND s.user_id=? AND s.status='approved'
+              )
+            ORDER BY t.id DESC
+        """,(user_id,)).fetchall()
+
 def submit_task(task_id,user_id,proof=""):
     with connect() as db:
         task=db.execute("SELECT * FROM tasks WHERE id=? AND active=1",(task_id,)).fetchone()
