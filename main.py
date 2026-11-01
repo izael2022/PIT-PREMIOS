@@ -91,7 +91,7 @@ def history(chat,uid):
         lines.append(f"{icon} <b>{sign}{r['amount']} pts</b> — {escape(r['reason'][:50])}\n<i>{r['created_at']}</i>")
     send(chat,"\n".join(lines),back())
 def redeem_help(chat):
-    send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\\n━━━━━━━━━━━━━━━━━━\\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
+    send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\n━━━━━━━━━━━━━━━━━━\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
 
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA</b>\n━━━━━━━━━━━━━━━━━━\n💰 Pontos: acumule participando das ações.\n🎁 Check-in: bônus uma vez por dia.\n🚀 Indicações: compartilhe seu link pessoal.\n🏆 Ranking: veja os participantes com mais pontos.\n🎟️ Resgates: /resgatar PONTOS DESCRIÇÃO. Mínimo {MIN_REDEEM_POINTS} pontos.\n💎 VIP: ativação pela administração.",back())
@@ -114,22 +114,22 @@ def command(m):
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
     elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/broadcast","/usuario") and admin(uid):
-        if cmd=="/admin": send(chat,"/stats\n/addpoints ID QUANTIDADE\n/setvip ID on|off\n/pedidos")
+        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO</b>\n/stats\n/usuario ID\n/addpoints ID QUANTIDADE\n/setvip ID on|off\n/pedidos\n/broadcast MENSAGEM")
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); u=db.get_user(target)
             if not u: send(chat,"Usuário não encontrado."); return
             pr=db.get_profile(target)
             vip="Ativo" if u["is_vip"] else "Inativo"
-            send(chat,f"👤 <b>FICHA DO MEMBRO</b>\\nID: <code>{target}</code>\\nNome: {escape(u['first_name'] or 'Sem nome')}\\nUsername: @{escape(u['username'] or 'não informado')}\\nSaldo: <b>{pr['points']} pontos</b>\\nIndicações: {pr['referrals']}\\nVIP: {vip}\\nCadastro: {pr['created_at']}")
+            send(chat,f"👤 <b>FICHA DO MEMBRO</b>\nID: <code>{target}</code>\nNome: {escape(u['first_name'] or 'Sem nome')}\nUsername: @{escape(u['username'] or 'não informado')}\nSaldo: <b>{pr['points']} pontos</b>\nIndicações: {pr['referrals']}\nVIP: {vip}\nCadastro: {pr['created_at']}")
         elif cmd=="/broadcast":
             if len(p)<2 or not p[1].strip(): send(chat,"Use /broadcast SUA MENSAGEM"); return
             message=escape(t.split(maxsplit=1)[1][:3500])
             sent=0; failed=0
             for target in db.all_user_ids():
-                try: send(target,"📢 <b>COMUNICADO PIT PRÊMIOS</b>\\n\\n"+message); sent+=1
+                try: send(target,"📢 <b>COMUNICADO PIT PRÊMIOS</b>\n\n"+message); sent+=1
                 except Exception: failed+=1
-            send(chat,f"📣 <b>Disparo finalizado</b>\\nEnviados: {sent}\\nFalhas: {failed}")
+            send(chat,f"📣 <b>Disparo finalizado</b>\nEnviados: {sent}\nFalhas: {failed}")
         elif cmd=="/stats":
             s=db.stats(); send(chat,f"📊 Usuários: {s['users']}\nPontos: {s['points']}\nResgates pendentes: {s['pending']}")
         elif cmd=="/addpoints":
