@@ -24,10 +24,39 @@ def send(chat, text, keyboard=None):
     if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
     return api("sendMessage",d)
 
+BANNER_BYTES=None
+
 def send_photo(chat,photo,caption,keyboard=None):
-    data={"chat_id":chat,"photo":photo,"caption":caption,"parse_mode":"HTML"}
-    if keyboard: data["reply_markup"]={"inline_keyboard":keyboard}
-    return api("sendPhoto",data)
+    global BANNER_BYTES
+    try:
+        if BANNER_BYTES is None:
+            req=urllib.request.Request(photo,headers={"User-Agent":"PIT-PREMIOS-Bot/1.0"})
+            with urllib.request.urlopen(req,timeout=20) as response:
+                BANNER_BYTES=response.read()
+        boundary="----PITPREMIOSBoundary7MA4YWxk"
+        fields={"chat_id":str(chat),"caption":caption,"parse_mode":"HTML"}
+        if keyboard:
+            fields["reply_markup"]=json.dumps({"inline_keyboard":keyboard},ensure_ascii=False)
+        body=bytearray()
+        for name,value in fields.items():
+            body.extend(("--"+boundary+"\\r\\n").encode())
+            body.extend(('Content-Disposition: form-data; name="'+name+'"\\r\\n\\r\\n').encode())
+            body.extend(str(value).encode("utf-8")); body.extend(b"\\r\\n")
+        body.extend(("--"+boundary+"\\r\\n").encode())
+        body.extend(b'Content-Disposition: form-data; name="photo"; filename="pit_premios_banner.jpg"\\r\\n')
+        body.extend(b"Content-Type: image/jpeg\\r\\n\\r\\n")
+        body.extend(BANNER_BYTES); body.extend(b"\\r\\n")
+        body.extend(("--"+boundary+"--\\r\\n").encode())
+        req=urllib.request.Request(API+"sendPhoto",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
+        with urllib.request.urlopen(req,timeout=40) as response:
+            result=json.loads(response.read())
+        if not result.get("ok"):
+            raise RuntimeError(str(result))
+        return result.get("result")
+    except Exception:
+        log.exception("Não foi possível enviar o banner; enviando boas-vindas em texto.")
+        fallback="🐾 <b>PIT PRÊMIOS</b>\\n\\n"+caption
+        return send(chat,fallback,keyboard)
 
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
