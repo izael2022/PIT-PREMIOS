@@ -1,1 +1,2 @@
-# PIT PRÊMIOS usa apenas a biblioteca padrão do Python.\n# Nenhuma dependência externa é necessária.\n
+# PIT PRÊMIOS usa apenas a biblioteca padrão do Python.
+# Nenhuma dependência externa é necessária.
