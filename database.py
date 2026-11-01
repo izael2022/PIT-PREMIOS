@@ -635,10 +635,11 @@ def fraud_profile(referrer_id,limit=10):
                  WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')) AS valid,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='pending') AS pending,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='rejected') AS rejected,
+                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status IN ('approved','rejected')) AS reviewed,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND created_at>=datetime('now','-30 days')) AS flagged_30d,
                 (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')) AS last_10m,
                 (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')) AS last_24h
-        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
+        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
         recent=db.execute("""
             SELECT u.user_id,u.first_name,u.username,u.created_at,
                    COALESCE(rr.status,'approved') AS status,
@@ -659,6 +660,8 @@ def fraud_profile(referrer_id,limit=10):
             score+=25; reasons.append(f"{st['rejected']} indicações rejeitadas (+25)")
         if st["rejected"]>=5:
             score+=15; reasons.append("Cinco ou mais indicações rejeitadas (+15)")
+        if st["reviewed"]>=4 and st["rejected"] / st["reviewed"] >= 0.5:
+            score+=20; reasons.append(f"Taxa de rejeição de {st['rejected'] / st['reviewed']:.0%} em indicações analisadas (+20)")
         if st["flagged_30d"]>=3:
             score+=15; reasons.append(f"{st['flagged_30d']} alertas nos últimos 30 dias (+15)")
         score=min(100,score)
