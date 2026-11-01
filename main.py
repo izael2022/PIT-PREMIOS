@@ -51,24 +51,29 @@ def send_photo(chat,photo,caption,keyboard=None):
         if keyboard:
             fields["reply_markup"]=json.dumps({"inline_keyboard":keyboard},ensure_ascii=False)
         body=bytearray()
+        crlf=b"\r\n"
         for name,value in fields.items():
-            body.extend(("--"+boundary+"\\r\\n").encode())
-            body.extend(('Content-Disposition: form-data; name="'+name+'"\\r\\n\\r\\n').encode())
-            body.extend(str(value).encode("utf-8")); body.extend(b"\\r\\n")
-        body.extend(("--"+boundary+"\\r\\n").encode())
-        body.extend(b'Content-Disposition: form-data; name="photo"; filename="pit_premios_banner.jpg"\\r\\n')
-        body.extend(b"Content-Type: image/jpeg\\r\\n\\r\\n")
-        body.extend(BANNER_BYTES); body.extend(b"\\r\\n")
-        body.extend(("--"+boundary+"--\\r\\n").encode())
+            body.extend(("--"+boundary).encode("ascii")+crlf)
+            body.extend(('Content-Disposition: form-data; name="'+name+'"').encode("utf-8")+crlf+crlf)
+            body.extend(str(value).encode("utf-8")+crlf)
+        body.extend(("--"+boundary).encode("ascii")+crlf)
+        body.extend(b'Content-Disposition: form-data; name="photo"; filename="pit_premios_banner.jpg"'+crlf)
+        body.extend(b"Content-Type: image/jpeg"+crlf+crlf)
+        body.extend(BANNER_BYTES+crlf)
+        body.extend(("--"+boundary+"--").encode("ascii")+crlf)
         req=urllib.request.Request(API+"sendPhoto",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
-        with urllib.request.urlopen(req,timeout=40) as response:
-            result=json.loads(response.read())
+        try:
+            with urllib.request.urlopen(req,timeout=40) as response:
+                result=json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            detail=e.read().decode("utf-8","replace")[:1000]
+            raise RuntimeError(f"Telegram sendPhoto HTTP {e.code}: {detail}") from e
         if not result.get("ok"):
             raise RuntimeError(str(result))
         return result.get("result")
     except Exception:
         log.exception("Não foi possível enviar o banner; enviando boas-vindas em texto.")
-        fallback="🐾 <b>PIT PRÊMIOS</b>\\n\\n"+caption
+        fallback="🐾 <b>PIT PRÊMIOS</b>\n\n"+caption
         return send(chat,fallback,keyboard)
 
 def admin(uid): return uid in ADMIN_IDS
