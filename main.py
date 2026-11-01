@@ -151,6 +151,7 @@ def toprefs(chat):
 def missions(chat,uid):
     p=db.get_profile(uid); state="Disponível" if p["last_daily"]!=db.today() else "Concluída hoje"
     milestones=db.referral_milestone_status(uid)
+    vip_goals=db.referral_vip_status(uid)
     lines=["🎯 <b>MISSÕES DO PIT</b>","━━━━━━━━━━━━━━━━━━",f"🎁 Check-in diário — <i>{state}</i>",f"🚀 Indicações válidas: <b>{p['referrals']}</b>","", "🏆 <b>METAS DE INDICAÇÃO</b>"]
     for item in milestones:
         status="Resgatar bônus" if item["reached"] and not item["claimed"] else ("✅ Recebido" if item["claimed"] else "🔒 Em andamento")
@@ -158,6 +159,12 @@ def missions(chat,uid):
     kb=[[btn("🎁 Fazer check-in","daily"),btn("🚀 Convidar","invite")]]
     for item in milestones:
         if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar meta de {item['milestone']} amigo(s)","milestone:"+str(item["milestone"]))])
+    lines.extend(["","💎 <b>METAS DO CLUBE VIP</b>"])
+    for item in vip_goals:
+        status="Resgatar VIP" if item["reached"] and not item["claimed"] else ("✅ Resgatado" if item["claimed"] else "🔒 Em andamento")
+        lines.append(f"{item['milestone']} amigos — VIP por {item['days']} dias — <b>{status}</b>")
+        if item["reached"] and not item["claimed"]:
+            kb.append([btn(f"💎 Resgatar VIP de {item['days']} dias","vipmilestone:"+str(item["milestone"]))])
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
 def task_list(chat,uid):
@@ -352,6 +359,11 @@ def callback(c):
         try:
             milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
             send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
+        except (ValueError,IndexError) as e: send(chat,escape(str(e)))
+    elif data.startswith("vipmilestone:"):
+        try:
+            milestone=int(data.split(":")[1]); days,expiry=db.claim_referral_vip(uid,milestone)
+            send(chat,f"💎 <b>PARABÉNS! VIP ATIVADO!</b>\nVocê ganhou <b>{days} dias de Clube VIP</b>.\nValidade até: <b>{escape(expiry)}</b>.")
         except (ValueError,IndexError) as e: send(chat,escape(str(e)))
     elif data.startswith("taskdisable:"):
         if not admin(uid): return
