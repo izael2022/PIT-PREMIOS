@@ -321,17 +321,19 @@ def add_points(uid,amount,reason):
 
 def daily_claim(uid,reward):
     from datetime import datetime, timezone, timedelta
+    rewards=[3,4,5,6,7,8,10]
     now=datetime.now(timezone(timedelta(hours=-3))); current=now.date().isoformat()
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row=db.execute("SELECT last_daily,daily_streak FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["last_daily"]==current:
-            db.rollback(); return False,(row["daily_streak"] if row else 0)
+            db.rollback(); return False,(row["daily_streak"] if row else 0),0
         yesterday=(now.date()-timedelta(days=1)).isoformat()
         streak=row["daily_streak"]+1 if row["last_daily"]==yesterday else 1
-        db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,reward,uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,reward,"Bônus diário"))
-        db.commit(); return True,streak
+        earned=rewards[(streak-1)%len(rewards)]
+        db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,earned,uid))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%7+1} da sequência"))
+        db.commit(); return True,streak,earned
 
 def ranking(limit=10):
     with connect() as db: return db.execute("SELECT user_id,first_name,username,points FROM users ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
