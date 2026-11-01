@@ -626,8 +626,10 @@ def fraud_profile(referrer_id,limit=10):
                  WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')) AS valid,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='pending') AS pending,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='rejected') AS rejected,
-                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND created_at>=datetime('now','-30 days')) AS flagged_30d
-        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
+                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND created_at>=datetime('now','-30 days')) AS flagged_30d,
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')) AS last_10m,
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')) AS last_24h
+        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
         recent=db.execute("""
             SELECT u.user_id,u.first_name,u.username,u.created_at,
                    COALESCE(rr.status,'approved') AS status,
@@ -636,7 +638,23 @@ def fraud_profile(referrer_id,limit=10):
             FROM users u LEFT JOIN referral_reviews rr ON rr.referred_user_id=u.user_id
             WHERE u.referred_by=? ORDER BY u.created_at DESC,u.user_id DESC LIMIT ?
         """,(referrer_id,max(1,min(int(limit),20)))).fetchall()
-        return {"user":dict(user),"stats":dict(stats),"recent":[dict(x) for x in recent]}
+        st=dict(stats)
+        score=0; reasons=[]
+        if st["last_10m"]>=3:
+            score+=25; reasons.append(f"{st['last_10m']} cadastros em 10 minutos (+25)")
+        if st["last_24h"]>=8:
+            score+=20; reasons.append(f"{st['last_24h']} cadastros em 24 horas (+20)")
+        if st["pending"]>=3:
+            score+=15; reasons.append(f"{st['pending']} indicações pendentes (+15)")
+        if st["rejected"]>=2:
+            score+=25; reasons.append(f"{st['rejected']} indicações rejeitadas (+25)")
+        if st["rejected"]>=5:
+            score+=15; reasons.append("Cinco ou mais indicações rejeitadas (+15)")
+        if st["flagged_30d"]>=3:
+            score+=15; reasons.append(f"{st['flagged_30d']} alertas nos últimos 30 dias (+15)")
+        score=min(100,score)
+        level="alto" if score>=60 else "moderado" if score>=30 else "baixo"
+        return {"user":dict(user),"stats":st,"recent":[dict(x) for x in recent],"risk_score":score,"risk_level":level,"risk_reasons":reasons}
 
 def review_referral(rid,admin_id,approve):
     with connect() as db:
