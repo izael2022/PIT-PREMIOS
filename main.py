@@ -309,6 +309,11 @@ def help_page(chat):
 def command(m):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
+    if uid and not admin(uid):
+        block=db.get_account_block(uid)
+        if block:
+            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\n\\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\\nMotivo: "+escape(block["reason"])+"\\n\\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
+            return
     if cmd=="/start": start(m)
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking_menu(chat)
@@ -356,8 +361,31 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes") and admin(uid):
-        if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear") and admin(uid):
+        if cmd=="/bloquear":
+            if len(p)<3 or not p[1].isdigit() or not p[2].strip():
+                send(chat,"Use: /bloquear ID MOTIVO"); return
+            target=int(p[1])
+            if target in ADMIN_IDS:
+                send(chat,"⛔ Por segurança, não é permitido bloquear uma conta de administrador."); return
+            reason=t.split(maxsplit=2)[2]
+            if not db.block_account(target,uid,reason):
+                send(chat,"Usuário não encontrado no banco de dados."); return
+            try: send(target,"🚫 <b>SUA CONTA FOI BLOQUEADA</b>\\nMotivo: "+escape(reason)+"\\nEntre em contato com a equipe se precisar contestar.")
+            except Exception: log.warning("Não foi possível notificar usuário bloqueado %s",target)
+            send(chat,f"✅ Conta <code>{target}</code> bloqueada. Cadastro, saldo e histórico foram preservados.")
+        elif cmd=="/desbloquear":
+            if len(p)<2 or not p[1].isdigit():
+                send(chat,"Use: /desbloquear ID"); return
+            target=int(p[1])
+            if target in ADMIN_IDS:
+                send(chat,"⛔ Administradores não podem ser alterados por este comando."); return
+            if not db.unblock_account(target,uid):
+                send(chat,"Esta conta não está bloqueada."); return
+            try: send(target,"✅ <b>SUA CONTA FOI DESBLOQUEADA</b>\\nVocê já pode voltar a utilizar o PIT PRÊMIOS.")
+            except Exception: log.warning("Não foi possível notificar usuário desbloqueado %s",target)
+            send(chat,f"✅ Conta <code>{target}</code> desbloqueada. O saldo e todo o histórico continuam preservados.")
+        elif cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif cmd=="/risco":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /risco ID_DO_INDICADOR"); return
@@ -436,13 +464,18 @@ def command(m):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
+    if uid and not admin(uid):
+        block=db.get_account_block(uid)
+        if block:
+            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+            return
     navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
     if (data in navigation_actions or data.startswith("task:") or data.startswith("history:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
