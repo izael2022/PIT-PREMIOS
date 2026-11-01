@@ -91,6 +91,7 @@ def menu():
             [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
             [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
+            [btn("🎁 Loja de prêmios","shop")],
             [btn("📜 Extrato","history"),btn("🔔 Notificações","notifications")],
             [btn("❓ Ajuda","help")],
             [btn("📋 Tarefas disponíveis","tasks")]]
@@ -100,6 +101,7 @@ def admin_menu():
     return [[btn("📊 Estatísticas","admin:stats"),btn("👤 Consultar usuário","admin:user")],
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
+            [btn("🎁 Pedidos da loja","admin:rewardorders")],
             [btn("🛡️ Análise antifraude","admin:fraud")],
             [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
@@ -201,6 +203,21 @@ def task_list(chat,uid):
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
 
+
+def shop(chat,uid):
+    rows=db.active_rewards()
+    if not rows:
+        send(chat,"🎁 <b>LOJA DE PRÊMIOS</b>\\n\\nAinda não há prêmios disponíveis. Volte mais tarde!",back())
+        return
+    lines=["🎁 <b>LOJA DE PRÊMIOS</b>","━━━━━━━━━━━━━━━━━━","Escolha o prêmio que deseja solicitar:"]
+    kb=[]
+    for r in rows:
+        stock="Estoque ilimitado" if r["stock"]<0 else f"Estoque: {r['stock']}"
+        lines.append(f"\\n<b>{escape(r['title'])}</b> — {r['points_cost']:,} pontos\\n{escape(r['description'])}\\n📦 {stock}")
+        kb.append([btn(f"🎁 Solicitar: {r['title'][:24]} ({r['points_cost']} pts)","shopbuy:"+str(r["id"]))])
+    kb.append([btn("⬅️ Menu principal","home")])
+    send(chat,"\\n".join(lines),kb)
+
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows: lines.append("Nenhuma movimentação registrada.")
@@ -228,6 +245,17 @@ def command(m):
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking_menu(chat)
     elif cmd=="/diario": daily(chat,uid)
+    elif cmd=="/novopremio" and admin(uid):
+        raw=t.split(maxsplit=1)
+        if len(raw)<2:
+            send(chat,"Use: /novopremio PONTOS | ESTOQUE | TITULO | DESCRICAO\\nUse -1 no estoque para ilimitado."); return
+        parts=[x.strip() for x in raw[1].split("|",3)]
+        if len(parts)<4 or not parts[0].isdigit() or not parts[1].lstrip("-").isdigit():
+            send(chat,"Use: /novopremio PONTOS | ESTOQUE | TITULO | DESCRICAO"); return
+        try:
+            rid=db.create_reward(parts[2],parts[3],int(parts[0]),int(parts[1]))
+            send(chat,f"✅ Prêmio #{rid} cadastrado na loja!")
+        except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/novatarefa" and admin(uid):
         raw=t.split(maxsplit=1)
         if len(raw)<2 or "|" not in raw[1]:
@@ -260,7 +288,7 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio") and admin(uid):
         if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
@@ -302,14 +330,14 @@ def command(m):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications","ranking:weekly","ranking:general"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications","ranking:weekly","ranking:general","shop"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -322,6 +350,12 @@ def callback(c):
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
         elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu())
+        elif action=="rewardorders":
+            rows=db.pending_reward_orders()
+            if not rows: send(chat,"🎁 Nenhum pedido da loja aguardando análise.",admin_menu()); return
+            for r in rows:
+                kb=[[btn("✅ Aprovar pedido","rewardreview:"+str(r["id"])+":yes"),btn("❌ Rejeitar","rewardreview:"+str(r["id"])+":no")]]
+                send(chat,f"🎁 <b>PEDIDO DA LOJA #{r['id']}</b>\\nPrêmio: {escape(r['title'])}\\nUsuário: <code>{r['user_id']}</code>\\nPontos: {r['points_spent']}",kb)
         elif action=="orders":
             rows=db.pending_redemptions()
             if not rows: send(chat,"Nenhum resgate pendente.",admin_menu())
@@ -368,6 +402,16 @@ def callback(c):
         db.set_notifications(uid,False); notifications_page(chat,uid)
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
+    elif data=="shop": shop(chat,uid)
+    elif data.startswith("shopbuy:"):
+        try:
+            reward_id=int(data.split(":",1)[1])
+            order_id=db.create_reward_order(uid,reward_id)
+            send(chat,f"✅ Seu pedido da loja foi enviado!\\nNúmero: <b>#{order_id}</b>\\nOs pontos foram reservados até a análise da equipe.",back())
+            for aid in ADMIN_IDS:
+                try: send(aid,f"🎁 <b>NOVO PEDIDO DA LOJA #{order_id}</b>\\nUsuário: <code>{uid}</code>",[[btn("Revisar pedidos da loja","admin:rewardorders")]])
+                except Exception: log.exception("Falha ao avisar admin sobre pedido da loja")
+        except (ValueError,IndexError) as e: send(chat,escape(str(e)),back())
     elif data.startswith("task:"):
         try:
             task_id=int(data.split(":")[1])
@@ -445,6 +489,15 @@ def callback(c):
             if approved: notify_user(result["user_id"],f"🎉 <b>Parabéns! Seu saque foi aprovado!</b>\n\nO pagamento de <b>R$ {result['amount_cents']/100:.2f}</b> foi enviado para sua chave Pix. Obrigado por participar do PIT PRÊMIOS! 🐾")
             else: notify_user(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
         except Exception: log.exception("Falha ao avisar usuário sobre saque")
+    elif data.startswith("rewardreview:"):
+        if not admin(uid): return
+        _,rid,decision=data.split(":")
+        result=db.review_reward_order(int(rid),uid,decision=="yes")
+        if not result: send(chat,"Este pedido já foi analisado."); return
+        status="aprovado" if decision=="yes" else "rejeitado; os pontos foram devolvidos e o estoque restaurado"
+        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\\n\\nStatus: {status}","parse_mode":"HTML"})
+        try: notify_user(result["user_id"],f"🎁 Seu pedido de recompensa #{rid} foi {status}.")
+        except Exception: log.exception("Falha ao avisar usuário sobre pedido da loja")
     elif data.startswith("review:"):
         if not admin(uid): return
         _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes")
