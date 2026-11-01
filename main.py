@@ -248,12 +248,16 @@ def my_payouts(chat,uid):
     lines=["💸 <b>MEUS SAQUES</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows:
         lines.append("Você ainda não solicitou nenhum saque.")
-    labels={"pending":"⏳ Aguardando análise","approved":"✅ Pagamento confirmado","rejected":"❌ Rejeitado — pontos devolvidos"}
+    labels={"pending":"⏳ Aguardando análise","approved":"✅ Pagamento confirmado","rejected":"❌ Rejeitado — pontos devolvidos","cancelled":"🚫 Cancelado — pontos devolvidos"}
+    kb=[]
     for row in rows:
         pix=row["pix_key"] or ""
         masked=(pix[:2]+"••••"+pix[-2:]) if len(pix)>6 else ("••••" if pix else "não informada")
         lines.append(f"\n<b>Saque #{row['id']}</b> — R$ {row['amount_cents']/100:.2f}\n💰 {row['points']:,} pontos\nStatus: <b>{labels.get(row['status'],row['status'])}</b>\nChave {escape(row['pix_key_type'])}: <code>{escape(masked)}</code>\nSolicitado: {row['created_at']}")
-    send(chat,"\n".join(lines),[[btn("⬅️ Menu principal","home")]])
+        if row["status"]=="pending":
+            kb.append([btn("🚫 Cancelar saque #"+str(row["id"]),"payoutcancel:"+str(row["id"]))])
+    kb.append([btn("⬅️ Menu principal","home")])
+    send(chat,"\n".join(lines),kb)
 
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
@@ -530,6 +534,16 @@ def callback(c):
             if decision=="yes": notify_user(result["referrer_id"],"🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira.")
             else: notify_user(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
         except Exception: log.exception("Falha ao notificar resultado da análise")
+    elif data.startswith("payoutcancel:"):
+        try:
+            payout_id=int(data.split(":",1)[1])
+            result=db.cancel_payout_request(uid,payout_id)
+            if not result:
+                send(chat,"Este saque não está mais pendente ou não pertence à sua conta. Atualize a tela Meus saques.")
+            else:
+                send(chat,f"✅ <b>Saque #{payout_id} cancelado.</b>\n\nOs {result['points']:,} pontos foram devolvidos à sua carteira.",[[btn("💸 Ver meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+        except (ValueError,IndexError):
+            send(chat,"Não foi possível cancelar este saque.")
     elif data.startswith("payout:"):
         if not admin(uid): return
         _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes")
