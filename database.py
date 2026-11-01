@@ -303,6 +303,7 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             elif referral_reward>0:
                 db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
                 db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
+                db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(referrer,referral_reward,"referral"))
         db.commit(); return True,referrer,review_id
 def get_user(uid):
     with connect() as db:
@@ -322,7 +323,9 @@ def add_points(uid,amount,reason):
             db.execute("INSERT INTO users(user_id) VALUES(?)",(uid,))
         elif row["points"]+amount<0: raise ValueError("Saldo insuficiente.")
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(amount,uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,amount,reason)); db.commit()
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,amount,reason))
+        if amount>0: db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,amount,"admin_adjustment"))
+        db.commit()
 
 def daily_claim(uid,reward):
     from datetime import datetime, timezone, timedelta
@@ -338,6 +341,7 @@ def daily_claim(uid,reward):
         earned=rewards[(streak-1)%len(rewards)]
         db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,earned,uid))
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%7+1} da sequência"))
+        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,earned,"daily_checkin"))
         db.commit(); return True,streak,earned
 
 def ranking(limit=10):
@@ -420,6 +424,7 @@ def claim_referral_milestone(uid,milestone):
             db.rollback(); raise ValueError("Essa recompensa já foi recebida.")
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(bonuses[milestone],uid))
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,bonuses[milestone],f"Bônus da meta de {milestone} indicações"))
+        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,bonuses[milestone],"referral_milestone"))
         db.commit(); return bonuses[milestone]
 
 def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
@@ -473,4 +478,5 @@ def review_referral(rid,admin_id,approve):
         if approve:
             db.execute("UPDATE users SET points=points+100 WHERE user_id=?",(row["referrer_id"],))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],100,f"Indicação aprovada #{rid}"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],100,"referral_approved"))
         db.commit(); return dict(row)
