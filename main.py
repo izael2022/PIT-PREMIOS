@@ -227,8 +227,8 @@ def my_reward_orders(chat,uid):
         lines.append("Você ainda não solicitou nenhum prêmio.")
     for r in rows:
         status={"pending":"⏳ Aguardando análise","approved":"✅ Aprovado","rejected":"❌ Rejeitado"}.get(r["status"],r["status"])
-        lines.append(f"\\n<b>Pedido #{r['id']}</b> — {escape(r['title'])}\\n💰 {r['points_spent']} pontos\\nStatus: {status}\\nData: {r['created_at']}")
-    send(chat,"\\n".join(lines),[[btn("🎁 Voltar à loja","shop")],[btn("⬅️ Menu principal","home")]])
+        lines.append(f"\n<b>Pedido #{r['id']}</b> — {escape(r['title'])}\n💰 {r['points_spent']} pontos\nStatus: {status}\nData: {r['created_at']}")
+    send(chat,"\n".join(lines),[[btn("🎁 Voltar à loja","shop")],[btn("⬅️ Menu principal","home")]])
 
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
@@ -373,7 +373,7 @@ def callback(c):
                 if r["active"]: kb.append([btn("🗑️ Desativar "+label,"rewarddisable:"+str(r["id"]))])
                 else: kb.append([btn("🔒 "+label,"rewardinfo:"+str(r["id"]))])
             kb.append([btn("⬅️ Voltar ao painel","admin:back")])
-            send(chat,"🗂️ <b>GERENCIAR PRÊMIOS</b>\\nPrêmios inativos e pedidos antigos permanecem salvos no histórico.",kb)
+            send(chat,"🗂️ <b>GERENCIAR PRÊMIOS</b>\nPrêmios inativos e pedidos antigos permanecem salvos no histórico.",kb)
         elif action=="rewardorders":
             rows=db.pending_reward_orders()
             if not rows: send(chat,"🎁 Nenhum pedido da loja aguardando análise.",admin_menu()); return
