@@ -89,7 +89,7 @@ def btn(label,data): return {"text":label,"callback_data":data}
 def menu():
     return [[btn("👤 Meu perfil","profile"),btn("💰 Carteira","wallet")],
             [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
-            [btn("🚀 Convidar","invite"),btn("👥 Meus convidados","myrefs")],\n            [btn("🏆 Ranking","ranking")],
+            [btn("🚀 Convidar","invite"),btn("👥 Meus convidados","myrefs")],
             [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
             [btn("🎁 Loja de prêmios","shop"),btn("📦 Meus pedidos","myorders")],
             [btn("📜 Extrato","history"),btn("💸 Meus saques","mypayouts")],
