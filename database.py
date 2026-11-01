@@ -376,9 +376,10 @@ def top_referrals(limit=10):
     with connect() as db:
         return db.execute("SELECT u.user_id,u.first_name,COUNT(x.user_id) referrals FROM users u JOIN users x ON x.referred_by=u.user_id LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE rr.status IS NULL OR rr.status='approved' GROUP BY u.user_id ORDER BY referrals DESC LIMIT ?",(limit,)).fetchall()
 
-def history(uid,limit=8):
+def history(uid,limit=8,offset=0):
+    limit=max(1,min(int(limit),50)); offset=max(0,int(offset))
     with connect() as db:
-        return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
+        return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
 def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False):
     with connect() as db:
