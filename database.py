@@ -492,6 +492,22 @@ def user_payout_requests(user_id,limit=10):
             ORDER BY id DESC LIMIT ?
         """,(user_id,limit)).fetchall()
 
+def cancel_payout_request(user_id,payout_id):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM payout_requests WHERE id=? AND user_id=? AND status='pending'",(payout_id,user_id)).fetchone()
+        if not row:
+            db.rollback()
+            return None
+        db.execute("UPDATE payout_requests SET status='cancelled',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND status='pending'",(payout_id,user_id))
+        if db.total_changes < 1:
+            db.rollback()
+            return None
+        db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points"],user_id))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,row["points"],f"Cancelamento do saque #{payout_id}"))
+        db.commit()
+        return dict(row)
+
 def review_payout(rid,admin_id,approve):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
