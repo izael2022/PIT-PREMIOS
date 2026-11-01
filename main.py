@@ -356,8 +356,21 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco") and admin(uid):
         if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
+        elif cmd=="/risco":
+            if len(p)<2 or not p[1].isdigit():
+                send(chat,"Use: /risco ID_DO_INDICADOR"); return
+            profile=db.fraud_profile(int(p[1]))
+            if not profile:
+                send(chat,"Indicador não encontrado."); return
+            u=profile["user"]; st=profile["stats"]
+            lines=[f"🛡️ <b>HISTÓRICO ANTIFRAUDE</b>","━━━━━━━━━━━━━━━━━━",f"Indicador: <code>{u['user_id']}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')} (@{escape(u['username'] or 'sem username')})","","📊 <b>RESUMO</b>",f"Indicações totais: <b>{st['total']}</b>",f"Indicações válidas: <b>{st['valid']}</b>",f"Em análise: <b>{st['pending']}</b>",f"Rejeitadas: <b>{st['rejected']}</b>",f"Alertas nos últimos 30 dias: <b>{st['flagged_30d']}</b>","","🕒 <b>ÚLTIMAS INDICAÇÕES</b>"]
+            for item in profile["recent"]:
+                state={"approved":"Aprovada","pending":"Pendente","rejected":"Rejeitada"}.get(item["status"],item["status"])
+                lines.append(f"• <code>{item['user_id']}</code> — {state} — {item['created_at']}")
+                if item["risk_reason"]: lines.append("  ⚠️ "+escape(item["risk_reason"][:140]))
+            send(chat,"\n".join(lines),admin_menu())
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); details=db.admin_user_details(target)
