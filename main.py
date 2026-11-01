@@ -365,7 +365,14 @@ def command(m):
             if not profile:
                 send(chat,"Indicador não encontrado."); return
             u=profile["user"]; st=profile["stats"]
-            lines=[f"🛡️ <b>HISTÓRICO ANTIFRAUDE</b>","━━━━━━━━━━━━━━━━━━",f"Indicador: <code>{u['user_id']}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')} (@{escape(u['username'] or 'sem username')})","","📊 <b>RESUMO</b>",f"Indicações totais: <b>{st['total']}</b>",f"Indicações válidas: <b>{st['valid']}</b>",f"Em análise: <b>{st['pending']}</b>",f"Rejeitadas: <b>{st['rejected']}</b>",f"Alertas nos últimos 30 dias: <b>{st['flagged_30d']}</b>","","🕒 <b>ÚLTIMAS INDICAÇÕES</b>"]
+            score=profile["risk_score"]; level=profile["risk_level"]
+            score_icon="🔴" if level=="alto" else "🟡" if level=="moderado" else "🟢"
+            lines=[f"🛡️ <b>HISTÓRICO ANTIFRAUDE</b>","━━━━━━━━━━━━━━━━━━",f"Indicador: <code>{u['user_id']}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')} (@{escape(u['username'] or 'sem username')})","",f"{score_icon} <b>PONTUAÇÃO DE RISCO: {score}/100 — {level.upper()}</b>","<i>Indicador de atenção; não comprova fraude nem bloqueia automaticamente.</i>"]
+            if profile["risk_reasons"]:
+                lines.extend(["","⚠️ <b>FATORES QUE AUMENTARAM O RISCO</b>"]+[f"• {escape(reason)}" for reason in profile["risk_reasons"]])
+            else:
+                lines.append("\nNenhum dos critérios de risco configurados foi atingido.")
+            lines.extend(["","📊 <b>RESUMO</b>",f"Indicações totais: <b>{st['total']}</b>",f"Indicações válidas: <b>{st['valid']}</b>",f"Em análise: <b>{st['pending']}</b>",f"Rejeitadas: <b>{st['rejected']}</b>",f"Cadastros em 10 min: <b>{st['last_10m']}</b>",f"Cadastros em 24 horas: <b>{st['last_24h']}</b>",f"Alertas nos últimos 30 dias: <b>{st['flagged_30d']}</b>","","🕒 <b>ÚLTIMAS INDICAÇÕES</b>"])
             for item in profile["recent"]:
                 state={"approved":"Aprovada","pending":"Pendente","rejected":"Rejeitada"}.get(item["status"],item["status"])
                 lines.append(f"• <code>{item['user_id']}</code> — {state} — {item['created_at']}")
