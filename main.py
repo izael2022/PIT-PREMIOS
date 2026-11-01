@@ -23,10 +23,14 @@ def send(chat, text, keyboard=None):
     return api("sendMessage",d)
 
 def admin(uid): return uid in ADMIN_IDS
+def btn(label,data): return {"text":label,"callback_data":data}
 def menu():
-    return [[{"text":"💰 Meu saldo","callback_data":"balance"},{"text":"🏆 Ranking","callback_data":"ranking"}],
-            [{"text":"🎁 Bônus diário","callback_data":"daily"},{"text":"💎 VIP","callback_data":"vip"}],
-            [{"text":"📤 Como resgatar","callback_data":"help_redeem"}]]
+    return [[btn("👤 Meu perfil","profile"),btn("💰 Carteira","wallet")],
+            [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
+            [btn("🚀 Convidar","invite"),btn("🏆 Ranking","ranking")],
+            [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
+            [btn("📜 Extrato","history"),btn("❓ Ajuda","help")]]
+def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
@@ -35,8 +39,10 @@ def start(m):
     if created and refid and POINTS_PER_REFERRAL:
         try: send(refid,f"🎉 Você ganhou {POINTS_PER_REFERRAL} pontos por uma indicação!")
         except Exception: log.exception("Falha ao notificar indicador")
-    me=api("getMe")
-    send(chat,"🐾 <b>Bem-vindo ao PIT PRÊMIOS!</b>\nAcumule pontos e troque por recompensas.\n\nSeu link: <code>https://t.me/{0}?start={1}</code>".format(me["username"],u["id"]),menu())
+    global BOT_USERNAME
+    pr=db.get_profile(u["id"])
+    first=escape((u.get("first_name") or "participante")[:40])
+    send(chat,f"🐾 <b>PIT PRÊMIOS</b>  <code>REWARDS CLUB</code>\nOlá, <b>{first}</b>! Bem-vindo à sua central de recompensas.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites confirmados: <b>{pr['referrals']}</b>\n🔥 Sequência diária: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
     u=db.get_user(uid); send(chat,f"💰 Saldo: <b>{u['points'] if u else 0} pontos</b>")
@@ -51,6 +57,31 @@ def ranking(chat):
 def daily(chat,uid):
     ok=db.daily_claim(uid,DAILY_REWARD)
     send(chat,f"🎉 Você recebeu {DAILY_REWARD} pontos!" if ok else "⏳ Você já coletou o bônus de hoje.")
+
+def profile(chat,uid):
+    p=db.get_profile(uid); u=db.get_user(uid)
+    name=escape((u["first_name"] or "Participante")[:40]); vip="ATIVO 💎" if u and u["is_vip"] else "COMUM"
+    send(chat,f"👤 <b>SEU PERFIL PIT</b>\n━━━━━━━━━━━━━━━━━━\nOlá, <b>{name}</b>\n🆔 ID: <code>{uid}</code>\n💰 Saldo: <b>{p['points']:,} pontos</b>\n👥 Amigos convidados: <b>{p['referrals']}</b>\n🔥 Sequência diária: <b>{p['daily_streak']} dias</b>\n💎 Categoria: <b>{vip}</b>\n📅 Membro desde: <code>{p['created_at'][:10]}</code>",back())
+def invite(chat,uid):
+    p=db.get_profile(uid); link=f"https://t.me/{BOT_USERNAME}?start={uid}"
+    send(chat,f"🚀 <b>SEU LINK EXCLUSIVO</b>\n━━━━━━━━━━━━━━━━━━\nConvide amigos. Quando uma pessoa nova iniciar o bot pelo seu link, a indicação será registrada.\n\n🔗 <code>{link}</code>\n👥 Indicações confirmadas: <b>{p['referrals']}</b>\n🎁 Recompensa por indicação: <b>{POINTS_PER_REFERRAL} pontos</b>",[[btn("🏆 Top indicadores","toprefs")],btn("⬅️ Menu principal","home")])
+def toprefs(chat):
+    rows=db.top_referrals(); lines=["🚀 <b>CAMPEÕES DE INDICAÇÃO</b>","━━━━━━━━━━━━━━━━━━"]
+    for i,r in enumerate(rows,1): lines.append(f"{i}. <b>{escape((r['first_name'] or str(r['user_id']))[:24])}</b> — {r['referrals']} amigos")
+    if not rows: lines.append("As primeiras indicações ainda estão por vir.")
+    send(chat,"\n".join(lines),back())
+def missions(chat,uid):
+    p=db.get_profile(uid); state="Disponível" if p["last_daily"]!=db.today() else "Concluída hoje"
+    send(chat,f"🎯 <b>MISSÕES DO PIT</b>\n━━━━━━━━━━━━━━━━━━\n✅ Criar sua conta — <i>Concluída</i>\n🎁 Coletar bônus diário — <i>{state}</i>\n🚀 Convidar amigos — <i>{p['referrals']} confirmado(s)</i>\n📜 Consultar extrato — <i>Disponível</i>\n\n<i>Novas campanhas serão anunciadas nesta área.</i>",[[btn("🎁 Fazer check-in","daily"),btn("🚀 Convidar","invite")],btn("⬅️ Menu principal","home")])
+def history(chat,uid):
+    rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
+    if not rows: lines.append("Nenhuma movimentação registrada.")
+    for r in rows:
+        sign="+" if r["amount"]>0 else ""; icon="🟢" if r["amount"]>0 else "🔴"
+        lines.append(f"{icon} <b>{sign}{r['amount']} pts</b> — {escape(r['reason'][:50])}\n<i>{r['created_at']}</i>")
+    send(chat,"\n".join(lines),back())
+def help_page(chat):
+    send(chat,f"❓ <b>CENTRAL DE AJUDA</b>\n━━━━━━━━━━━━━━━━━━\n💰 Pontos: acumule participando das ações.\n🎁 Check-in: bônus uma vez por dia.\n🚀 Indicações: compartilhe seu link pessoal.\n🏆 Ranking: veja os participantes com mais pontos.\n🎟️ Resgates: /resgatar PONTOS DESCRIÇÃO. Mínimo {MIN_REDEEM_POINTS} pontos.\n💎 VIP: ativação pela administração.",back())
 
 def command(m):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
@@ -96,7 +127,16 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    if data=="balance": balance(chat,uid)
+    if data=="home": api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.","parse_mode":"HTML","reply_markup":{"inline_keyboard":menu()}})
+    elif data=="profile": profile(chat,uid)
+    elif data=="wallet": balance(chat,uid)
+    elif data=="invite": invite(chat,uid)
+    elif data=="toprefs": toprefs(chat)
+    elif data=="missions": missions(chat,uid)
+    elif data=="history": history(chat,uid)
+    elif data=="help": help_page(chat)
+    elif data=="redeem_info": redeem_help(chat)
+    elif data=="balance": balance(chat,uid)
     elif data=="ranking": ranking(chat)
     elif data=="daily": daily(chat,uid)
     elif data=="vip":
@@ -112,7 +152,8 @@ def callback(c):
         except Exception: log.exception("Falha ao avisar usuário")
 
 def main():
-    db.init_db(); me=api("getMe"); log.warning("PIT PRÊMIOS iniciado como @%s",me.get("username"))
+    global BOT_USERNAME
+    db.init_db(); me=api("getMe"); BOT_USERNAME=me.get("username",""); log.warning("PIT PRÊMIOS iniciado como @%s",BOT_USERNAME)
     offset=None
     while True:
         try:
