@@ -1,4 +1,1 @@
-aiogram>=3.7,<4.0
-aiohttp>=3.9,<4.0
-aiosqlite>=0.20,<1.0
-python-dotenv>=1.0,<2.0
+# PIT PRÊMIOS usa apenas a biblioteca padrão do Python.\n# Nenhuma dependência externa é necessária.\n
