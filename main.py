@@ -356,7 +356,7 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes") and admin(uid):
         if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif cmd=="/risco":
             if len(p)<2 or not p[1].isdigit():
@@ -366,8 +366,10 @@ def command(m):
                 send(chat,"Indicador não encontrado."); return
             u=profile["user"]; st=profile["stats"]
             score=profile["risk_score"]; level=profile["risk_level"]
+            manual_hold=db.get_referral_manual_hold(int(p[1]))
             score_icon="🔴" if level=="alto" else "🟡" if level=="moderado" else "🟢"
             lines=[f"🛡️ <b>HISTÓRICO ANTIFRAUDE</b>","━━━━━━━━━━━━━━━━━━",f"Indicador: <code>{u['user_id']}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')} (@{escape(u['username'] or 'sem username')})","",f"{score_icon} <b>PONTUAÇÃO DE RISCO: {score}/100 — {level.upper()}</b>","<i>Indicador de atenção; não comprova fraude nem bloqueia automaticamente.</i>"]
+            lines.append("🛡️ Monitoramento manual: "+("ATIVO — "+escape(manual_hold["reason"]) if manual_hold else "inativo"))
             if profile["risk_reasons"]:
                 lines.extend(["","⚠️ <b>FATORES QUE AUMENTARAM O RISCO</b>"]+[f"• {escape(reason)}" for reason in profile["risk_reasons"]])
             else:
@@ -378,6 +380,15 @@ def command(m):
                 lines.append(f"• <code>{item['user_id']}</code> — {state} — {item['created_at']}")
                 if item["risk_reason"]: lines.append("  ⚠️ "+escape(item["risk_reason"][:140]))
             send(chat,"\n".join(lines),admin_menu())
+        elif cmd=="/monitorarindicacoes":
+            if len(p)<3 or not p[1].isdigit() or p[2].lower() not in ("on","off"):
+                send(chat,"Use: /monitorarindicacoes ID on\nOu: /monitorarindicacoes ID off\n\nON: novas indicações ficam pendentes para revisão. OFF: volta à análise automática."); return
+            target=int(p[1]); enabled=p[2].lower()=="on"
+            if not db.set_referral_manual_hold(target,enabled,uid):
+                send(chat,"Usuário não encontrado."); return
+            state="ATIVADO" if enabled else "DESATIVADO"
+            detail=("Todas as novas indicações desse usuário ficarão pendentes e não gerarão pontos até aprovação da equipe." if enabled else "As novas indicações voltarão a passar pelos critérios automáticos.")
+            send(chat,f"🛡️ <b>MONITORAMENTO MANUAL {state}</b>\nIndicador: <code>{target}</code>\n{detail}\n\nAs indicações antigas e os pontos já registrados não foram alterados.")
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
             target=int(p[1]); details=db.admin_user_details(target)
