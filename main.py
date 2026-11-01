@@ -94,7 +94,7 @@ def menu():
             [btn("🎁 Loja de prêmios","shop"),btn("📦 Meus pedidos","myorders")],
             [btn("📜 Extrato","history"),btn("🔔 Notificações","notifications")],
             [btn("❓ Ajuda","help")],
-            [btn("📋 Tarefas disponíveis","tasks")]]
+            [btn("📋 Tarefas disponíveis","tasks"),btn("📨 Minhas tarefas enviadas","mytasks")]]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def admin_menu():
@@ -204,6 +204,18 @@ def task_list(chat,uid):
     kb.append([btn("⬅️ Menu principal","home")])
     send(chat,"\n".join(lines),kb)
 
+
+
+def my_task_submissions(chat,uid):
+    rows=db.user_task_submissions(uid)
+    lines=["📋 <b>MINHAS TAREFAS ENVIADAS</b>","━━━━━━━━━━━━━━━━━━"]
+    if not rows:
+        lines.append("Você ainda não enviou comprovações de tarefas.")
+    labels={"pending":"⏳ Aguardando análise","approved":"✅ Aprovada","rejected":"❌ Rejeitada"}
+    for row in rows:
+        status=labels.get(row["status"],row["status"])
+        lines.append(f"\\n<b>#{row['id']} — {escape(row['title'])}</b>\\n🎁 Recompensa: {row['reward_points']} pontos\\nStatus: <b>{status}</b>\\nEnviada: {row['created_at']}")
+    send(chat,"\\n".join(lines),[[btn("📋 Ver tarefas disponíveis","tasks")],[btn("⬅️ Menu principal","home")]])
 
 def shop(chat,uid):
     rows=db.active_rewards()
@@ -349,7 +361,7 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications","ranking:weekly","ranking:general","shop","myorders"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -425,7 +437,7 @@ def callback(c):
     elif data=="notifications:off":
         db.set_notifications(uid,False); notifications_page(chat,uid)
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
-    elif data=="tasks": task_list(chat,uid)
+    elif data=="tasks": task_list(chat,uid)\n    elif data=="mytasks": my_task_submissions(chat,uid)
     elif data=="shop": shop(chat,uid)
     elif data=="myorders": my_reward_orders(chat,uid)
     elif data.startswith("shopbuy:"):
