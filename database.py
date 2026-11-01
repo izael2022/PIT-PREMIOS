@@ -393,9 +393,13 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             reasons=[]
             if is_bot: reasons.append("Conta do Telegram identificada como bot")
             recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
-            if recent>=3: reasons.append("Volume elevado de cadastros em 10 minutos")
+            daily=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')",(referrer,)).fetchone()["total"]
+            pending=db.execute("SELECT COUNT(*) total FROM referral_reviews WHERE referrer_id=? AND status='pending'",(referrer,)).fetchone()["total"]
+            if recent>=3: reasons.append(f"Cadastros em sequência: {recent} em 10 minutos")
+            if daily>=8: reasons.append(f"Volume diário elevado: {daily} em 24 horas")
+            if pending>=3: reasons.append(f"Muitas indicações aguardando análise: {pending}")
             if reasons:
-                cur=db.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,risk_reason,status) VALUES(?,?,?,?, 'pending')",(referrer,uid,"review","; ".join(reasons)))
+                cur=db.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,risk_reason,status) VALUES(?,?,?,?, 'pending')",(referrer,uid,"high" if len(reasons)>=2 else "review","; ".join(reasons)))
                 review_id=cur.lastrowid
             elif referral_reward>0:
                 db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
@@ -596,7 +600,19 @@ def review_payout(rid,admin_id,approve):
 
 def pending_referral_reviews():
     with connect() as db:
-        return db.execute("SELECT rr.*,u.first_name,u.username FROM referral_reviews rr JOIN users u ON u.user_id=rr.referred_user_id WHERE rr.status='pending' ORDER BY rr.id").fetchall()
+        return db.execute("""
+            SELECT rr.*,u.first_name,u.username,
+                   (SELECT COUNT(*) FROM users x WHERE x.referred_by=rr.referrer_id
+                    AND x.created_at>=datetime('now','-10 minutes')) AS referrer_last_10m,
+                   (SELECT COUNT(*) FROM users x WHERE x.referred_by=rr.referrer_id
+                    AND x.created_at>=datetime('now','-24 hours')) AS referrer_last_24h,
+                   (SELECT COUNT(*) FROM referral_reviews z WHERE z.referrer_id=rr.referrer_id
+                    AND z.status='pending') AS referrer_pending
+            FROM referral_reviews rr
+            JOIN users u ON u.user_id=rr.referred_user_id
+            WHERE rr.status='pending'
+            ORDER BY CASE rr.risk_level WHEN 'high' THEN 0 ELSE 1 END,rr.id
+        """).fetchall()
 
 def review_referral(rid,admin_id,approve):
     with connect() as db:
