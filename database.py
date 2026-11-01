@@ -147,6 +147,105 @@ def set_auto_delete_settings(enabled=None,seconds=None):
             if seconds not in (30,60,120,300): raise ValueError("Tempo inválido.")
             db.execute("INSERT INTO bot_settings(key,value) VALUES('auto_delete_seconds',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(seconds),))
         db.commit()
+def create_task(title,description,reward_points,requires_proof=True):
+    title=title.strip(); description=description.strip(); reward_points=int(reward_points)
+    if not title or len(title)>100 or reward_points<1 or reward_points>1000000:
+        raise ValueError("Título ou quantidade de pontos inválida.")
+    with connect() as db:
+        cur=db.execute("INSERT INTO tasks(title,description,reward_points,requires_proof) VALUES(?,?,?,?)",(title,description,reward_points,int(bool(requires_proof))))
+        db.commit(); return cur.lastrowid
+
+def active_tasks():
+    with connect() as db:
+        return db.execute("SELECT * FROM tasks WHERE active=1 ORDER BY id DESC").fetchall()
+
+def submit_task(task_id,user_id,proof=""):
+    with connect() as db:
+        task=db.execute("SELECT * FROM tasks WHERE id=? AND active=1",(task_id,)).fetchone()
+        if not task: raise ValueError("Essa tarefa não está disponível.")
+        if task["requires_proof"] and not proof.strip(): raise ValueError("Envie a comprovação solicitada.")
+        try:
+            cur=db.execute("INSERT INTO task_submissions(task_id,user_id,proof) VALUES(?,?,?)",(task_id,user_id,proof.strip()[:1500]))
+        except sqlite3.IntegrityError:
+            raise ValueError("Você já enviou essa tarefa.")
+        db.commit(); return cur.lastrowid
+
+def pending_task_submissions():
+    with connect() as db:
+        return db.execute("SELECT s.*,t.title,t.reward_points,u.first_name,u.username FROM task_submissions s JOIN tasks t ON t.id=s.task_id JOIN users u ON u.user_id=s.user_id WHERE s.status='pending' ORDER BY s.id").fetchall()
+
+def review_task_submission(submission_id,admin_id,approve):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT s.*,t.title,t.reward_points FROM task_submissions s JOIN tasks t ON t.id=s.task_id WHERE s.id=? AND s.status='pending'",(submission_id,)).fetchone()
+        if not row: db.rollback(); return None
+        status='approved' if approve else 'rejected'
+        db.execute("UPDATE task_submissions SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,submission_id))
+        if approve:
+            points=row["reward_points"]
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,row["user_id"]))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],points,f"Tarefa: {row['title']}"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["user_id"],points,"task"))
+        db.commit(); return dict(row)
+
+def weekly_ranking(limit=10):
+    with connect() as db:
+        return db.execute("SELECT u.user_id,u.first_name,u.username,COALESCE(SUM(w.points),0) points FROM weekly_earnings w JOIN users u ON u.user_id=w.user_id WHERE w.created_at>=datetime('now','-7 days') GROUP BY u.user_id ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
+
+def create_reward(title,description,points_cost,stock=-1):
+    title=title.strip(); points_cost=int(points_cost); stock=int(stock)
+    if not title or len(title)>100 or points_cost<1 or stock < -1:
+        raise ValueError("Dados do prêmio inválidos.")
+    with connect() as db:
+        cur=db.execute("INSERT INTO rewards(title,description,points_cost,stock) VALUES(?,?,?,?)",(title,description.strip(),points_cost,stock))
+        db.commit(); return cur.lastrowid
+
+def active_rewards():
+    with connect() as db:
+        return db.execute("SELECT * FROM rewards WHERE active=1 AND (stock=-1 OR stock>0) ORDER BY id DESC").fetchall()
+
+def create_reward_order(user_id,reward_id):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        reward=db.execute("SELECT * FROM rewards WHERE id=? AND active=1",(reward_id,)).fetchone()
+        user=db.execute("SELECT points FROM users WHERE user_id=?",(user_id,)).fetchone()
+        if not reward: db.rollback(); raise ValueError("Prêmio indisponível.")
+        if reward["stock"]==0: db.rollback(); raise ValueError("Prêmio esgotado.")
+        if not user or user["points"]<reward["points_cost"]: db.rollback(); raise ValueError("Saldo insuficiente.")
+        db.execute("UPDATE users SET points=points-? WHERE user_id=?",(reward["points_cost"],user_id))
+        if reward["stock"]>0: db.execute("UPDATE rewards SET stock=stock-1 WHERE id=?",(reward_id,))
+        cur=db.execute("INSERT INTO reward_orders(reward_id,user_id,points_spent) VALUES(?,?,?)",(reward_id,user_id,reward["points_cost"]))
+        order_id=cur.lastrowid
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,-reward["points_cost"],f"Pedido de recompensa #{order_id}"))
+        db.commit(); return order_id
+
+def pending_reward_orders():
+    with connect() as db:
+        return db.execute("SELECT o.*,r.title,u.first_name,u.username FROM reward_orders o JOIN rewards r ON r.id=o.reward_id JOIN users u ON u.user_id=o.user_id WHERE o.status='pending' ORDER BY o.id").fetchall()
+
+def review_reward_order(order_id,admin_id,approve):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM reward_orders WHERE id=? AND status='pending'",(order_id,)).fetchone()
+        if not row: db.rollback(); return None
+        status='approved' if approve else 'rejected'
+        db.execute("UPDATE reward_orders SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,order_id))
+        if not approve:
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],row["user_id"]))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points_spent"],f"Estorno recompensa #{order_id}"))
+            db.execute("UPDATE rewards SET stock=stock+1 WHERE id=? AND stock>=0",(row["reward_id"],))
+        db.commit(); return dict(row)
+
+def set_notifications(user_id,enabled):
+    with connect() as db:
+        db.execute("INSERT INTO notification_preferences(user_id,enabled,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled,updated_at=CURRENT_TIMESTAMP",(user_id,int(bool(enabled))))
+        db.commit()
+
+def notifications_enabled(user_id):
+    with connect() as db:
+        row=db.execute("SELECT enabled FROM notification_preferences WHERE user_id=?",(user_id,)).fetchone()
+        return bool(row["enabled"]) if row else True
+
 def today():
     from datetime import datetime, timezone, timedelta
     return datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
