@@ -131,6 +131,8 @@ def init_db():
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
+        if "vip_expires_at" not in columns:
+            db.execute("ALTER TABLE users ADD COLUMN vip_expires_at TEXT")
         db.commit()
 
 def get_auto_delete_settings():
@@ -362,6 +364,29 @@ def review_redemption(rid,admin_id,approve):
 
 def set_vip(uid,enabled):
     with connect() as db: db.execute("UPDATE users SET is_vip=? WHERE user_id=?",(int(enabled),uid)); db.commit()
+
+def referral_vip_status(uid):
+    goals=[{"milestone":25,"days":7},{"milestone":50,"days":30}]
+    with connect() as db:
+        total=db.execute("SELECT COUNT(*) n FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()["n"]
+        claimed={r["milestone"] for r in db.execute("SELECT milestone FROM referral_vip_milestones WHERE user_id=?",(uid,))}
+        return [{"milestone":g["milestone"],"days":g["days"],"reached":total>=g["milestone"],"claimed":g["milestone"] in claimed} for g in goals]
+
+def claim_referral_vip(uid,milestone):
+    durations={25:7,50:30}
+    if milestone not in durations: raise ValueError("Meta VIP inválida.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        total=db.execute("SELECT COUNT(*) n FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()["n"]
+        if total<milestone: db.rollback(); raise ValueError("Você ainda não atingiu essa meta.")
+        try:
+            db.execute("INSERT INTO referral_vip_milestones(user_id,milestone) VALUES(?,?)",(uid,milestone))
+        except sqlite3.IntegrityError:
+            db.rollback(); raise ValueError("Essa recompensa VIP já foi resgatada.")
+        days=durations[milestone]
+        db.execute("UPDATE users SET is_vip=1, vip_expires_at=CASE WHEN vip_expires_at IS NOT NULL AND vip_expires_at>datetime('now') THEN datetime(vip_expires_at, ?) ELSE datetime('now', ?) END WHERE user_id=?", (f"+{days} days",f"+{days} days",uid))
+        expiry=db.execute("SELECT vip_expires_at FROM users WHERE user_id=?",(uid,)).fetchone()["vip_expires_at"]
+        db.commit(); return days,expiry
 
 def stats():
     with connect() as db:
