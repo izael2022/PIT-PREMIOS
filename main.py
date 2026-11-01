@@ -295,7 +295,12 @@ def callback(c):
             if not rows: send(chat,"📋 Nenhuma tarefa aguardando revisão.",admin_menu()); return
             for row in rows:
                 kb=[[btn("✅ Aprovar pontos","taskreview:"+str(row["id"])+":yes"),btn("❌ Rejeitar","taskreview:"+str(row["id"])+":no")]]
-                send(chat,f"📋 <b>COMPROVAÇÃO DE TAREFA #{row['id']}</b>\nTarefa: {escape(row['title'])}\nUsuário: <code>{row['user_id']}</code> ({escape(row['first_name'] or 'Sem nome')})\nRecompensa: {row['reward_points']} pontos\nComprovação: {escape(row['proof'])}",kb)
+                proof=row["proof"] or ""
+                caption=f"📋 <b>COMPROVAÇÃO DE TAREFA #{row['id']}</b>\nTarefa: {escape(row['title'])}\nUsuário: <code>{row['user_id']}</code> ({escape(row['first_name'] or 'Sem nome')})\nRecompensa: {row['reward_points']} pontos"
+                if proof.startswith("photo:"):
+                    api("sendPhoto",{"chat_id":chat,"photo":proof.split(":",1)[1],"caption":caption,"parse_mode":"HTML","reply_markup":{"inline_keyboard":kb}})
+                else:
+                    send(chat,caption+"\nComprovação: "+escape(proof),kb)
         elif action=="fraud":
             rows=db.pending_referral_reviews()
             if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
@@ -318,7 +323,7 @@ def callback(c):
             task=next((x for x in db.active_tasks() if x["id"]==task_id),None)
             if not task: send(chat,"Essa tarefa não está mais disponível."); return
             PENDING_TASK_PROOFS[uid]=task_id
-            send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\nTarefa: {escape(task['title'])}\nRecompensa: {task['reward_points']} pontos\n\nEnvie agora uma mensagem com a comprovação (link, descrição ou referência).")
+            send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\nTarefa: {escape(task['title'])}\nRecompensa: {task['reward_points']} pontos\n\nEnvie agora o <b>PRINT (FOTO) OU UMA MENSAGEM</b> como comprovante. A equipe vai analisar antes de liberar os pontos.")
         except (ValueError,IndexError): send(chat,"Tarefa inválida.")
     elif data=="profile": profile(chat,uid)
     elif data=="wallet": balance(chat,uid)
@@ -396,10 +401,18 @@ def main():
                             uid=m.get("from",{}).get("id"); task_id=PENDING_TASK_PROOFS.pop(uid,None)
                             if task_id:
                                 try:
-                                    submission_id=db.submit_task(task_id,uid,m.get("text",""))
+                                    photo=m.get("photo")
+                                    if photo:
+                                        proof="photo:"+photo[-1]["file_id"]
+                                    else:
+                                        proof=(m.get("text") or "").strip()
+                                    submission_id=db.submit_task(task_id,uid,proof)
                                     send(m["chat"]["id"],"✅ Comprovação enviada! A equipe vai analisar sua tarefa.")
                                     for aid in ADMIN_IDS:
-                                        send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(m.get('text','')[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                                        if proof.startswith("photo:"):
+                                            api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                                        else:
+                                            send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
                                 except ValueError as e: send(m["chat"]["id"],escape(str(e)))
                             else: send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
                     elif "callback_query" in update: callback(update["callback_query"])
