@@ -473,7 +473,8 @@ def callback(c):
             if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
             for r in rows:
                 kb=[[btn("✅ Aprovar indicação","refreview:"+str(r["id"])+":yes"),btn("❌ Rejeitar","refreview:"+str(r["id"])+":no")]]
-                send(chat,f"🛡️ <b>ANÁLISE #{r['id']}</b>\nIndicador: <code>{r['referrer_id']}</code>\nNovo usuário: <code>{r['referred_user_id']}</code>\nNome: {escape(r['first_name'] or 'Sem nome')}\nMotivo: {escape(r['risk_reason'])}",kb)
+                level="🔴 RISCO ALTO" if r["risk_level"]=="high" else "🟡 REVISÃO"
+                send(chat,f"🛡️ <b>ANÁLISE ANTIFRAUDE #{r['id']}</b>\n{level}\n━━━━━━━━━━━━━━━━━━\nIndicador: <code>{r['referrer_id']}</code>\nNovo usuário: <code>{r['referred_user_id']}</code>\nNome: {escape(r['first_name'] or 'Sem nome')} (@{escape(r['username'] or 'sem username')})\n\n📈 <b>Atividade do indicador</b>\nCadastros em 10 min: <b>{r['referrer_last_10m']}</b>\nCadastros em 24 horas: <b>{r['referrer_last_24h']}</b>\nIndicações pendentes: <b>{r['referrer_pending']}</b>\n\n⚠️ <b>Sinais detectados</b>\n{escape(r['risk_reason'])}\n\nA análise é um alerta para revisão humana, não uma confirmação automática de fraude.",kb)
         elif action=="payouts":
             rows=db.pending_payouts()
             if not rows: send(chat,"Nenhum saque pendente.",admin_menu())
