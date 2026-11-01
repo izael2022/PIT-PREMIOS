@@ -135,6 +135,20 @@ def ranking(chat):
         lines.append(f"{i}. {escape(name)} — {u['points']} pts")
     send(chat,"\n".join(lines))
 
+
+def ranking_menu(chat):
+    send(chat,"🏆 <b>RANKING PIT PRÊMIOS</b>\\n\\nEscolha qual classificação deseja consultar:",[[btn("📅 Ranking semanal — últimos 7 dias","ranking:weekly")],[btn("🏆 Ranking geral — pontos acumulados","ranking:general")],[btn("⬅️ Menu principal","home")]])
+
+def weekly_ranking(chat):
+    lines=["📅 <b>TOP 10 DA SEMANA</b>","<i>Pontos ganhos nos últimos 7 dias.</i>","━━━━━━━━━━━━━━━━━━"]
+    rows=db.weekly_ranking()
+    if not rows:
+        lines.append("Ainda não há pontos registrados nesta semana. Participe das missões e atividades!")
+    for i,u in enumerate(rows,1):
+        name=u["first_name"] or ("@"+u["username"] if u["username"] else str(u["user_id"]))
+        lines.append(f"{i}. {escape(name)} — <b>{u['points']} pts</b>")
+    send(chat,"\\n".join(lines),[[btn("🏆 Ver ranking geral","ranking:general")],[btn("⬅️ Voltar","ranking")]])
+
 def daily(chat,uid):
     ok,streak,earned=db.daily_claim(uid,DAILY_REWARD)
     if ok:
@@ -212,7 +226,7 @@ def command(m):
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
     if cmd=="/start": start(m)
     elif cmd=="/saldo": balance(chat,uid)
-    elif cmd=="/ranking": ranking(chat)
+    elif cmd=="/ranking": ranking_menu(chat)
     elif cmd=="/diario": daily(chat,uid)
     elif cmd=="/novatarefa" and admin(uid):
         raw=t.split(maxsplit=1)
@@ -295,7 +309,7 @@ def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     api("answerCallbackQuery",{"callback_query_id":c["id"]})
     if chat is None: return
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications"}
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","notifications","ranking:weekly","ranking:general"}
     if (data in navigation_actions or data.startswith("task:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
@@ -371,7 +385,9 @@ def callback(c):
     elif data=="help": help_page(chat)
     elif data=="redeem_info": redeem_help(chat)
     elif data=="balance": balance(chat,uid)
-    elif data=="ranking": ranking(chat)
+    elif data=="ranking": ranking_menu(chat)
+    elif data=="ranking:general": ranking(chat)
+    elif data=="ranking:weekly": weekly_ranking(chat)
     elif data=="daily": daily(chat,uid)
     elif data=="vip":
         u=db.get_user(uid); send(chat,"💎 VIP: "+("ATIVO" if u and u["is_vip"] else "INATIVO")+". Consulte a administração.")
