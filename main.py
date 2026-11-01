@@ -352,11 +352,18 @@ def command(m):
         if cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
         elif cmd=="/usuario":
             if len(p)<2 or not p[1].isdigit(): send(chat,"Use /usuario ID"); return
-            target=int(p[1]); u=db.get_user(target)
-            if not u: send(chat,"Usuário não encontrado."); return
-            pr=db.get_profile(target)
+            target=int(p[1]); details=db.admin_user_details(target)
+            if not details: send(chat,"Usuário não encontrado."); return
+            u=details["user"]; pending=details["pending"]
             vip="Ativo" if u["is_vip"] else "Inativo"
-            send(chat,f"👤 <b>FICHA DO MEMBRO</b>\nID: <code>{target}</code>\nNome: {escape(u['first_name'] or 'Sem nome')}\nUsername: @{escape(u['username'] or 'não informado')}\nSaldo: <b>{pr['points']} pontos</b>\nIndicações: {pr['referrals']}\nVIP: {vip}\nCadastro: {pr['created_at']}")
+            lines=[f"👤 <b>FICHA DO MEMBRO</b>","━━━━━━━━━━━━━━━━━━",f"ID: <code>{target}</code>",f"Nome: {escape(u['first_name'] or 'Sem nome')}",f"Username: @{escape(u['username'] or 'não informado')}",f"Saldo: <b>{u['points']:,} pontos</b>",f"Indicações válidas: {u['referrals']}",f"VIP: {vip}",f"Cadastro: {u['created_at']}","","⏳ <b>PENDÊNCIAS DO USUÁRIO</b>",f"Saques: {pending['pending_payouts']}",f"Pedidos da loja: {pending['pending_reward_orders']}",f"Tarefas: {pending['pending_tasks']}",f"Resgates: {pending['pending_redemptions']}","","📜 <b>ÚLTIMAS MOVIMENTAÇÕES</b>"]
+            if details["history"]:
+                for item in details["history"]:
+                    sign="+" if item["amount"]>0 else ""
+                    lines.append(f"{sign}{item['amount']} pts — {escape(item['reason'][:55])} ({item['created_at']})")
+            else:
+                lines.append("Nenhuma movimentação registrada.")
+            send(chat,"\n".join(lines),admin_menu())
         elif cmd=="/broadcast":
             if len(p)<2 or not p[1].strip(): send(chat,"Use /broadcast SUA MENSAGEM"); return
             message=escape(t.split(maxsplit=1)[1][:3500])
