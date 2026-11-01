@@ -93,7 +93,7 @@ def admin_menu():
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
             [btn("🛡️ Análise antifraude","admin:fraud")],
-            [btn("📋 Revisar tarefas","admin:tasks")],
+            [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("⬅️ Fechar painel","home")]]
 
@@ -290,6 +290,13 @@ def callback(c):
             for r in rows:
                 kb=[[btn("✅ Aprovar","review:"+str(r["id"])+":yes"),btn("❌ Rejeitar","review:"+str(r["id"])+":no")]]
                 send(chat,f"🎟️ <b>RESGATE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
+        elif action=="manage_tasks":
+            rows=db.active_tasks()
+            if not rows:
+                send(chat,"🗂️ Não há tarefas ativas para apagar.",admin_menu()); return
+            send(chat,"🗂️ <b>GERENCIAR TAREFAS</b>\\nEscolha a tarefa que deseja retirar da lista dos usuários:",[[btn("🗑️ #"+str(row["id"])+" — "+row["title"][:30],"taskdisable:"+str(row["id"]))] for row in rows]+[[btn("⬅️ Voltar ao painel","admin:back")]])
+        elif action=="back":
+            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\\nEscolha uma função abaixo:",admin_menu())
         elif action=="tasks":
             rows=db.pending_task_submissions()
             if not rows: send(chat,"📋 Nenhuma tarefa aguardando revisão.",admin_menu()); return
@@ -344,6 +351,16 @@ def callback(c):
             milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
             send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
         except (ValueError,IndexError) as e: send(chat,escape(str(e)))
+    elif data.startswith("taskdisable:"):
+        if not admin(uid): return
+        try:
+            task_id=int(data.split(":")[1])
+            if db.deactivate_task(task_id):
+                send(chat,f"✅ Tarefa #{task_id} foi retirada das tarefas disponíveis. Os registros e comprovantes foram preservados.",[[btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],[btn("⬅️ Painel admin","admin:back")]])
+            else:
+                send(chat,"Essa tarefa já foi retirada ou não existe.",[[btn("🗂️ Gerenciar tarefas","admin:manage_tasks")]])
+        except (ValueError,IndexError):
+            send(chat,"Identificação de tarefa inválida.")
     elif data.startswith("taskreview:"):
         if not admin(uid): return
         _,sid,decision=data.split(":")
