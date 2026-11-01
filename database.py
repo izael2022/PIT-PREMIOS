@@ -18,13 +18,33 @@ def connect():
 def init_db():
     with connect() as db:
         db.executescript("""
-        CREATE TABLE IF NOT EXISTS users(user_id INTEGER PRIMARY KEY,username TEXT,first_name TEXT NOT NULL DEFAULT '',points INTEGER NOT NULL DEFAULT 0 CHECK(points>=0),referred_by INTEGER,is_vip INTEGER NOT NULL DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,last_daily TEXT,FOREIGN KEY(referred_by) REFERENCES users(user_id));
+        CREATE TABLE IF NOT EXISTS users(user_id INTEGER PRIMARY KEY,username TEXT,first_name TEXT NOT NULL DEFAULT '',points INTEGER NOT NULL DEFAULT 0 CHECK(points>=0),referred_by INTEGER,is_vip INTEGER NOT NULL DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,last_daily TEXT,daily_streak INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(referred_by) REFERENCES users(user_id));
         CREATE TABLE IF NOT EXISTS point_history(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,amount INTEGER NOT NULL,reason TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE TABLE IF NOT EXISTS redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,points INTEGER NOT NULL,reward TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP,reviewed_by INTEGER,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE INDEX IF NOT EXISTS idx_history_user ON point_history(user_id);
         CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status);
         """)
+        columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
+        if "daily_streak" not in columns:
+            db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
         db.commit()
+
+def today():
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
+
+def get_profile(uid):
+    with connect() as db:
+        row=db.execute("SELECT u.*, (SELECT COUNT(*) FROM users x WHERE x.referred_by=u.user_id) referrals FROM users u WHERE user_id=?",(uid,)).fetchone()
+        return dict(row) if row else {"points":0,"referrals":0,"daily_streak":0,"created_at":today(),"last_daily":None}
+
+def top_referrals(limit=10):
+    with connect() as db:
+        return db.execute("SELECT u.user_id,u.first_name,COUNT(x.user_id) referrals FROM users u JOIN users x ON x.referred_by=u.user_id GROUP BY u.user_id ORDER BY referrals DESC LIMIT ?",(limit,)).fetchall()
+
+def history(uid,limit=8):
+    with connect() as db:
+        return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
 
 def register_user(uid,username,first_name,referrer=None,referral_reward=0):
     with connect() as db:
@@ -53,13 +73,18 @@ def add_points(uid,amount,reason):
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,amount,reason)); db.commit()
 
 def daily_claim(uid,reward):
-    from datetime import datetime,timezone,timedelta
-    today=datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
+    from datetime import datetime, timezone, timedelta
+    now=datetime.now(timezone(timedelta(hours=-3))); current=now.date().isoformat()
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT last_daily FROM users WHERE user_id=?",(uid,)).fetchone()
-        if not row or row["last_daily"]==today: db.rollback(); return False
-        db.execute("UPDATE users SET last_daily=?,points=points+? WHERE user_id=?",(today,reward,uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,reward,"Bônus diário")); db.commit(); return True
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT last_daily,daily_streak FROM users WHERE user_id=?",(uid,)).fetchone()
+        if not row or row["last_daily"]==current:
+            db.rollback(); return False,(row["daily_streak"] if row else 0)
+        yesterday=(now.date()-timedelta(days=1)).isoformat()
+        streak=row["daily_streak"]+1 if row["last_daily"]==yesterday else 1
+        db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,reward,uid))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,reward,"Bônus diário"))
+        db.commit(); return True,streak
 
 def ranking(limit=10):
     with connect() as db: return db.execute("SELECT user_id,first_name,username,points FROM users ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
