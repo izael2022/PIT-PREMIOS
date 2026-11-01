@@ -61,6 +61,10 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0):
 def get_user(uid):
     with connect() as db: return db.execute("SELECT * FROM users WHERE user_id=?",(uid,)).fetchone()
 
+def all_user_ids():
+    with connect() as db:
+        return [row["user_id"] for row in db.execute("SELECT user_id FROM users ORDER BY user_id").fetchall()]
+
 def add_points(uid,amount,reason):
     if amount==0:return
     with connect() as db:
