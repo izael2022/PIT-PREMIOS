@@ -437,7 +437,8 @@ def callback(c):
     elif data=="notifications:off":
         db.set_notifications(uid,False); notifications_page(chat,uid)
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
-    elif data=="tasks": task_list(chat,uid)\n    elif data=="mytasks": my_task_submissions(chat,uid)
+    elif data=="tasks": task_list(chat,uid)
+    elif data=="mytasks": my_task_submissions(chat,uid)
     elif data=="shop": shop(chat,uid)
     elif data=="myorders": my_reward_orders(chat,uid)
     elif data.startswith("shopbuy:"):
