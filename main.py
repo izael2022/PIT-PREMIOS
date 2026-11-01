@@ -139,7 +139,7 @@ def missions(chat,uid):
     for item in milestones:
         if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar meta de {item['milestone']} amigo(s)","milestone:"+str(item["milestone"]))])
     kb.append([btn("⬅️ Menu principal","home")])
-    send(chat,"\\n".join(lines),kb)
+    send(chat,"\n".join(lines),kb)
 def history(chat,uid):
     rows=db.history(uid,8); lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━"]
     if not rows: lines.append("Nenhuma movimentação registrada.")
