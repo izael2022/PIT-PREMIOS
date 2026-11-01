@@ -31,6 +31,13 @@ def init_db():
             PRIMARY KEY(user_id,milestone),
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
+        CREATE TABLE IF NOT EXISTS referral_manual_holds(
+            referrer_id INTEGER PRIMARY KEY,
+            reason TEXT NOT NULL DEFAULT 'Monitoramento manual da equipe',
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(referrer_id) REFERENCES users(user_id)
+        );
         CREATE TABLE IF NOT EXISTS referral_reviews(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_id INTEGER NOT NULL,
@@ -391,6 +398,8 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
         review_id=None
         if referrer:
             reasons=[]
+            manual_hold=db.execute("SELECT reason FROM referral_manual_holds WHERE referrer_id=?",(referrer,)).fetchone()
+            if manual_hold: reasons.append("Monitoramento manual: "+manual_hold["reason"])
             if is_bot: reasons.append("Conta do Telegram identificada como bot")
             recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
             daily=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')",(referrer,)).fetchone()["total"]
@@ -669,3 +678,19 @@ def review_referral(rid,admin_id,approve):
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],100,f"Indicação aprovada #{rid}"))
             db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],100,"referral_approved"))
         db.commit(); return dict(row)
+
+def set_referral_manual_hold(referrer_id,enabled,admin_id,reason="Monitoramento manual da equipe"):
+    with connect() as db:
+        if not db.execute("SELECT 1 FROM users WHERE user_id=?",(referrer_id,)).fetchone():
+            return False
+        if enabled:
+            db.execute("INSERT INTO referral_manual_holds(referrer_id,reason,created_by) VALUES(?,?,?) ON CONFLICT(referrer_id) DO UPDATE SET reason=excluded.reason,created_by=excluded.created_by,created_at=CURRENT_TIMESTAMP",(referrer_id,reason.strip()[:200],admin_id))
+        else:
+            db.execute("DELETE FROM referral_manual_holds WHERE referrer_id=?",(referrer_id,))
+        db.commit()
+        return True
+
+def get_referral_manual_hold(referrer_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM referral_manual_holds WHERE referrer_id=?",(referrer_id,)).fetchone()
+        return dict(row) if row else None
