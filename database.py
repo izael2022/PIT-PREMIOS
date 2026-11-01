@@ -614,6 +614,30 @@ def pending_referral_reviews():
             ORDER BY CASE rr.risk_level WHEN 'high' THEN 0 ELSE 1 END,rr.id
         """).fetchall()
 
+def fraud_profile(referrer_id,limit=10):
+    with connect() as db:
+        user=db.execute("SELECT user_id,first_name,username,created_at FROM users WHERE user_id=?",(referrer_id,)).fetchone()
+        if not user:
+            return None
+        stats=db.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM users WHERE referred_by=?) AS total,
+                (SELECT COUNT(*) FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id
+                 WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')) AS valid,
+                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='pending') AS pending,
+                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status='rejected') AS rejected,
+                (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND created_at>=datetime('now','-30 days')) AS flagged_30d
+        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
+        recent=db.execute("""
+            SELECT u.user_id,u.first_name,u.username,u.created_at,
+                   COALESCE(rr.status,'approved') AS status,
+                   COALESCE(rr.risk_level,'normal') AS risk_level,
+                   COALESCE(rr.risk_reason,'') AS risk_reason
+            FROM users u LEFT JOIN referral_reviews rr ON rr.referred_user_id=u.user_id
+            WHERE u.referred_by=? ORDER BY u.created_at DESC,u.user_id DESC LIMIT ?
+        """,(referrer_id,max(1,min(int(limit),20)))).fetchall()
+        return {"user":dict(user),"stats":dict(stats),"recent":[dict(x) for x in recent]}
+
 def review_referral(rid,admin_id,approve):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
