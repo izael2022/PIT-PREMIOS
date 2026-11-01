@@ -1,4 +1,5 @@
 import asyncio, logging
+from html import escape
 from aiogram import Bot,Dispatcher,F
 from aiogram.filters import Command,CommandStart
 from aiogram.types import Message,CallbackQuery,InlineKeyboardMarkup,InlineKeyboardButton
@@ -21,9 +22,8 @@ def menu():
 async def start(m:Message):
     parts=(m.text or "").split(maxsplit=1)
     ref=int(parts[1]) if len(parts)>1 and parts[1].isdigit() else None
-    created,ref_id=await db.register_user(m.from_user.id,m.from_user.username,m.from_user.first_name or "",ref)
+    created,ref_id=await db.register_user(m.from_user.id,m.from_user.username,m.from_user.first_name or "",ref,POINTS_PER_REFERRAL)
     if created and ref_id and POINTS_PER_REFERRAL:
-        await db.add_points(ref_id,POINTS_PER_REFERRAL,f"Indicação de {m.from_user.id}")
         try: await bot.send_message(ref_id,f"🎉 Você ganhou {POINTS_PER_REFERRAL} pontos por uma indicação!")
         except Exception: logging.exception("Falha ao notificar indicador")
     me=await bot.get_me()
@@ -43,7 +43,7 @@ async def ranking(e):
     rows=await db.ranking()
     lines=["🏆 <b>TOP 10 PIT PRÊMIOS</b>"]
     for i,u in enumerate(rows,1):
-        name=u["first_name"] or (("@"+u["username"]) if u["username"] else str(u["user_id"]))
+        name=escape(u["first_name"] or (("@"+u["username"]) if u["username"] else str(u["user_id"])))
         lines.append(f"{i}. {name} — {u['points']} pts")
     if isinstance(e,Message): await e.answer("\n".join(lines))
     else: await e.answer(); await e.message.answer("\n".join(lines))
@@ -79,7 +79,7 @@ async def redeem(m:Message):
     except ValueError as ex: await m.answer(str(ex)); return
     await m.answer(f"✅ Pedido #{rid} enviado. Os pontos ficam reservados até análise.")
     for aid in ADMIN_IDS:
-        try: await bot.send_message(aid,f"Novo resgate #{rid}\nUsuário: {m.from_user.id}\nPontos: {points}\nPrêmio: {reward}")
+        try: await bot.send_message(aid,f"Novo resgate #{rid}\nUsuário: {m.from_user.id}\nPontos: {points}\nPrêmio: {escape(reward)}")
         except Exception: logging.exception("Falha ao notificar admin")
 
 @dp.message(Command("admin"))
@@ -123,7 +123,7 @@ async def pedidos(m:Message):
         kb=InlineKeyboardMarkup(inline_keyboard=[[
           InlineKeyboardButton(text="Aprovar",callback_data=f"review:{r['id']}:yes"),
           InlineKeyboardButton(text="Rejeitar",callback_data=f"review:{r['id']}:no")]])
-        await m.answer(f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {r['reward']}",reply_markup=kb)
+        await m.answer(f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",reply_markup=kb)
 
 @dp.callback_query(F.data.startswith("review:"))
 async def review(c:CallbackQuery):
