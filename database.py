@@ -224,6 +224,28 @@ def active_rewards():
     with connect() as db:
         return db.execute("SELECT * FROM rewards WHERE active=1 AND (stock=-1 OR stock>0) ORDER BY id DESC").fetchall()
 
+
+def all_rewards():
+    with connect() as db:
+        return db.execute("SELECT * FROM rewards ORDER BY id DESC").fetchall()
+
+def deactivate_reward(reward_id):
+    with connect() as db:
+        cur=db.execute("UPDATE rewards SET active=0 WHERE id=? AND active=1",(reward_id,))
+        db.commit()
+        return cur.rowcount>0
+
+def user_reward_orders(user_id,limit=15):
+    with connect() as db:
+        return db.execute("""
+            SELECT o.id,o.points_spent,o.status,o.created_at,o.reviewed_at,r.title
+            FROM reward_orders o
+            JOIN rewards r ON r.id=o.reward_id
+            WHERE o.user_id=?
+            ORDER BY o.id DESC LIMIT ?
+        """,(user_id,limit)).fetchall()
+
+
 def create_reward_order(user_id,reward_id):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
