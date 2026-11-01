@@ -350,7 +350,10 @@ def callback(c):
         result=db.review_task_submission(int(sid),uid,decision=="yes")
         if not result: send(chat,"Essa tarefa já foi analisada."); return
         status="aprovada; pontos creditados" if decision=="yes" else "rejeitada"
-        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
+        if msg.get("photo"):
+            api("editMessageCaption",{"chat_id":chat,"message_id":msg["message_id"],"caption":msg.get("caption","")+f"\n\n<b>Status:</b> {status}","parse_mode":"HTML"})
+        else:
+            api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\n<b>Status:</b> {status}","parse_mode":"HTML"})
         try: send(result["user_id"],f"📋 Sua comprovação da tarefa <b>{escape(result['title'])}</b> foi {status}.")
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
