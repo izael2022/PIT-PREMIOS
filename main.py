@@ -214,8 +214,8 @@ def my_task_submissions(chat,uid):
     labels={"pending":"⏳ Aguardando análise","approved":"✅ Aprovada","rejected":"❌ Rejeitada"}
     for row in rows:
         status=labels.get(row["status"],row["status"])
-        lines.append(f"\\n<b>#{row['id']} — {escape(row['title'])}</b>\\n🎁 Recompensa: {row['reward_points']} pontos\\nStatus: <b>{status}</b>\\nEnviada: {row['created_at']}")
-    send(chat,"\\n".join(lines),[[btn("📋 Ver tarefas disponíveis","tasks")],[btn("⬅️ Menu principal","home")]])
+        lines.append(f"\n<b>#{row['id']} — {escape(row['title'])}</b>\n🎁 Recompensa: {row['reward_points']} pontos\nStatus: <b>{status}</b>\nEnviada: {row['created_at']}")
+    send(chat,"\n".join(lines),[[btn("📋 Ver tarefas disponíveis","tasks")],[btn("⬅️ Menu principal","home")]])
 
 def shop(chat,uid):
     rows=db.active_rewards()
