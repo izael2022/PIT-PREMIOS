@@ -159,6 +159,12 @@ def active_tasks():
     with connect() as db:
         return db.execute("SELECT * FROM tasks WHERE active=1 ORDER BY id DESC").fetchall()
 
+def deactivate_task(task_id):
+    with connect() as db:
+        cur=db.execute("UPDATE tasks SET active=0 WHERE id=? AND active=1",(task_id,))
+        db.commit()
+        return cur.rowcount>0
+
 def active_tasks_for_user(user_id):
     with connect() as db:
         return db.execute("""
