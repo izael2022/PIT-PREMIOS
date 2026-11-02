@@ -11,7 +11,8 @@ def connect():
     db.execute("PRAGMA busy_timeout=30000")
     db.execute("PRAGMA synchronous=NORMAL")
     db.execute("PRAGMA temp_store=MEMORY")
-    db.execute("PRAGMA cache_size=-8000")
+    db.execute("PRAGMA cache_size=-2000")
+    db.execute("PRAGMA wal_autocheckpoint=1000")
     try:
         yield db
     finally:
