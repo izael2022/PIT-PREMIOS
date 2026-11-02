@@ -714,7 +714,12 @@ def main():
                         m=update["message"]
                         if (m.get("text") or "").startswith("/"): command(m)
                         elif m.get("chat",{}).get("type")=="private":
-                            uid=m.get("from",{}).get("id"); task_id=PENDING_TASK_PROOFS.pop(uid,None)
+                            uid=m.get("from",{}).get("id")
+                            block=db.get_account_block(uid) if uid and not admin(uid) else None
+                            if block:
+                                send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+                                continue
+                            task_id=PENDING_TASK_PROOFS.pop(uid,None)
                             if task_id:
                                 try:
                                     photo=m.get("photo")
