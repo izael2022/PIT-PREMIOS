@@ -434,6 +434,8 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             reasons=[]
             manual_hold=db.execute("SELECT reason FROM referral_manual_holds WHERE referrer_id=?",(referrer,)).fetchone()
             if manual_hold: reasons.append("Monitoramento manual: "+manual_hold["reason"])
+            blocked=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(referrer,)).fetchone()
+            if blocked: reasons.append("Indicador bloqueado: "+blocked["reason"])
             if is_bot: reasons.append("Conta do Telegram identificada como bot")
             recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
             daily=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')",(referrer,)).fetchone()["total"]
