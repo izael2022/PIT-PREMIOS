@@ -1,4 +1,4 @@
-import json, logging, time, threading, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
+import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
 from html import escape
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_REDEEM_POINTS, DATABASE_PATH
@@ -93,10 +93,18 @@ def send(chat, text, keyboard=None):
 
 def notify_user(uid,message):
     try:
+        text=str(message)
+        category="geral"; title="Aviso do PIT PRÊMIOS"
+        low=text.lower()
+        if "saque" in low or "pix" in low: category="financeiro"; title="Atualização de saque/Pix"
+        elif "indica" in low or "convid" in low: category="indicacoes"; title="Atualização de indicação"
+        elif "tarefa" in low: category="tarefas"; title="Atualização de tarefa"
+        elif "resgate" in low or "pedido" in low: category="resgates"; title="Atualização de resgate"
+        db.record_notification(uid,category,title,text)
         if db.notifications_enabled(uid):
-            send(uid,message)
+            send(uid,text)
     except Exception:
-        log.exception("Falha ao enviar notificação ao usuário %s",uid)
+        log.exception("Falha ao registrar/enviar notificação ao usuário %s",uid)
 
 BANNER_BYTES=None
 
@@ -156,6 +164,8 @@ def menu():
     return [
         [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
+        [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
+        [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR PONTOS","redeem_info")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
@@ -175,6 +185,7 @@ def admin_menu():
             [btn("🛡️ Análise antifraude","admin:fraud")],
             [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
+            [btn("💹 Painel financeiro","admin:finance")],
             [btn("⬅️ Fechar painel","home")]]
 
 def start(m):
@@ -459,7 +470,9 @@ def notifications_page(chat,uid):
     state="ATIVADAS ✅" if enabled else "DESATIVADAS 🔕"
     action="notifications:off" if enabled else "notifications:on"
     label="🔕 Desativar notificações" if enabled else "🔔 Ativar notificações"
-    send(chat,f"🔔 <b>NOTIFICAÇÕES</b>\n\nStatus atual: <b>{state}</b>\n\nVocê pode escolher se deseja receber avisos sobre aprovações de tarefas, indicações, saques e resgates.",[[btn(label,action)],[btn("⬅️ Menu principal","home")]])
+    rows=db.notification_history(uid,8)
+    history="\n".join(f"• <b>{escape(str(x['title']))}</b> — {escape(str(x['created_at']))}\n{escape(str(x['message']))[:180]}" for x in rows) or "Nenhum aviso registrado ainda."
+    send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\n\n<b>Últimos avisos</b>\n{history}",[[btn(label,action)],[btn("🔄 Atualizar","notifications")],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
@@ -694,6 +707,9 @@ def callback(c):
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+        elif action=="finance":
+            f=db.financial_dashboard()
+            send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado.</i>",admin_menu())
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
@@ -761,6 +777,23 @@ def callback(c):
         db.set_notifications(uid,True); notifications_page(chat,uid)
     elif data=="notifications:off":
         db.set_notifications(uid,False); notifications_page(chat,uid)
+    elif data.startswith("game:"):
+        game=data.split(":",1)[1]
+        configs={
+            "chest":("🎁 BAÚ SURPRESA DIÁRIO",[0,2,3,5,8,10,15,20],[25,25,20,15,8,4,2,1]),
+            "roulette":("🎡 ROLETA DE PONTOS",[0,2,5,8,10,15,20,30],[25,20,18,14,10,7,4,2]),
+            "scratch":("🎟️ RASPADINHA VIRTUAL",[0,2,3,5,8,10,15,25],[25,22,18,14,10,6,4,1])
+        }
+        if game not in configs: return
+        title,prizes,weights=configs[game]
+        if game in db.game_status(uid):
+            send(chat,f"⏳ Você já participou de {title.lower()} hoje. Volte amanhã!",back()); return
+        prize=random.choices(prizes,weights=weights,k=1)[0]
+        try:
+            db.play_daily_game(uid,game,prize)
+            send(chat,f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 Resultado: <b>+{prize} pontos</b>!\n\nCada jogo tem uma tentativa por dia. Seus pontos já foram adicionados à carteira.",[[btn("🎁 Baú surpresa","game:chest"),btn("🎡 Roleta","game:roulette")],[btn("🎟️ Raspadinha","game:scratch")],[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
+        except ValueError as e:
+            send(chat,escape(str(e)),back())
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
     elif data=="mytasks": my_task_submissions(chat,uid)
