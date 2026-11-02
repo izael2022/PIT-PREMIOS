@@ -809,10 +809,10 @@ from collections import deque
 import os
 
 try:
-    WORKERS=max(4,min(16,int(os.getenv("BOT_WORKERS","12"))))
+    WORKERS=max(4,min(9,int(os.getenv("BOT_WORKERS","9"))))
 except ValueError:
-    WORKERS=12
-QUEUE_LIMIT=250
+    WORKERS=9
+QUEUE_LIMIT=100
 UPDATE_POOL=ThreadPoolExecutor(max_workers=WORKERS,thread_name_prefix="pit-update")
 UPDATE_CAPACITY=threading.BoundedSemaphore(QUEUE_LIMIT)
 USER_QUEUE_LOCK=threading.Lock()
