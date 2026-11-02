@@ -12,13 +12,38 @@ BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/
 
 def api(method, data=None):
     payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
-    req=urllib.request.Request(API+method, data=payload)
-    try:
-        with urllib.request.urlopen(req, timeout=40) as r: result=json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Telegram HTTP {e.code}: {e.read().decode('utf-8','replace')[:250]}")
-    if not result.get("ok"): raise RuntimeError(str(result))
-    return result.get("result")
+    attempts=4 if method=="getUpdates" else 1
+    for attempt in range(attempts):
+        req=urllib.request.Request(API+method,data=payload)
+        try:
+            with urllib.request.urlopen(req,timeout=35 if method=="getUpdates" else 25) as response:
+                result=json.loads(response.read())
+            if not result.get("ok"):
+                error_code=result.get("error_code")
+                if method=="getUpdates" and error_code in (429,500,502,503,504) and attempt<attempts-1:
+                    retry_after=result.get("parameters",{}).get("retry_after",2)
+                    time.sleep(max(1,min(int(retry_after),15)))
+                    continue
+                raise RuntimeError(str(result))
+            return result.get("result")
+        except urllib.error.HTTPError as e:
+            detail=e.read().decode("utf-8","replace")[:500]
+            if method=="getUpdates" and e.code in (429,500,502,503,504) and attempt<attempts-1:
+                retry_after=2
+                try:
+                    parsed=json.loads(detail)
+                    retry_after=parsed.get("parameters",{}).get("retry_after",2)
+                except Exception:
+                    pass
+                time.sleep(max(1,min(int(retry_after),15)))
+                continue
+            raise RuntimeError(f"Telegram HTTP {e.code}: {detail}") from e
+        except (urllib.error.URLError,TimeoutError,ConnectionError) as e:
+            if method=="getUpdates" and attempt<attempts-1:
+                time.sleep(min(2**attempt,8))
+                continue
+            raise
+    raise RuntimeError("Não foi possível consultar atualizações do Telegram após várias tentativas.")
 
 def send(chat, text, keyboard=None):
     d={"chat_id":chat,"text":text,"parse_mode":"HTML"}
@@ -506,7 +531,10 @@ def command(m):
 
 def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
-    api("answerCallbackQuery",{"callback_query_id":c["id"]})
+    try:
+        api("answerCallbackQuery",{"callback_query_id":c["id"]})
+    except Exception:
+        log.warning("Não foi possível confirmar o clique do usuário %s",uid,exc_info=True)
     if chat is None: return
     if uid and not admin(uid):
         block=db.get_account_block(uid)
@@ -777,12 +805,15 @@ def process_update(update):
 
 
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+import os
 
-WORKERS=max(4,min(8,( __import__("os").cpu_count() or 4 )))
+WORKERS=max(4,min(8,(os.cpu_count() or 4)))
 UPDATE_POOL=ThreadPoolExecutor(max_workers=WORKERS,thread_name_prefix="pit-update")
 UPDATE_CAPACITY=threading.BoundedSemaphore(100)
 USER_QUEUE_LOCK=threading.Lock()
-USER_LAST_FUTURE={}
+USER_QUEUES={}
+ACTIVE_USERS=set()
 
 def update_user_id(update):
     if "message" in update:
@@ -791,39 +822,48 @@ def update_user_id(update):
         return update["callback_query"].get("from",{}).get("id")
     return None
 
+def drain_user_queue(uid):
+    while True:
+        with USER_QUEUE_LOCK:
+            pending=USER_QUEUES.get(uid)
+            if not pending:
+                USER_QUEUES.pop(uid,None)
+                ACTIVE_USERS.discard(uid)
+                return
+            update=pending.popleft()
+        try:
+            process_update(update)
+        except Exception:
+            log.exception("Falha inesperada ao processar atualização do usuário %s",uid)
+        finally:
+            UPDATE_CAPACITY.release()
+
 def schedule_update(update):
     uid=update_user_id(update)
     if uid is None:
         process_update(update)
         return
     if not UPDATE_CAPACITY.acquire(blocking=False):
-        log.warning("Fila de atualizações cheia; processando atualização %s em modo de contenção",update.get("update_id"))
-        with USER_QUEUE_LOCK:
-            previous=USER_LAST_FUTURE.get(uid)
-        if previous:
-            try: previous.result()
-            except Exception: log.exception("Falha em atualização anterior do usuário %s",uid)
+        log.warning("Fila cheia; atualização %s aguardará processamento direto",update.get("update_id"))
         process_update(update)
         return
-
+    submit_worker=False
     with USER_QUEUE_LOCK:
-        previous=USER_LAST_FUTURE.get(uid)
-        def run_in_order():
-            try:
-                if previous:
-                    try: previous.result()
-                    except Exception: log.exception("Falha em atualização anterior do usuário %s",uid)
-                process_update(update)
-            finally:
+        pending=USER_QUEUES.setdefault(uid,deque())
+        pending.append(update)
+        if uid not in ACTIVE_USERS:
+            ACTIVE_USERS.add(uid)
+            submit_worker=True
+    if submit_worker:
+        try:
+            UPDATE_POOL.submit(drain_user_queue,uid)
+        except Exception:
+            with USER_QUEUE_LOCK:
+                ACTIVE_USERS.discard(uid)
+                queued=USER_QUEUES.pop(uid,deque())
+            for _ in queued:
                 UPDATE_CAPACITY.release()
-        future=UPDATE_POOL.submit(run_in_order)
-        USER_LAST_FUTURE[uid]=future
-
-    def cleanup(done):
-        with USER_QUEUE_LOCK:
-            if USER_LAST_FUTURE.get(uid) is done:
-                USER_LAST_FUTURE.pop(uid,None)
-    future.add_done_callback(cleanup)
+            raise
 
 def main():
     global BOT_USERNAME
