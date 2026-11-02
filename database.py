@@ -442,10 +442,19 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
 
             if is_bot: reasons.append("Conta do Telegram identificada como bot")
             recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
+            burst=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-2 minutes')",(referrer,)).fetchone()["total"]
             daily=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')",(referrer,)).fetchone()["total"]
+            weekly=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-7 days')",(referrer,)).fetchone()["total"]
+            monthly=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-30 days')",(referrer,)).fetchone()["total"]
+            referrer_age=db.execute("SELECT (julianday('now')-julianday(created_at))*24 hours FROM users WHERE user_id=?",(referrer,)).fetchone()["hours"]
             pending=db.execute("SELECT COUNT(*) total FROM referral_reviews WHERE referrer_id=? AND status='pending'",(referrer,)).fetchone()["total"]
+            if burst>=2: reasons.append(f"Cadastros muito próximos: {burst} em 2 minutos")
             if recent>=3: reasons.append(f"Cadastros em sequência: {recent} em 10 minutos")
             if daily>=8: reasons.append(f"Volume diário elevado: {daily} em 24 horas")
+            if weekly>=15: reasons.append(f"Volume semanal elevado: {weekly} em 7 dias")
+            if monthly>=40: reasons.append(f"Volume mensal elevado: {monthly} em 30 dias")
+            if referrer_age<24 and daily>=2: reasons.append("Indicador recém-cadastrado com múltiplas indicações em menos de 24 horas")
+            if referrer_age<168 and weekly>=5: reasons.append("Conta do indicador com menos de 7 dias e volume alto de indicações")
             if pending>=3: reasons.append(f"Muitas indicações aguardando análise: {pending}")
             if reasons:
                 cur=db.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,risk_reason,status) VALUES(?,?,?,?, 'pending')",(referrer,uid,"high" if len(reasons)>=2 else "review","; ".join(reasons)))
@@ -678,8 +687,12 @@ def fraud_profile(referrer_id,limit=10):
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND status IN ('approved','rejected')) AS reviewed,
                 (SELECT COUNT(*) FROM referral_reviews WHERE referrer_id=? AND created_at>=datetime('now','-30 days')) AS flagged_30d,
                 (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')) AS last_10m,
-                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')) AS last_24h
-        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')) AS last_24h,
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-2 minutes')) AS last_2m,
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-7 days')) AS last_7d,
+                (SELECT COUNT(*) FROM users WHERE referred_by=? AND created_at>=datetime('now','-30 days')) AS last_30d,
+                (SELECT (julianday('now')-julianday(created_at))*24 FROM users WHERE user_id=?) AS account_age_hours
+        """,(referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id,referrer_id)).fetchone()
         recent=db.execute("""
             SELECT u.user_id,u.first_name,u.username,u.created_at,
                    COALESCE(rr.status,'approved') AS status,
@@ -704,6 +717,16 @@ def fraud_profile(referrer_id,limit=10):
             score+=20; reasons.append(f"Taxa de rejeição de {st['rejected'] / st['reviewed']:.0%} em indicações analisadas (+20)")
         if st["flagged_30d"]>=3:
             score+=15; reasons.append(f"{st['flagged_30d']} alertas nos últimos 30 dias (+15)")
+        if st["last_2m"]>=2:
+            score+=15; reasons.append(f"{st['last_2m']} cadastros em 2 minutos (+15)")
+        if st["last_7d"]>=15:
+            score+=15; reasons.append(f"{st['last_7d']} indicações em 7 dias (+15)")
+        if st["last_30d"]>=40:
+            score+=15; reasons.append(f"{st['last_30d']} indicações em 30 dias (+15)")
+        if st["account_age_hours"] is not None and st["account_age_hours"]<24 and st["last_24h"]>=2:
+            score+=15; reasons.append("Conta com menos de 24 horas e múltiplas indicações (+15)")
+        if st["account_age_hours"] is not None and st["account_age_hours"]<168 and st["last_7d"]>=5:
+            score+=15; reasons.append("Conta com menos de 7 dias e cinco ou mais indicações (+15)")
         score=min(100,score)
         level="alto" if score>=60 else "moderado" if score>=30 else "baixo"
         return {"user":dict(user),"stats":st,"recent":[dict(x) for x in recent],"risk_score":score,"risk_level":level,"risk_reasons":reasons}
@@ -717,6 +740,9 @@ def review_referral(rid,admin_id,approve):
         if approve and db.execute("SELECT 1 FROM account_blocks WHERE user_id=?",(row["referrer_id"],)).fetchone():
             db.rollback()
             return {"blocked_referrer":True,"referrer_id":row["referrer_id"]}
+        if approve and db.execute("SELECT 1 FROM account_blocks WHERE user_id=?",(row["referred_user_id"],)).fetchone():
+            db.rollback()
+            return {"blocked_referred":True,"referred_user_id":row["referred_user_id"]}
         status="approved" if approve else "rejected"
         db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,rid))
         if approve:
