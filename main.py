@@ -204,25 +204,34 @@ def balance(chat,uid):
     send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n100 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, use:\n<code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>\nExemplo: <code>/sacar 1000 CPF 12345678900</code>\nTipos aceitos: CPF, CNPJ, EMAIL, TELEFONE ou ALEATORIA.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
-    lines=["🏆 <b>TOP 10 PIT PRÊMIOS</b>"]
-    for i,u in enumerate(db.ranking(),1):
-        name=u["first_name"] or ("@"+u["username"] if u["username"] else str(u["user_id"]))
-        lines.append(f"{i}. {escape(name)} — {u['points']} pts")
-    send(chat,"\n".join(lines))
+    rows=db.ranking()
+    lines=["🏆 <b>RANKING GERAL PIT PRÊMIOS</b>","<i>Classificação por pontos acumulados.</i>","━━━━━━━━━━━━━━━━━━"]
+    medals={1:"🥇",2:"🥈",3:"🥉"}
+    if not rows:
+        lines.append("Ainda não há participantes no ranking. Seja o primeiro a acumular pontos!")
+    for i,u in enumerate(rows,1):
+        name=escape((u["first_name"] or ("@"+u["username"] if u["username"] else str(u["user_id"])))[:35])
+        mark=medals.get(i,f"<b>{i}º</b>")
+        lines.append(f"{mark} <b>{name}</b>\n   💰 {int(u['points']):,} pontos")
+    lines.extend(["","🎯 <i>Acumule pontos nas missões, check-ins e indicações válidas para subir no ranking.</i>"])
+    send(chat,"\n".join(lines),[[btn("📅 Ver ranking semanal","ranking:weekly")],[btn("🔄 Atualizar ranking geral","ranking:general")],[btn("⬅️ Voltar às opções","ranking")],[btn("🏠 Menu principal","home")]])
 
 
 def ranking_menu(chat):
-    send(chat,"🏆 <b>RANKING PIT PRÊMIOS</b>\n\nEscolha qual classificação deseja consultar:",[[btn("📅 Ranking semanal — últimos 7 dias","ranking:weekly")],[btn("🏆 Ranking geral — pontos acumulados","ranking:general")],[btn("⬅️ Menu principal","home")]])
+    send(chat,"🏆 <b>RANKING PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\nVeja quem está na liderança!\n\n📅 <b>Semanal:</b> pontos conquistados nos últimos 7 dias.\n🏆 <b>Geral:</b> total de pontos acumulados na conta.\n\nOs três primeiros recebem destaque com medalhas.",[[btn("📅 Ranking semanal","ranking:weekly")],[btn("🏆 Ranking geral","ranking:general")],[btn("⬅️ Menu principal","home")]])
 
 def weekly_ranking(chat):
-    lines=["📅 <b>TOP 10 DA SEMANA</b>","<i>Pontos ganhos nos últimos 7 dias.</i>","━━━━━━━━━━━━━━━━━━"]
     rows=db.weekly_ranking()
+    lines=["📅 <b>RANKING SEMANAL PIT PRÊMIOS</b>","<i>Pontos ganhos nos últimos 7 dias.</i>","━━━━━━━━━━━━━━━━━━"]
+    medals={1:"🥇",2:"🥈",3:"🥉"}
     if not rows:
-        lines.append("Ainda não há pontos registrados nesta semana. Participe das missões e atividades!")
+        lines.append("Ainda não há pontos registrados nos últimos 7 dias. Participe das missões e atividades para aparecer aqui!")
     for i,u in enumerate(rows,1):
-        name=u["first_name"] or ("@"+u["username"] if u["username"] else str(u["user_id"]))
-        lines.append(f"{i}. {escape(name)} — <b>{u['points']} pts</b>")
-    send(chat,"\n".join(lines),[[btn("🏆 Ver ranking geral","ranking:general")],[btn("⬅️ Voltar","ranking")]])
+        name=escape((u["first_name"] or ("@"+u["username"] if u["username"] else str(u["user_id"])))[:35])
+        mark=medals.get(i,f"<b>{i}º</b>")
+        lines.append(f"{mark} <b>{name}</b>\n   ⭐ {int(u['points']):,} pontos")
+    lines.extend(["","🔥 <i>O ranking é atualizado conforme os pontos são registrados.</i>"])
+    send(chat,"\n".join(lines),[[btn("🏆 Ver ranking geral","ranking:general")],[btn("🔄 Atualizar ranking semanal","ranking:weekly")],[btn("⬅️ Voltar às opções","ranking")],[btn("🏠 Menu principal","home")]])
 
 def daily(chat,uid):
     ok,streak,earned=db.daily_claim(uid,DAILY_REWARD)
