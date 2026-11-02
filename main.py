@@ -1,7 +1,7 @@
-import json, logging, time, threading, urllib.parse, urllib.request, urllib.error
+import json, logging, time, threading, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_REDEEM_POINTS
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_REDEEM_POINTS, DATABASE_PATH
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("pit_premios")
@@ -45,10 +45,47 @@ def api(method, data=None):
             raise
     raise RuntimeError("Não foi possível consultar atualizações do Telegram após várias tentativas.")
 
+OUTBOUND_QUEUE=queue.Queue(maxsize=500)
+OUTBOUND_READY=False
+OUTBOUND_STOP=threading.Event()
+
+def _outbound_worker():
+    last_chat={}
+    while not OUTBOUND_STOP.is_set():
+        try:
+            item=OUTBOUND_QUEUE.get(timeout=1)
+        except queue.Empty:
+            continue
+        chat,text_value,keyboard,future=item
+        try:
+            wait=max(0,1.05-(time.monotonic()-last_chat.get(str(chat),0)))
+            if wait: time.sleep(wait)
+            payload={"chat_id":chat,"text":text_value,"parse_mode":"HTML"}
+            if keyboard: payload["reply_markup"]={"inline_keyboard":keyboard}
+            result=api("sendMessage",payload)
+            last_chat[str(chat)]=time.monotonic()
+            future.set_result(result)
+        except Exception as exc:
+            future.set_exception(exc)
+            log.exception("Falha no envio para chat %s",chat)
+        finally:
+            OUTBOUND_QUEUE.task_done()
+
+def start_outbound_worker():
+    global OUTBOUND_READY
+    if not OUTBOUND_READY:
+        threading.Thread(target=_outbound_worker,name="pit-outbound",daemon=True).start()
+        OUTBOUND_READY=True
+
 def send(chat, text, keyboard=None):
-    d={"chat_id":chat,"text":text,"parse_mode":"HTML"}
-    if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
-    return api("sendMessage",d)
+    if not OUTBOUND_READY:
+        d={"chat_id":chat,"text":text,"parse_mode":"HTML"}
+        if keyboard: d["reply_markup"]={"inline_keyboard":keyboard}
+        return api("sendMessage",d)
+    from concurrent.futures import Future
+    future=Future()
+    OUTBOUND_QUEUE.put((chat,text,keyboard,future),timeout=30)
+    return future.result(timeout=90)
 
 def notify_user(uid,message):
     try:
@@ -346,6 +383,9 @@ def command(m):
         if block:
             send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\n\\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\\nMotivo: "+escape(block["reason"])+"\\n\\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
             return
+    if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
+        try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
+        except Exception: log.exception("Falha ao registrar auditoria administrativa")
     if cmd=="/start": start(m)
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking_menu(chat)
@@ -393,8 +433,19 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude") and admin(uid):
-        if cmd=="/bloquear":
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria") and admin(uid):
+        if cmd=="/saude":
+            try:
+                import resource
+                rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
+            except Exception: rss=-1
+            send(chat,f"🩺 <b>SAÚDE DO PIT PRÊMIOS</b>\\nRAM pico: <b>{rss:.1f} MB</b>\\nTrabalhadores: <b>{WORKERS}</b>\\nFila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>\\nEstado: <b>online</b>")
+        elif cmd=="/auditoria":
+            rows=db.recent_admin_audit(20)
+            lines=["🧾 <b>ÚLTIMAS AÇÕES ADMINISTRATIVAS</b>"]
+            for row in rows: lines.append(f"\\n{row['created_at']} — admin <code>{row['admin_id']}</code>\\n{escape(row['action'])}: {escape(row['details'])}")
+            send(chat,"\\n".join(lines) if rows else "Ainda não há ações administrativas registradas.")
+        elif cmd=="/bloquear":
             if len(p)<3 or not p[1].isdigit() or not p[2].strip():
                 send(chat,"Use: /bloquear ID MOTIVO"); return
             target=int(p[1])
@@ -526,7 +577,7 @@ def command(m):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c):
@@ -771,7 +822,10 @@ def callback(c):
         except Exception: log.exception("Falha ao avisar usuário")
 
 def process_update(update):
+    update_id=update.get("update_id")
     try:
+        if update_id is not None and db.update_was_processed(update_id):
+            return
         if "message" in update:
             m=update["message"]
             if (m.get("text") or "").startswith("/"):
@@ -800,6 +854,8 @@ def process_update(update):
                     send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
         elif "callback_query" in update:
             callback(update["callback_query"])
+        if update_id is not None:
+            db.mark_update_processed(update_id)
     except Exception:
         log.exception("Erro ao processar atualização %s",update.get("update_id"))
 
@@ -868,6 +924,79 @@ def schedule_update(update):
             for _ in queued:
                 UPDATE_CAPACITY.release()
             raise
+
+
+
+def _send_backup_document(chat_id, filename, file_bytes):
+    boundary="----PITPREMIOSBackupBoundary"
+    body=bytearray()
+    crlf=b"\\r\\n"
+    fields={"chat_id":str(chat_id),"caption":"🛡️ Backup automático do banco PIT PRÊMIOS. Contém dados pessoais e chaves Pix; mantenha esta conversa privada."}
+    for name,value in fields.items():
+        body.extend(("--"+boundary).encode()+crlf)
+        body.extend(('Content-Disposition: form-data; name="'+name+'"').encode()+crlf+crlf)
+        body.extend(value.encode("utf-8")+crlf)
+    body.extend(("--"+boundary).encode()+crlf)
+    body.extend(('Content-Disposition: form-data; name="document"; filename="'+filename+'"').encode()+crlf)
+    body.extend(b"Content-Type: application/zip"+crlf+crlf)
+    body.extend(file_bytes+crlf)
+    body.extend(("--"+boundary+"--").encode()+crlf)
+    req=urllib.request.Request(API+"sendDocument",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
+    with urllib.request.urlopen(req,timeout=60) as response:
+        result=json.loads(response.read())
+    if not result.get("ok"): raise RuntimeError(str(result))
+    return result.get("result")
+
+def create_and_send_backup():
+    if not DATABASE_PATH.exists():
+        raise FileNotFoundError("Banco de dados não encontrado; backup não criado.")
+    with tempfile.TemporaryDirectory(prefix="pit-premios-backup-") as folder:
+        db_copy=os.path.join(folder,"pit_premios.db")
+        source=sqlite3.connect(str(DATABASE_PATH),timeout=30)
+        target=sqlite3.connect(db_copy)
+        try:
+            source.backup(target)
+            target.commit()
+        finally:
+            target.close()
+            source.close()
+        buffer=io.BytesIO()
+        with zipfile.ZipFile(buffer,"w",zipfile.ZIP_DEFLATED) as archive:
+            archive.write(db_copy,"pit_premios.db")
+        from datetime import datetime
+        filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".zip"
+        payload=buffer.getvalue()
+        for admin_id in ADMIN_IDS:
+            _send_backup_document(admin_id,filename,payload)
+        log.warning("Backup enviado ao(s) administrador(es); tamanho=%s bytes",len(payload))
+        return len(payload)
+
+def backup_scheduler():
+    while True:
+        time.sleep(60)
+        try:
+            create_and_send_backup()
+        except Exception:
+            log.exception("Falha ao gerar/enviar backup automático")
+        time.sleep(24*60*60)
+
+def health_monitor():
+    while True:
+        try:
+            import resource
+            rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            if platform.system()!="Darwin": rss_mb=rss/1024
+            else: rss_mb=rss/(1024*1024)
+        except Exception:
+            rss_mb=-1
+        try:
+            active=len([t for t in UPDATE_POOL._threads if t.is_alive()]) if "UPDATE_POOL" in globals() else 0
+            pending=OUTBOUND_QUEUE.qsize()
+            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,pending)
+            db.cleanup_processed_updates(14)
+        except Exception:
+            log.exception("Falha no monitoramento de saúde")
+        time.sleep(600)
 
 def main():
     global BOT_USERNAME
