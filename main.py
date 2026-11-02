@@ -422,7 +422,7 @@ def command(m):
                 lines.extend(["","⚠️ <b>FATORES QUE AUMENTARAM O RISCO</b>"]+[f"• {escape(reason)}" for reason in profile["risk_reasons"]])
             else:
                 lines.append("\nNenhum dos critérios de risco configurados foi atingido.")
-            lines.extend(["","📊 <b>RESUMO</b>",f"Indicações totais: <b>{st['total']}</b>",f"Indicações válidas: <b>{st['valid']}</b>",f"Em análise: <b>{st['pending']}</b>",f"Rejeitadas: <b>{st['rejected']}</b>",f"Indicações analisadas: <b>{st['reviewed']}</b>",f"Taxa de rejeição: <b>{(st['rejected']/st['reviewed']):.0%}</b>" if st['reviewed'] else "Taxa de rejeição: sem análises concluídas",f"Cadastros em 10 min: <b>{st['last_10m']}</b>",f"Cadastros em 24 horas: <b>{st['last_24h']}</b>",f"Alertas nos últimos 30 dias: <b>{st['flagged_30d']}</b>","","🕒 <b>ÚLTIMAS INDICAÇÕES</b>"])
+            lines.extend(["","📊 <b>RESUMO</b>",f"Indicações totais: <b>{st['total']}</b>",f"Indicações válidas: <b>{st['valid']}</b>",f"Em análise: <b>{st['pending']}</b>",f"Rejeitadas: <b>{st['rejected']}</b>",f"Indicações analisadas: <b>{st['reviewed']}</b>",f"Taxa de rejeição: <b>{(st['rejected']/st['reviewed']):.0%}</b>" if st['reviewed'] else "Taxa de rejeição: sem análises concluídas",f"Cadastros em 2 min: <b>{st['last_2m']}</b>",f"Cadastros em 10 min: <b>{st['last_10m']}</b>",f"Cadastros em 24 horas: <b>{st['last_24h']}</b>",f"Indicações em 7 dias: <b>{st['last_7d']}</b>",f"Indicações em 30 dias: <b>{st['last_30d']}</b>",f"Idade da conta: <b>{st['account_age_hours']:.1f} horas</b>" if st['account_age_hours'] is not None else "Idade da conta: não disponível",f"Alertas nos últimos 30 dias: <b>{st['flagged_30d']}</b>","","🕒 <b>ÚLTIMAS INDICAÇÕES</b>"])
             for item in profile["recent"]:
                 state={"approved":"Aprovada","pending":"Pendente","rejected":"Rejeitada"}.get(item["status"],item["status"])
                 lines.append(f"• <code>{item['user_id']}</code> — {state} — {item['created_at']}")
@@ -664,6 +664,9 @@ def callback(c):
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
+            return
+        if result.get("blocked_referred"):
+            send(chat,"⛔ O usuário indicado está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
             return
         status="aprovada" if decision=="yes" else "rejeitada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
