@@ -1008,6 +1008,9 @@ def health_monitor():
 def main():
     global BOT_USERNAME
     db.init_db()
+    start_outbound_worker()
+    threading.Thread(target=backup_scheduler,name="pit-backup",daemon=True).start()
+    threading.Thread(target=health_monitor,name="pit-health",daemon=True).start()
     me=api("getMe")
     BOT_USERNAME=me.get("username","")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
