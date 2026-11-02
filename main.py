@@ -937,7 +937,7 @@ def schedule_update(update):
 def _send_backup_document(chat_id, filename, file_bytes):
     boundary="----PITPREMIOSBackupBoundary"
     body=bytearray()
-    crlf=b"\\r\\n"
+    crlf=b"\r\n"
     fields={"chat_id":str(chat_id),"caption":"🛡️ Backup automático do banco PIT PRÊMIOS. Contém dados pessoais e chaves Pix; mantenha esta conversa privada."}
     for name,value in fields.items():
         body.extend(("--"+boundary).encode()+crlf)
