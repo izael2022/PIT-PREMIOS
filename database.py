@@ -714,6 +714,9 @@ def review_referral(rid,admin_id,approve):
         row=db.execute("SELECT * FROM referral_reviews WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row:
             db.rollback(); return None
+        if approve and db.execute("SELECT 1 FROM account_blocks WHERE user_id=?",(row["referrer_id"],)).fetchone():
+            db.rollback()
+            return {"blocked_referrer":True,"referrer_id":row["referrer_id"]}
         status="approved" if approve else "rejected"
         db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,rid))
         if approve:
