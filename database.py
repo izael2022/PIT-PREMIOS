@@ -280,7 +280,7 @@ def user_task_submissions(user_id,limit=20):
     with connect() as db:
         return db.execute("""
             SELECT s.id,s.task_id,s.status,s.created_at,s.reviewed_at,t.title,t.reward_points,
-                   (SELECT COUNT(*) FROM task_submission_history h WHERE h.submission_id=s.id)+1 AS attempts,
+                   (SELECT COUNT(*) FROM task_submission_history h WHERE h.submission_id=s.id) + CASE WHEN s.status='pending' OR NOT EXISTS (SELECT 1 FROM task_submission_history h WHERE h.submission_id=s.id) THEN 1 ELSE 0 END AS attempts,
                    (SELECT COUNT(*) FROM task_submission_history h WHERE h.submission_id=s.id AND h.status='rejected') AS previous_rejections
             FROM task_submissions s
             JOIN tasks t ON t.id=s.task_id
