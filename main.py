@@ -742,46 +742,109 @@ def callback(c):
         try: notify_user(result["user_id"],f"Seu resgate #{rid} foi {status}.")
         except Exception: log.exception("Falha ao avisar usuário")
 
+def process_update(update):
+    try:
+        if "message" in update:
+            m=update["message"]
+            if (m.get("text") or "").startswith("/"):
+                command(m)
+            elif m.get("chat",{}).get("type")=="private":
+                uid=m.get("from",{}).get("id")
+                block=db.get_account_block(uid) if uid and not admin(uid) else None
+                if block:
+                    send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+                    return
+                task_id=PENDING_TASK_PROOFS.pop(uid,None)
+                if task_id:
+                    try:
+                        photo=m.get("photo")
+                        proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
+                        submission_id=db.submit_task(task_id,uid,proof)
+                        send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+                        for aid in ADMIN_IDS:
+                            if proof.startswith("photo:"):
+                                api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                            else:
+                                send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                    except ValueError as e:
+                        send(m["chat"]["id"],escape(str(e)))
+                else:
+                    send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
+        elif "callback_query" in update:
+            callback(update["callback_query"])
+    except Exception:
+        log.exception("Erro ao processar atualização %s",update.get("update_id"))
+
+
+from concurrent.futures import ThreadPoolExecutor
+
+WORKERS=max(4,min(8,( __import__("os").cpu_count() or 4 )))
+UPDATE_POOL=ThreadPoolExecutor(max_workers=WORKERS,thread_name_prefix="pit-update")
+UPDATE_CAPACITY=threading.BoundedSemaphore(100)
+USER_QUEUE_LOCK=threading.Lock()
+USER_LAST_FUTURE={}
+
+def update_user_id(update):
+    if "message" in update:
+        return update["message"].get("from",{}).get("id")
+    if "callback_query" in update:
+        return update["callback_query"].get("from",{}).get("id")
+    return None
+
+def schedule_update(update):
+    uid=update_user_id(update)
+    if uid is None:
+        process_update(update)
+        return
+    if not UPDATE_CAPACITY.acquire(blocking=False):
+        log.warning("Fila de atualizações cheia; processando atualização %s em modo de contenção",update.get("update_id"))
+        with USER_QUEUE_LOCK:
+            previous=USER_LAST_FUTURE.get(uid)
+        if previous:
+            try: previous.result()
+            except Exception: log.exception("Falha em atualização anterior do usuário %s",uid)
+        process_update(update)
+        return
+
+    with USER_QUEUE_LOCK:
+        previous=USER_LAST_FUTURE.get(uid)
+        def run_in_order():
+            try:
+                if previous:
+                    try: previous.result()
+                    except Exception: log.exception("Falha em atualização anterior do usuário %s",uid)
+                process_update(update)
+            finally:
+                UPDATE_CAPACITY.release()
+        future=UPDATE_POOL.submit(run_in_order)
+        USER_LAST_FUTURE[uid]=future
+
+    def cleanup(done):
+        with USER_QUEUE_LOCK:
+            if USER_LAST_FUTURE.get(uid) is done:
+                USER_LAST_FUTURE.pop(uid,None)
+    future.add_done_callback(cleanup)
+
 def main():
     global BOT_USERNAME
-    db.init_db(); me=api("getMe"); BOT_USERNAME=me.get("username",""); log.warning("PIT PRÊMIOS iniciado como @%s",BOT_USERNAME)
+    db.init_db()
+    me=api("getMe")
+    BOT_USERNAME=me.get("username","")
+    log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s",BOT_USERNAME,WORKERS)
     offset=None
     while True:
         try:
             q={"timeout":25,"allowed_updates":["message","callback_query"]}
-            if offset is not None: q["offset"]=offset
+            if offset is not None:
+                q["offset"]=offset
             for update in api("getUpdates",q):
                 offset=update["update_id"]+1
-                try:
-                    if "message" in update:
-                        m=update["message"]
-                        if (m.get("text") or "").startswith("/"): command(m)
-                        elif m.get("chat",{}).get("type")=="private":
-                            uid=m.get("from",{}).get("id")
-                            block=db.get_account_block(uid) if uid and not admin(uid) else None
-                            if block:
-                                send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
-                                continue
-                            task_id=PENDING_TASK_PROOFS.pop(uid,None)
-                            if task_id:
-                                try:
-                                    photo=m.get("photo")
-                                    if photo:
-                                        proof="photo:"+photo[-1]["file_id"]
-                                    else:
-                                        proof=(m.get("text") or "").strip()
-                                    submission_id=db.submit_task(task_id,uid,proof)
-                                    send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
-                                    for aid in ADMIN_IDS:
-                                        if proof.startswith("photo:"):
-                                            api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
-                                        else:
-                                            send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
-                                except ValueError as e: send(m["chat"]["id"],escape(str(e)))
-                            else: send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
-                    elif "callback_query" in update: callback(update["callback_query"])
-                except Exception: log.exception("Erro ao processar atualização %s",update.get("update_id"))
-        except KeyboardInterrupt: break
-        except Exception: log.exception("Falha na conexão; nova tentativa em 5 segundos"); time.sleep(5)
+                schedule_update(update)
+        except KeyboardInterrupt:
+            break
+        except Exception:
+            log.exception("Falha na conexão; nova tentativa em 5 segundos")
+            time.sleep(5)
 
-if __name__=="__main__": main()
+if __name__=="__main__":
+    main()
