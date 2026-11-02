@@ -179,6 +179,19 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_reward_orders_status ON reward_orders(status);
+        CREATE TABLE IF NOT EXISTS processed_updates(
+            update_id INTEGER PRIMARY KEY,
+            processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_processed_updates_time ON processed_updates(processed_at);
+        CREATE TABLE IF NOT EXISTS admin_audit_log(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
         CREATE TABLE IF NOT EXISTS notification_preferences(
             user_id INTEGER PRIMARY KEY,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -872,3 +885,28 @@ def unblock_account(user_id,admin_id):
         db.execute("INSERT INTO account_block_history(user_id,action,reason,admin_id) VALUES(?,'unblocked',?,?)",(user_id,row["reason"],admin_id))
         db.commit()
         return True
+
+
+def update_was_processed(update_id):
+    with connect() as db:
+        return db.execute("SELECT 1 FROM processed_updates WHERE update_id=?",(int(update_id),)).fetchone() is not None
+
+def mark_update_processed(update_id):
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO processed_updates(update_id) VALUES(?)",(int(update_id),))
+        db.commit()
+
+def cleanup_processed_updates(keep_days=14):
+    with connect() as db:
+        cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.commit()
+        return cur.rowcount
+
+def log_admin_action(admin_id,action,details=""):
+    with connect() as db:
+        db.execute("INSERT INTO admin_audit_log(admin_id,action,details) VALUES(?,?,?)",(int(admin_id),str(action)[:100],str(details)[:1000]))
+        db.commit()
+
+def recent_admin_audit(limit=30):
+    with connect() as db:
+        return [dict(r) for r in db.execute("SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT ?",(max(1,min(int(limit),100)),)).fetchall()]
