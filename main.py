@@ -153,15 +153,17 @@ def send_photo(chat,photo,caption,keyboard=None):
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
 def menu():
-    return [[btn("👤 Meu perfil","profile"),btn("💰 Carteira","wallet")],
-            [btn("🎯 Missões","missions"),btn("🎁 Check-in","daily")],
-            [btn("🚀 Convidar","invite"),btn("👥 Meus convidados","myrefs")],
-            [btn("💎 Clube VIP","vip"),btn("🎟️ Resgatar","redeem_info")],
-            [btn("🎁 Loja de prêmios","shop"),btn("📦 Meus pedidos","myorders")],
-            [btn("📜 Extrato","history"),btn("💸 Meus saques","mypayouts")],
-            [btn("🔔 Notificações","notifications")],
-            [btn("❓ Ajuda","help")],
-            [btn("📋 Tarefas disponíveis","tasks"),btn("📨 Minhas tarefas enviadas","mytasks")]]
+    return [
+        [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
+        [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
+        [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
+        [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR PONTOS","redeem_info")],
+        [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
+        [btn("📦 MEUS PEDIDOS","myorders"),btn("💸 MEUS SAQUES","mypayouts")],
+        [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
+        [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
+        [btn("❓ CENTRAL DE AJUDA","help")]
+    ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def admin_menu():
@@ -229,9 +231,47 @@ def daily(chat,uid):
         send(chat,f"⏳ <b>Check-in já realizado!</b>\nSua sequência atual é de <b>{streak} dias</b>. Volte amanhã.",back())
 
 def profile(chat,uid):
-    p=db.get_profile(uid); u=db.get_user(uid)
-    name=escape((u["first_name"] or "Participante")[:40]); vip="ATIVO 💎" if u and u["is_vip"] else "COMUM"
-    send(chat,f"👤 <b>SEU PERFIL PIT</b>\n━━━━━━━━━━━━━━━━━━\nOlá, <b>{name}</b>\n🆔 ID: <code>{uid}</code>\n💰 Saldo: <b>{p['points']:,} pontos</b>\n👥 Amigos convidados: <b>{p['referrals']}</b>\n🔥 Sequência diária: <b>{p['daily_streak']} dias</b>\n💎 Categoria: <b>{vip}</b>\n📅 Membro desde: <code>{p['created_at'][:10]}</code>",back())
+    p=db.get_profile(uid)
+    name=escape((p.get("first_name") or "Participante")[:40])
+    points=int(p.get("points",0) or 0)
+    referrals=int(p.get("referrals",0) or 0)
+    streak=int(p.get("daily_streak",0) or 0)
+    is_vip=bool(p.get("is_vip",0))
+    expiry=p.get("vip_expires_at")
+    if is_vip:
+        vip="ATIVO 💎"
+        vip_detail=("Válido até: <b>"+escape(str(expiry))+"</b>") if expiry else "Acesso VIP permanente"
+    else:
+        vip="MEMBRO"
+        vip_detail="Complete as metas de indicação para conquistar VIP"
+    daily_done=p.get("last_daily")==db.today()
+    daily_state="✅ Realizado hoje" if daily_done else "🎁 Disponível agora"
+    next_goal=next((n for n in (1,5,10) if referrals<n),None)
+    goal_line=(f"Próxima meta: <b>{next_goal} indicações</b> — faltam <b>{next_goal-referrals}</b>" if next_goal else "🏆 Todas as metas de indicação foram alcançadas!")
+    member_since=str(p.get("created_at") or "")[:10] or "—"
+    text_value=(
+        f"👤 <b>MEU PERFIL PIT PRÊMIOS</b>\\n"
+        f"━━━━━━━━━━━━━━━━━━\\n"
+        f"Olá, <b>{name}</b>! 🐾\\n\\n"
+        f"💰 <b>SALDO E CONQUISTAS</b>\\n"
+        f"Saldo: <b>{points:,} pontos</b>\\n"
+        f"Equivalente: <b>R$ {points/100:.2f}</b>\\n"
+        f"👥 Indicações válidas: <b>{referrals}</b>\\n"
+        f"📈 {goal_line}\\n\\n"
+        f"💎 <b>CLUBE VIP</b>\\n"
+        f"Categoria: <b>{vip}</b>\\n{vip_detail}\\n\\n"
+        f"🔥 Sequência de check-in: <b>{streak} dia(s)</b>\\n"
+        f"🎁 Check-in: <b>{daily_state}</b>\\n"
+        f"📅 Membro desde: <b>{member_since}</b>\\n"
+        f"🆔 ID: <code>{uid}</code>"
+    )
+    keyboard=[
+        [btn("💰 Abrir carteira","wallet"),btn("🚀 Convidar amigos","invite")],
+        [btn("🎯 Ver minhas missões","missions"),btn("💎 Clube VIP","vip")],
+        [btn("📜 Meu extrato","history")],
+        [btn("⬅️ Menu principal","home")]
+    ]
+    send(chat,text_value,keyboard)
 def invite(chat,uid):
     p=db.get_profile(uid); link=f"https://t.me/{BOT_USERNAME}?start={uid}"
     send(chat,f"🚀 <b>SEU LINK EXCLUSIVO</b>\n━━━━━━━━━━━━━━━━━━\nConvide amigos. Quando uma pessoa nova iniciar o bot pelo seu link, a indicação será registrada.\n\n🔗 <code>{link}</code>\n👥 Indicações confirmadas: <b>{p['referrals']}</b>\n🎁 Recompensa por indicação: <b>{POINTS_PER_REFERRAL} pontos</b>",[[btn("🏆 Top indicadores","toprefs")],[btn("⬅️ Menu principal","home")]])
