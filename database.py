@@ -436,6 +436,10 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             if manual_hold: reasons.append("Monitoramento manual: "+manual_hold["reason"])
             blocked=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(referrer,)).fetchone()
             if blocked: reasons.append("Indicador bloqueado: "+blocked["reason"])
+            reviewed=db.execute("SELECT COUNT(*) n,COALESCE(SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END),0) rejected FROM referral_reviews WHERE referrer_id=? AND status IN ('approved','rejected')",(referrer,)).fetchone()
+            if reviewed["rejected"]>=2: reasons.append("Histórico de rejeições: "+str(reviewed["rejected"])+" indicações não aprovadas")
+            if reviewed["n"]>=4 and reviewed["rejected"]/reviewed["n"]>=0.5: reasons.append("Taxa histórica de rejeição elevada: "+str(reviewed["rejected"])+"/"+str(reviewed["n"])+" análises")
+
             if is_bot: reasons.append("Conta do Telegram identificada como bot")
             recent=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-10 minutes')",(referrer,)).fetchone()["total"]
             daily=db.execute("SELECT COUNT(*) total FROM users WHERE referred_by=? AND created_at>=datetime('now','-24 hours')",(referrer,)).fetchone()["total"]
@@ -739,6 +743,16 @@ def get_account_block(user_id):
     with connect() as db:
         row=db.execute("SELECT * FROM account_blocks WHERE user_id=?",(user_id,)).fetchone()
         return dict(row) if row else None
+
+def list_blocked_accounts(limit=30):
+    with connect() as db:
+        rows=db.execute("SELECT b.*,u.first_name,u.username FROM account_blocks b LEFT JOIN users u ON u.user_id=b.user_id ORDER BY b.blocked_at DESC LIMIT ?",(max(1,min(int(limit),100)),)).fetchall()
+        return [dict(r) for r in rows]
+
+def account_block_history(user_id,limit=20):
+    with connect() as db:
+        rows=db.execute("SELECT * FROM account_block_history WHERE user_id=? ORDER BY id DESC LIMIT ?",(user_id,max(1,min(int(limit),50)))).fetchall()
+        return [dict(r) for r in rows]
 
 def block_account(user_id,admin_id,reason):
     reason=(reason or "").strip()[:300]
