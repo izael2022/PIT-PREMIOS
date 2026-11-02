@@ -453,7 +453,7 @@ def command(m):
                     lines.append(f"{action} — {event['created_at']} — admin {event['admin_id']}")
             else:
                 lines.append("Nenhum bloqueio registrado.")
-            lines.extend(["","⏳ <b>PENDÊNCIAS DO USUÁRIO</b>",f"Saques: {pending['pending_payouts']}",f"Pedidos da loja: {pending['pending_reward_orders']}",f"Tarefas: {pending['pending_tasks']}",f"Resgates: {pending['pending_redemptions']}","","📊 <b>HISTÓRICO DE ANÁLISES</b>",f"📋 Tarefas: {totals['tasks_approved']} aprovadas / {totals['tasks_rejected']} rejeitadas",f"🎁 Loja: {totals['rewards_approved']} aprovados / {totals['rewards_rejected']} rejeitados",f"💸 Saques: {totals['payouts_approved']} aprovados / {totals['payouts_rejected']} rejeitados",f"🎟️ Resgates: {totals['redemptions_approved']} aprovados / {totals['redemptions_rejected']} rejeitados","","📜 <b>ÚLTIMAS MOVIMENTAÇÕES</b>"]
+            lines.extend(["","⏳ <b>PENDÊNCIAS DO USUÁRIO</b>",f"Saques: {pending['pending_payouts']}",f"Pedidos da loja: {pending['pending_reward_orders']}",f"Tarefas: {pending['pending_tasks']}",f"Resgates: {pending['pending_redemptions']}","","📊 <b>HISTÓRICO DE ANÁLISES</b>",f"📋 Tarefas: {totals['tasks_approved']} aprovadas / {totals['tasks_rejected']} rejeitadas",f"🎁 Loja: {totals['rewards_approved']} aprovados / {totals['rewards_rejected']} rejeitados",f"💸 Saques: {totals['payouts_approved']} aprovados / {totals['payouts_rejected']} rejeitados",f"🎟️ Resgates: {totals['redemptions_approved']} aprovados / {totals['redemptions_rejected']} rejeitados","","📜 <b>ÚLTIMAS MOVIMENTAÇÕES</b>"])
             if details["history"]:
                 for item in details["history"]:
                     sign="+" if item["amount"]>0 else ""
