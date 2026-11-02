@@ -361,7 +361,7 @@ def command(m):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude") and admin(uid):
         if cmd=="/bloquear":
             if len(p)<3 or not p[1].isdigit() or not p[2].strip():
                 send(chat,"Use: /bloquear ID MOTIVO"); return
@@ -374,6 +374,26 @@ def command(m):
             try: send(target,"🚫 <b>SUA CONTA FOI BLOQUEADA</b>\\nMotivo: "+escape(reason)+"\\nEntre em contato com a equipe se precisar contestar.")
             except Exception: log.warning("Não foi possível notificar usuário bloqueado %s",target)
             send(chat,f"✅ Conta <code>{target}</code> bloqueada. Cadastro, saldo e histórico foram preservados.")
+        elif cmd=="/bloqueados":
+            rows=db.list_blocked_accounts(30)
+            if not rows:
+                send(chat,"🛡️ Não há contas bloqueadas no momento."); return
+            lines=["🚫 <b>CONTAS BLOQUEADAS</b>","━━━━━━━━━━━━━━━━━━"]
+            for row in rows:
+                name=escape(row["first_name"] or "Sem nome")
+                lines.append(f"\\n<b>{name}</b> — <code>{row['user_id']}</code>\\nMotivo: {escape(row['reason'])}\\nBloqueada em: {row['blocked_at']}\\nPor admin: <code>{row['blocked_by']}</code>")
+            send(chat,"\\n".join(lines),admin_menu())
+        elif cmd=="/historicoantifraude":
+            if len(p)<2 or not p[1].isdigit():
+                send(chat,"Use: /historicoantifraude ID"); return
+            target=int(p[1]); rows=db.account_block_history(target)
+            if not rows:
+                send(chat,"Não há histórico de bloqueios para esse usuário."); return
+            lines=[f"🧾 <b>HISTÓRICO DE BLOQUEIO</b>\\nUsuário: <code>{target}</code>","━━━━━━━━━━━━━━━━━━"]
+            for row in rows:
+                action="🔒 BLOQUEADO" if row["action"]=="blocked" else "🔓 DESBLOQUEADO"
+                lines.append(f"\\n{action} — {row['created_at']}\\nAdmin: <code>{row['admin_id']}</code>\\nMotivo: {escape(row['reason'] or 'Não informado')}")
+            send(chat,"\\n".join(lines),admin_menu())
         elif cmd=="/desbloquear":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /desbloquear ID"); return
@@ -464,7 +484,7 @@ def command(m):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c):
