@@ -210,27 +210,34 @@ def missions(chat,uid):
 def task_list(chat,uid):
     rows=db.active_tasks_for_user(uid)
     if not rows:
-        send(chat,"📋 <b>TAREFAS</b>\n\nNo momento não há tarefas disponíveis.",back()); return
-    lines=["📋 <b>TAREFAS DISPONÍVEIS</b>","━━━━━━━━━━━━━━━━━━"]
+        send(chat,"📋 <b>TAREFAS DISPONÍVEIS</b>\n━━━━━━━━━━━━━━━━━━\n\nNo momento não há tarefas novas para você.\n\n💡 Se uma tarefa foi rejeitada, ela poderá aparecer novamente para você corrigir e reenviar.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+        return
+    lines=["📋 <b>TAREFAS DISPONÍVEIS</b>","━━━━━━━━━━━━━━━━━━","Escolha uma tarefa, leia as instruções e envie uma comprovação válida."]
     kb=[]
     for task in rows:
-        lines.append(f"\n<b>#{task['id']} — {escape(task['title'])}</b>\n{escape(task['description'])}\n🎁 Recompensa: <b>{task['reward_points']} pontos</b>")
-        kb.append([btn(f"Enviar tarefa #{task['id']}","task:"+str(task["id"]))])
-    kb.append([btn("⬅️ Menu principal","home")])
+        proof="📸 Envie print ou foto como comprovante." if task["requires_proof"] else "📝 Envie uma mensagem ou anexo como comprovação."
+        lines.append(f"\n<b>🎯 TAREFA #{task['id']} — {escape(task['title'])}</b>\n{escape(task['description'])}\n🎁 Recompensa: <b>{task['reward_points']:,} pontos</b>\n{proof}")
+        kb.append([btn(f"📨 Fazer tarefa #{task['id']}","task:"+str(task["id"]))])
+    kb.extend([[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
     send(chat,"\n".join(lines),kb)
-
 
 
 def my_task_submissions(chat,uid):
     rows=db.user_task_submissions(uid)
-    lines=["📋 <b>MINHAS TAREFAS ENVIADAS</b>","━━━━━━━━━━━━━━━━━━"]
+    lines=["📨 <b>MINHAS TAREFAS ENVIADAS</b>","━━━━━━━━━━━━━━━━━━","Acompanhe aqui a análise de cada comprovação."]
     if not rows:
-        lines.append("Você ainda não enviou comprovações de tarefas.")
-    labels={"pending":"⏳ Aguardando análise","approved":"✅ Aprovada","rejected":"❌ Rejeitada"}
+        lines.append("\nVocê ainda não enviou nenhuma tarefa. Acesse Tarefas disponíveis para começar!")
+    labels={"pending":"⏳ Aguardando análise da equipe","approved":"✅ Aprovada — pontos creditados","rejected":"❌ Rejeitada — pode corrigir e reenviar"}
+    kb=[]
     for row in rows:
         status=labels.get(row["status"],row["status"])
-        lines.append(f"\n<b>#{row['id']} — {escape(row['title'])}</b>\n🎁 Recompensa: {row['reward_points']} pontos\nStatus: <b>{status}</b>\nEnviada: {row['created_at']}")
-    send(chat,"\n".join(lines),[[btn("📋 Ver tarefas disponíveis","tasks")],[btn("⬅️ Menu principal","home")]])
+        lines.append(f"\n<b>#{row['task_id']} — {escape(row['title'])}</b>\n🎁 Recompensa: <b>{row['reward_points']:,} pontos</b>\nStatus: <b>{status}</b>\n📨 Tentativas: {row['attempts']}\nÚltimo envio: {row['created_at']}")
+        if row["status"]=="rejected":
+            kb.append([btn(f"🔄 Corrigir e reenviar #{row['task_id']}","task:"+str(row["task_id"]))])
+        elif row["status"]=="pending":
+            lines.append("🕒 Sua comprovação está na fila de análise. Aguarde a equipe.")
+    kb.extend([[btn("📋 Ver tarefas disponíveis","tasks")],[btn("⬅️ Menu principal","home")]])
+    send(chat,"\n".join(lines),kb)
 
 def shop(chat,uid):
     rows=db.active_rewards()
@@ -605,7 +612,7 @@ def callback(c):
             task=next((x for x in db.active_tasks_for_user(uid) if x["id"]==task_id),None)
             if not task: send(chat,"Essa tarefa não está mais disponível."); return
             PENDING_TASK_PROOFS[uid]=task_id
-            send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\nTarefa: {escape(task['title'])}\nRecompensa: {task['reward_points']} pontos\n\nEnvie agora o <b>PRINT (FOTO) OU UMA MENSAGEM</b> como comprovante. A equipe vai analisar antes de liberar os pontos.")
+            send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\n━━━━━━━━━━━━━━━━━━\nTarefa: <b>{escape(task['title'])}</b>\nRecompensa: <b>{task['reward_points']:,} pontos</b>\n\nLeia as instruções da tarefa e envie uma comprovação clara, em foto, print ou mensagem.\n\n⚠️ Envie apenas uma comprovação por vez. Enquanto estiver em análise, não será possível enviar outra. Se for rejeitada, você poderá corrigir e reenviar.")
         except (ValueError,IndexError): send(chat,"Tarefa inválida.")
     elif data=="profile": profile(chat,uid)
     elif data=="wallet": balance(chat,uid)
@@ -764,7 +771,7 @@ def main():
                                     else:
                                         proof=(m.get("text") or "").strip()
                                     submission_id=db.submit_task(task_id,uid,proof)
-                                    send(m["chat"]["id"],"✅ Comprovação enviada! A equipe vai analisar sua tarefa.")
+                                    send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                                     for aid in ADMIN_IDS:
                                         if proof.startswith("photo:"):
                                             api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
