@@ -124,6 +124,19 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_task_submissions_status ON task_submissions(status);
+        CREATE TABLE IF NOT EXISTS task_submission_history(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            proof TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL,
+            reviewed_by INTEGER,
+            submitted_at TEXT,
+            reviewed_at TEXT,
+            archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_submission_history_user ON task_submission_history(user_id,task_id,id);
         CREATE TABLE IF NOT EXISTS weekly_earnings(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -215,21 +228,33 @@ def active_tasks_for_user(user_id):
             WHERE t.active=1
               AND NOT EXISTS (
                   SELECT 1 FROM task_submissions s
-                  WHERE s.task_id=t.id AND s.user_id=? AND s.status='approved'
+                  WHERE s.task_id=t.id AND s.user_id=? AND s.status IN ('approved','pending')
               )
             ORDER BY t.id DESC
         """,(user_id,)).fetchall()
 
 def submit_task(task_id,user_id,proof=""):
+    proof=(proof or "").strip()[:1500]
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
         task=db.execute("SELECT * FROM tasks WHERE id=? AND active=1",(task_id,)).fetchone()
-        if not task: raise ValueError("Essa tarefa não está disponível.")
-        if task["requires_proof"] and not proof.strip(): raise ValueError("Envie a comprovação solicitada.")
-        try:
-            cur=db.execute("INSERT INTO task_submissions(task_id,user_id,proof) VALUES(?,?,?)",(task_id,user_id,proof.strip()[:1500]))
-        except sqlite3.IntegrityError:
-            raise ValueError("Você já enviou essa tarefa.")
-        db.commit(); return cur.lastrowid
+        if not task:
+            db.rollback(); raise ValueError("Essa tarefa não está disponível.")
+        if task["requires_proof"] and not proof:
+            db.rollback(); raise ValueError("Envie a comprovação solicitada.")
+        existing=db.execute("SELECT * FROM task_submissions WHERE task_id=? AND user_id=?",(task_id,user_id)).fetchone()
+        if existing:
+            if existing["status"]=="approved":
+                db.rollback(); raise ValueError("Essa tarefa já foi aprovada.")
+            if existing["status"]=="pending":
+                db.rollback(); raise ValueError("Sua comprovação já está aguardando análise.")
+            db.execute("UPDATE task_submissions SET proof=?,status='pending',reviewed_by=NULL,reviewed_at=NULL,created_at=CURRENT_TIMESTAMP WHERE id=?",(proof,existing["id"]))
+            submission_id=existing["id"]
+        else:
+            cur=db.execute("INSERT INTO task_submissions(task_id,user_id,proof) VALUES(?,?,?)",(task_id,user_id,proof))
+            submission_id=cur.lastrowid
+        db.commit()
+        return submission_id
 
 def pending_task_submissions():
     with connect() as db:
@@ -241,6 +266,7 @@ def review_task_submission(submission_id,admin_id,approve):
         row=db.execute("SELECT s.*,t.title,t.reward_points FROM task_submissions s JOIN tasks t ON t.id=s.task_id WHERE s.id=? AND s.status='pending'",(submission_id,)).fetchone()
         if not row: db.rollback(); return None
         status='approved' if approve else 'rejected'
+        db.execute("INSERT INTO task_submission_history(submission_id,task_id,user_id,proof,status,reviewed_by,submitted_at,reviewed_at) VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",(row["id"],row["task_id"],row["user_id"],row["proof"],status,admin_id,row["created_at"]))
         db.execute("UPDATE task_submissions SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,submission_id))
         if approve:
             points=row["reward_points"]
@@ -253,7 +279,9 @@ def review_task_submission(submission_id,admin_id,approve):
 def user_task_submissions(user_id,limit=20):
     with connect() as db:
         return db.execute("""
-            SELECT s.id,s.status,s.created_at,s.reviewed_at,t.title,t.reward_points
+            SELECT s.id,s.task_id,s.status,s.created_at,s.reviewed_at,t.title,t.reward_points,
+                   (SELECT COUNT(*) FROM task_submission_history h WHERE h.submission_id=s.id)+1 AS attempts,
+                   (SELECT COUNT(*) FROM task_submission_history h WHERE h.submission_id=s.id AND h.status='rejected') AS previous_rejections
             FROM task_submissions s
             JOIN tasks t ON t.id=s.task_id
             WHERE s.user_id=?
