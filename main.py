@@ -51,6 +51,7 @@ OUTBOUND_STOP=threading.Event()
 
 def _outbound_worker():
     last_chat={}
+    last_global=0.0
     while not OUTBOUND_STOP.is_set():
         try:
             item=OUTBOUND_QUEUE.get(timeout=1)
@@ -60,10 +61,13 @@ def _outbound_worker():
         try:
             wait=max(0,1.05-(time.monotonic()-last_chat.get(str(chat),0)))
             if wait: time.sleep(wait)
+            global_wait=max(0,0.04-(time.monotonic()-last_global))
+            if global_wait: time.sleep(global_wait)
             payload={"chat_id":chat,"text":text_value,"parse_mode":"HTML"}
             if keyboard: payload["reply_markup"]={"inline_keyboard":keyboard}
             result=api("sendMessage",payload)
             last_chat[str(chat)]=time.monotonic()
+            last_global=time.monotonic()
             future.set_result(result)
         except Exception as exc:
             future.set_exception(exc)
@@ -587,6 +591,9 @@ def callback(c):
     except Exception:
         log.warning("Não foi possível confirmar o clique do usuário %s",uid,exc_info=True)
     if chat is None: return
+    if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
+        try: db.log_admin_action(uid,"callback",data)
+        except Exception: log.exception("Falha ao registrar auditoria de callback")
     if uid and not admin(uid):
         block=db.get_account_block(uid)
         if block:
