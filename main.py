@@ -38,7 +38,7 @@ def api(method, data=None):
                 time.sleep(max(1,min(int(retry_after),15)))
                 continue
             raise RuntimeError(f"Telegram HTTP {e.code}: {detail}") from e
-        except (urllib.error.URLError,TimeoutError,ConnectionError) as e:
+        except (urllib.error.URLError,TimeoutError,ConnectionError,OSError) as e:
             if method=="getUpdates" and attempt<attempts-1:
                 time.sleep(min(2**attempt,8))
                 continue
@@ -843,8 +843,8 @@ def schedule_update(update):
     if uid is None:
         process_update(update)
         return
-    if not UPDATE_CAPACITY.acquire(blocking=False):
-        log.warning("Fila cheia; atualização %s aguardará processamento direto",update.get("update_id"))
+    if not UPDATE_CAPACITY.acquire(timeout=60):
+        log.error("Fila permaneceu cheia por 60 segundos; atualização %s será processada em contenção",update.get("update_id"))
         process_update(update)
         return
     submit_worker=False
