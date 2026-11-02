@@ -652,6 +652,9 @@ def callback(c):
         if not admin(uid): return
         _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes")
         if not result: send(chat,"Esta indicação já foi analisada."); return
+        if result.get("blocked_referrer"):
+            send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
+            return
         status="aprovada" if decision=="yes" else "rejeitada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         try:
