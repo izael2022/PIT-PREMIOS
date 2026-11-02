@@ -197,8 +197,11 @@ def start(m):
     send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
-    u=db.get_user(uid); points=u["points"] if u else 0
-    send(chat,f"💰 <b>SUA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\nSaldo: <b>{points:,} pontos</b>\nValor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 Conversão: 100 pontos = R$ 1,00\n💸 Saque mínimo: 1.000 pontos (R$ 10,00)\n\nPara solicitar: <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>\nExemplo: <code>/sacar 1000 CPF 12345678900</code>\nTipos: CPF, CNPJ, EMAIL, TELEFONE ou ALEATORIA.",back())
+    u=db.get_user(uid); points=int(u["points"] if u else 0)
+    minimum=int(MIN_REDEEM_POINTS)
+    remaining=max(0,minimum-points)
+    status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
+    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n100 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, use:\n<code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>\nExemplo: <code>/sacar 1000 CPF 12345678900</code>\nTipos aceitos: CPF, CNPJ, EMAIL, TELEFONE ou ALEATORIA.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
     lines=["🏆 <b>TOP 10 PIT PRÊMIOS</b>"]
@@ -274,20 +277,25 @@ def profile(chat,uid):
     send(chat,text_value,keyboard)
 def invite(chat,uid):
     p=db.get_profile(uid); link=f"https://t.me/{BOT_USERNAME}?start={uid}"
-    send(chat,f"🚀 <b>SEU LINK EXCLUSIVO</b>\n━━━━━━━━━━━━━━━━━━\nConvide amigos. Quando uma pessoa nova iniciar o bot pelo seu link, a indicação será registrada.\n\n🔗 <code>{link}</code>\n👥 Indicações confirmadas: <b>{p['referrals']}</b>\n🎁 Recompensa por indicação: <b>{POINTS_PER_REFERRAL} pontos</b>",[[btn("🏆 Top indicadores","toprefs")],[btn("⬅️ Menu principal","home")]])
+    keyboard=[[{"text":"📤 Compartilhar meu convite","url":"https://t.me/share/url?url="+urllib.parse.quote(link,safe="")+"&text="+urllib.parse.quote("Entre no PIT PRÊMIOS pelo meu convite e participe para ganhar pontos e prêmios!",safe="")}],[btn("👥 Ver meus convidados","myrefs")],[btn("🏆 Top indicadores","toprefs")],[btn("🎯 Ver missões e metas","missions")],[btn("⬅️ Menu principal","home")]]
+    send(chat,f"🚀 <b>CONVIDE E GANHE</b>\n━━━━━━━━━━━━━━━━━━\nEste é o seu link pessoal. Compartilhe com amigos e convide-os para conhecer o PIT PRÊMIOS!\n\n🔗 <b>SEU LINK</b>\n<code>{link}</code>\n\n🎁 Recompensa por indicação válida: <b>{POINTS_PER_REFERRAL:,} pontos</b>\n👥 Indicações válidas: <b>{p['referrals']}</b>\n\n<b>Como funciona?</b>\n1. Compartilhe seu link.\n2. Seu amigo abre o link e inicia o bot.\n3. A indicação aparece em Meus convidados.\n4. Após validação, os pontos são creditados.\n\n⚠️ Apenas novos usuários são contabilizados. Indicações suspeitas podem passar por análise antifraude.",keyboard)
 def my_referrals(chat,uid):
     rows=db.user_referrals(uid,15)
-    lines=["👥 <b>MEUS CONVIDADOS</b>","━━━━━━━━━━━━━━━━━━"]
+    p=db.get_profile(uid)
+    total=int(p.get("referrals",0) or 0)
+    pending=sum(1 for r in rows if r["referral_status"]=="pending")
+    rejected=sum(1 for r in rows if r["referral_status"]=="rejected")
+    lines=["👥 <b>MEUS CONVIDADOS</b>","━━━━━━━━━━━━━━━━━━",f"✅ Indicações válidas: <b>{total}</b>",f"⏳ Em análise nesta lista: <b>{pending}</b>",f"❌ Não aprovadas nesta lista: <b>{rejected}</b>",""]
     if not rows:
-        lines.append("Você ainda não possui convidados.")
+        lines.append("Você ainda não possui convidados registrados. Compartilhe seu link para começar!")
     labels={"pending":"⏳ Em análise","approved":"✅ Válida","rejected":"❌ Não aprovada"}
     for r in rows:
         name=escape((r["first_name"] or "Participante")[:35])
         username="@"+escape(r["username"]) if r["username"] else "sem username"
-        status=labels.get(r["referral_status"],r["referral_status"])
-        lines.append(f"\n<b>{name}</b> ({username})\nID: <code>{r['user_id']}</code>\nStatus: {status}\nCadastro: {r['created_at']}")
-    lines.append("\n<i>Mostrando os últimos 15 convidados.</i>")
-    send(chat,"\n".join(lines),[[btn("🚀 Voltar a convidar","invite")],[btn("⬅️ Menu principal","home")]])
+        status=labels.get(r["referral_status"],"Status não identificado")
+        lines.append(f"\n<b>{name}</b> ({username})\nID: <code>{r['user_id']}</code>\nStatus: {status}\nCadastro: {escape(str(r['created_at']))}")
+    lines.append("\n<i>Exibindo até os 15 convidados mais recentes. Os totais válidos consideram seu cadastro completo.</i>")
+    send(chat,"\n".join(lines),[[btn("🚀 Compartilhar meu link","invite")],[btn("🎯 Ver metas e bônus","missions")],[btn("⬅️ Menu principal","home")]])
 
 def toprefs(chat):
     rows=db.top_referrals(); lines=["🚀 <b>CAMPEÕES DE INDICAÇÃO</b>","━━━━━━━━━━━━━━━━━━"]
@@ -295,23 +303,28 @@ def toprefs(chat):
     if not rows: lines.append("As primeiras indicações ainda estão por vir.")
     send(chat,"\n".join(lines),back())
 def missions(chat,uid):
-    p=db.get_profile(uid); state="Disponível" if p["last_daily"]!=db.today() else "Concluída hoje"
+    p=db.get_profile(uid)
+    referrals=int(p.get("referrals",0) or 0)
+    checked=p.get("last_daily")==db.today()
     milestones=db.referral_milestone_status(uid)
     vip_goals=db.referral_vip_status(uid)
-    lines=["🎯 <b>MISSÕES DO PIT</b>","━━━━━━━━━━━━━━━━━━",f"🎁 Check-in diário — <i>{state}</i>",f"🚀 Indicações válidas: <b>{p['referrals']}</b>","", "🏆 <b>METAS DE INDICAÇÃO</b>"]
+    lines=["🎯 <b>MISSÕES E CONQUISTAS</b>","━━━━━━━━━━━━━━━━━━",f"🎁 <b>Check-in diário:</b> {'✅ Concluído hoje' if checked else '🟢 Disponível'}",f"🔥 <b>Sua sequência:</b> {int(p.get('daily_streak',0) or 0)} dia(s)",f"👥 <b>Indicações válidas:</b> {referrals}","", "🏆 <b>METAS DE INDICAÇÃO</b>"]
+    kb=[[btn("🎁 Fazer check-in diário","daily"),btn("🚀 Convidar amigos","invite")]]
+    if not milestones: lines.append("Nenhuma meta de indicação configurada no momento.")
     for item in milestones:
-        status="Resgatar bônus" if item["reached"] and not item["claimed"] else ("✅ Recebido" if item["claimed"] else "🔒 Em andamento")
-        lines.append(f"{item['milestone']} amigo(s) — bônus de {item['bonus']} pontos — <b>{status}</b>")
-    kb=[[btn("🎁 Fazer check-in","daily"),btn("🚀 Convidar","invite")]]
-    for item in milestones:
-        if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar meta de {item['milestone']} amigo(s)","milestone:"+str(item["milestone"]))])
+        target=int(item["milestone"]); progress=min(100,int(referrals*100/target)) if target else 0
+        status="🎉 Bônus disponível para resgate" if item["reached"] and not item["claimed"] else ("✅ Bônus já recebido" if item["claimed"] else f"🔒 Progresso: {min(referrals,target)}/{target} ({progress}%)")
+        lines.append(f"\n<b>{target} indicações</b> — prêmio: <b>{item['bonus']:,} pontos</b>\n{status}")
+        if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar bônus de {target}","milestone:"+str(target))])
     lines.extend(["","💎 <b>METAS DO CLUBE VIP</b>"])
+    if not vip_goals: lines.append("Consulte a equipe para conhecer as metas VIP.")
     for item in vip_goals:
-        status="Resgatar VIP" if item["reached"] and not item["claimed"] else ("✅ Resgatado" if item["claimed"] else "🔒 Em andamento")
-        lines.append(f"{item['milestone']} amigos — VIP por {item['days']} dias — <b>{status}</b>")
-        if item["reached"] and not item["claimed"]:
-            kb.append([btn(f"💎 Resgatar VIP de {item['days']} dias","vipmilestone:"+str(item["milestone"]))])
-    kb.append([btn("⬅️ Menu principal","home")])
+        target=int(item["milestone"]); progress=min(100,int(referrals*100/target)) if target else 0
+        status="🎉 VIP disponível para resgate" if item["reached"] and not item["claimed"] else ("✅ VIP resgatado" if item["claimed"] else f"🔒 Progresso: {min(referrals,target)}/{target} ({progress}%)")
+        lines.append(f"\n<b>{target} amigos</b> — VIP por <b>{item['days']} dias</b>\n{status}")
+        if item["reached"] and not item["claimed"]: kb.append([btn(f"💎 Resgatar VIP ({item['days']} dias)","vipmilestone:"+str(target))])
+    lines.extend(["","💡 <i>As recompensas de indicação dependem de novos cadastros válidos. Indicações em análise só contam após aprovação.</i>"])
+    kb.extend([[btn("📋 Ver tarefas disponíveis","tasks"),btn("📨 Minhas tarefas","mytasks")],[btn("⬅️ Menu principal","home")]])
     send(chat,"\n".join(lines),kb)
 def task_list(chat,uid):
     rows=db.active_tasks_for_user(uid)
@@ -440,7 +453,7 @@ def notifications_page(chat,uid):
     send(chat,f"🔔 <b>NOTIFICAÇÕES</b>\n\nStatus atual: <b>{state}</b>\n\nVocê pode escolher se deseja receber avisos sobre aprovações de tarefas, indicações, saques e resgates.",[[btn(label,action)],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
-    send(chat,f"❓ <b>CENTRAL DE AJUDA</b>\n━━━━━━━━━━━━━━━━━━\n💰 Pontos: acumule participando das ações.\n🎁 Check-in: bônus uma vez por dia.\n🚀 Indicações: compartilhe seu link pessoal.\n🏆 Ranking: veja os participantes com mais pontos.\n🎟️ Resgates: /resgatar PONTOS DESCRIÇÃO. Mínimo {MIN_REDEEM_POINTS} pontos.\n💎 VIP: ativação pela administração.",back())
+    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
 def command(m):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
