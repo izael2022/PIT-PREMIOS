@@ -347,19 +347,42 @@ def my_task_submissions(chat,uid):
 
 def shop(chat,uid):
     rows=db.active_rewards()
+    profile_data=db.get_profile(uid)
+    points=int(profile_data.get("points",0) or 0)
+    lines=[
+        "🎁 <b>LOJA DE PRÊMIOS PIT</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"💰 Sua carteira: <b>{points:,} pontos</b>",
+        "",
+        "Troque seus pontos por prêmios disponíveis.",
+        "Escolha um item abaixo para solicitar:"
+    ]
     if not rows:
-        send(chat,"🎁 <b>LOJA DE PRÊMIOS</b>\n\nAinda não há prêmios disponíveis. Volte mais tarde!",back())
+        lines.extend(["","📭 <b>Nenhum prêmio disponível no momento.</b>","Volte mais tarde para conferir as novidades!"])
+        send(chat,"\\n".join(lines),[[btn("📦 Meus pedidos","myorders")],[btn("⬅️ Menu principal","home")]])
         return
-    lines=["🎁 <b>LOJA DE PRÊMIOS</b>","━━━━━━━━━━━━━━━━━━","Escolha o prêmio que deseja solicitar:"]
     kb=[]
     for r in rows:
-        stock="Estoque ilimitado" if r["stock"]<0 else f"Estoque: {r['stock']}"
-        lines.append(f"\n<b>{escape(r['title'])}</b> — {r['points_cost']:,} pontos\n{escape(r['description'])}\n📦 {stock}")
-        kb.append([btn(f"🎁 Solicitar: {r['title'][:24]} ({r['points_cost']} pts)","shopbuy:"+str(r["id"]))])
-    kb.append([btn("⬅️ Menu principal","home")])
-    send(chat,"\n".join(lines),kb)
-
-
+        cost=int(r["points_cost"])
+        stock="♾️ Estoque ilimitado" if r["stock"]<0 else f"📦 {r['stock']} unidade(s) disponível(is)"
+        affordable=points>=cost
+        state="✅ Você tem pontos suficientes" if affordable else f"🔒 Faltam {cost-points:,} pontos"
+        lines.append(
+            f"\\n🎁 <b>{escape(r['title'])}</b>\\n"
+            f"{escape(r['description'])}\\n"
+            f"💎 Preço: <b>{cost:,} pontos</b>\\n"
+            f"{stock}\\n"
+            f"{state}"
+        )
+        label=f"🎁 Solicitar {r['title'][:20]} ({cost:,} pts)"
+        kb.append([btn(label,"shopbuy:"+str(r["id"]))])
+    lines.extend(["","ℹ️ Ao solicitar, os pontos ficam reservados até a equipe analisar o pedido.","Se o pedido for rejeitado ou cancelado, os pontos são devolvidos."])
+    kb.extend([
+        [btn("📦 Acompanhar meus pedidos","myorders")],
+        [btn("💰 Minha carteira","wallet"),btn("📜 Meu extrato","history")],
+        [btn("⬅️ Menu principal","home")]
+    ])
+    send(chat,"\\n".join(lines),kb)
 def my_reward_orders(chat,uid):
     rows=db.user_reward_orders(uid)
     lines=["📦 <b>MEUS PEDIDOS DA LOJA</b>","━━━━━━━━━━━━━━━━━━"]
