@@ -808,9 +808,13 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import os
 
-WORKERS=max(4,min(8,(os.cpu_count() or 4)))
+try:
+    WORKERS=max(4,min(16,int(os.getenv("BOT_WORKERS","12"))))
+except ValueError:
+    WORKERS=12
+QUEUE_LIMIT=250
 UPDATE_POOL=ThreadPoolExecutor(max_workers=WORKERS,thread_name_prefix="pit-update")
-UPDATE_CAPACITY=threading.BoundedSemaphore(100)
+UPDATE_CAPACITY=threading.BoundedSemaphore(QUEUE_LIMIT)
 USER_QUEUE_LOCK=threading.Lock()
 USER_QUEUES={}
 ACTIVE_USERS=set()
@@ -870,7 +874,7 @@ def main():
     db.init_db()
     me=api("getMe")
     BOT_USERNAME=me.get("username","")
-    log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s",BOT_USERNAME,WORKERS)
+    log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
     while True:
         try:
