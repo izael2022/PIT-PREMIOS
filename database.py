@@ -179,6 +179,27 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_reward_orders_status ON reward_orders(status);
+        CREATE TABLE IF NOT EXISTS daily_games(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game TEXT NOT NULL CHECK(game IN ('chest','roulette','scratch')),
+            points INTEGER NOT NULL CHECK(points>=0),
+            played_on TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id,game,played_on),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_games_date ON daily_games(played_on,game);
+        CREATE TABLE IF NOT EXISTS notification_events(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_notification_events_user ON notification_events(user_id,id DESC);
         CREATE TABLE IF NOT EXISTS processed_updates(
             update_id INTEGER PRIMARY KEY,
             processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -600,6 +621,57 @@ def claim_referral_vip(uid,milestone):
         db.execute("UPDATE users SET is_vip=1, vip_expires_at=CASE WHEN vip_expires_at IS NOT NULL AND vip_expires_at>datetime('now') THEN datetime(vip_expires_at, ?) ELSE datetime('now', ?) END WHERE user_id=?", (f"+{days} days",f"+{days} days",uid))
         expiry=db.execute("SELECT vip_expires_at FROM users WHERE user_id=?",(uid,)).fetchone()["vip_expires_at"]
         db.commit(); return days,expiry
+
+
+def play_daily_game(uid,game,points):
+    if game not in ("chest","roulette","scratch"): raise ValueError("Jogo inválido.")
+    points=max(0,min(int(points),100))
+    current=today()
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            db.execute("INSERT INTO daily_games(user_id,game,points,played_on) VALUES(?,?,?,?)",(uid,game,points,current))
+        except sqlite3.IntegrityError:
+            db.rollback()
+            raise ValueError("Você já utilizou sua tentativa deste jogo hoje. Volte amanhã!")
+        if points:
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,uid))
+            reason={"chest":"Baú surpresa diário","roulette":"Roleta de pontos","scratch":"Raspadinha virtual"}[game]
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,points,reason))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,points,"game_"+game))
+        db.commit()
+        return points
+
+def game_status(uid):
+    current=today()
+    with connect() as db:
+        rows=db.execute("SELECT game,points FROM daily_games WHERE user_id=? AND played_on=?",(uid,current)).fetchall()
+        return {r["game"]:int(r["points"]) for r in rows}
+
+def notification_history(uid,limit=10):
+    with connect() as db:
+        return db.execute("SELECT category,title,message,created_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
+
+def record_notification(uid,category,title,message):
+    with connect() as db:
+        db.execute("INSERT INTO notification_events(user_id,category,title,message) VALUES(?,?,?,?)",(uid,category,title,message))
+        db.commit()
+
+def financial_dashboard():
+    with connect() as db:
+        row=db.execute("""
+            SELECT
+              COALESCE((SELECT SUM(amount) FROM point_history WHERE amount>0),0) AS points_issued,
+              COALESCE((SELECT -SUM(amount) FROM point_history WHERE amount<0),0) AS points_debited,
+              COALESCE((SELECT SUM(points) FROM payout_requests WHERE status='pending'),0) AS points_reserved,
+              COALESCE((SELECT SUM(amount_cents) FROM payout_requests WHERE status='approved'),0) AS pix_paid_cents,
+              COALESCE((SELECT SUM(amount_cents) FROM payout_requests WHERE status='pending'),0) AS pix_pending_cents,
+              COALESCE((SELECT SUM(points) FROM payout_requests WHERE status='rejected'),0) AS rejected_payout_points,
+              COALESCE((SELECT SUM(points) FROM redemptions WHERE status='approved'),0) AS approved_redemptions,
+              COALESCE((SELECT SUM(points_spent) FROM reward_orders WHERE status='approved'),0) AS approved_store_points,
+              COALESCE((SELECT SUM(points) FROM daily_games),0) AS game_points
+        """).fetchone()
+        return dict(row)
 
 def stats():
     with connect() as db:
