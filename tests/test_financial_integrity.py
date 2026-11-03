@@ -117,5 +117,26 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual(self.balance(), 5000)
 
 
+    def test_admin_stats_returns_all_dashboard_fields(self):
+        stats = db.stats()
+        self.assertEqual(stats["users"], 1)
+        self.assertEqual(stats["points"], 5000)
+        self.assertEqual(stats["pending_redemptions"], 0)
+        self.assertEqual(stats["pending_payouts"], 0)
+        self.assertEqual(stats["pending_reward_orders"], 0)
+        self.assertEqual(stats["pending_tasks"], 0)
+        self.assertEqual(stats["pending_fraud"], 0)
+
+    def test_configurable_daily_reward_sequence_validation(self):
+        from config import parse_daily_rewards
+
+        self.assertEqual(parse_daily_rewards("3, 4,5, 10"), (3, 4, 5, 10))
+        self.assertEqual(parse_daily_rewards("0,5"), (0, 5))
+        for invalid in ("", "1,,2", "1,abc", "-1,2"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    parse_daily_rewards(invalid)
+
+
 if __name__ == "__main__":
     unittest.main()
