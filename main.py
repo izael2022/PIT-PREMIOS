@@ -658,15 +658,15 @@ def command(m):
             s=db.stats()
             send(
                 chat,
-                "📊 <b>ESTATÍSTICAS DO PIT PRÊMIOS</b>\\n"
-                "━━━━━━━━━━━━━━━━━━\\n"
-                f"👥 Usuários cadastrados: <b>{s['users']:,}</b>\\n"
-                f"💰 Pontos em circulação: <b>{s['points']:,}</b>\\n\\n"
-                "⏳ <b>PENDÊNCIAS PARA ANÁLISE</b>\\n"
-                f"🎟️ Resgates: <b>{s['pending_redemptions']}</b>\\n"
-                f"💸 Saques Pix: <b>{s['pending_payouts']}</b>\\n"
-                f"🎁 Pedidos da loja: <b>{s['pending_reward_orders']}</b>\\n"
-                f"📋 Tarefas: <b>{s['pending_tasks']}</b>\\n"
+                "📊 <b>ESTATÍSTICAS DO PIT PRÊMIOS</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"👥 Usuários cadastrados: <b>{s['users']:,}</b>\n"
+                f"💰 Pontos em circulação: <b>{s['points']:,}</b>\n\n"
+                "⏳ <b>PENDÊNCIAS PARA ANÁLISE</b>\n"
+                f"🎟️ Resgates: <b>{s['pending_redemptions']}</b>\n"
+                f"💸 Saques Pix: <b>{s['pending_payouts']}</b>\n"
+                f"🎁 Pedidos da loja: <b>{s['pending_reward_orders']}</b>\n"
+                f"📋 Tarefas: <b>{s['pending_tasks']}</b>\n"
                 f"🛡️ Análises antifraude: <b>{s['pending_fraud']}</b>"
             )
         elif cmd=="/addpoints":
