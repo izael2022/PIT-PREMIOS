@@ -9,6 +9,7 @@ os.environ.setdefault("ADMIN_IDS", "1")
 import database as db
 import main as bot
 import threading
+from unittest.mock import patch
 
 
 class HealthMonitorStateTests(unittest.TestCase):
@@ -103,15 +104,17 @@ class BackgroundWorkerSupervisionTests(unittest.TestCase):
             runs.append(True)
             done.set()
 
-        first = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
-        self.assertTrue(done.wait(1))
-        first.join(1)
-        done.clear()
-        second = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
-        self.assertIsNot(first, second)
-        self.assertTrue(done.wait(1))
-        second.join(1)
-        self.assertEqual(len(runs), 2)
+        with patch.object(bot, "report_health_issue") as report:
+            first = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
+            self.assertTrue(done.wait(1))
+            first.join(1)
+            done.clear()
+            second = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
+            self.assertIsNot(first, second)
+            self.assertTrue(done.wait(1))
+            second.join(1)
+            self.assertEqual(len(runs), 2)
+            report.assert_called_once()
 
 
 if __name__ == "__main__":
