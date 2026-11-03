@@ -716,11 +716,6 @@ def callback(c):
     if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
-    if uid and not admin(uid):
-        block=db.get_account_block(uid)
-        if block:
-            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
-            return
     navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
     if (data in navigation_actions or data.startswith("task:") or data.startswith("history:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
@@ -1059,10 +1054,9 @@ def schedule_update(update):
     if uid is None:
         process_update(update)
         return
-    if not UPDATE_CAPACITY.acquire(timeout=60):
-        log.error("Fila permaneceu cheia por 60 segundos; atualização %s será processada em contenção",update.get("update_id"))
-        process_update(update)
-        return
+    # Aplicar backpressure em vez de processar fora da fila por usuário.
+    # Isso preserva a ordem das atualizações quando a fila está cheia.
+    UPDATE_CAPACITY.acquire()
     submit_worker=False
     with USER_QUEUE_LOCK:
         pending=USER_QUEUES.setdefault(uid,deque())
