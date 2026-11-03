@@ -578,6 +578,14 @@ def all_user_ids():
     with connect() as db:
         return [row["user_id"] for row in db.execute("SELECT user_id FROM users ORDER BY user_id").fetchall()]
 
+def admin_user_ids_page(page=0,page_size=30):
+    page=max(0,int(page))
+    page_size=max(1,min(int(page_size),100))
+    with connect() as db:
+        total=db.execute("SELECT COUNT(*) AS total FROM users").fetchone()["total"]
+        rows=db.execute("SELECT user_id FROM users ORDER BY user_id LIMIT ? OFFSET ?",(page_size,page*page_size)).fetchall()
+        return total,[row["user_id"] for row in rows]
+
 def add_points(uid,amount,reason,update_id=None):
     if amount==0:return
     with connect() as db:
