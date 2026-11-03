@@ -152,3 +152,17 @@ O painel de saúde agora também informa quantos desses três serviços estão a
 **Limite importante:** isso recupera threads internas enquanto o processo principal continua executando. Não reinicia o processo Python se ele for encerrado, nem recupera uma máquina/contêiner desligado. Para esse cenário, a política de reinício automático precisa estar configurada no serviço de hospedagem (Discloud), e um monitor externo continua recomendado.
 
 **Testes:** adicionados testes que verificam que um trabalhador ativo não é duplicado e que um trabalhador encerrado pode ser iniciado novamente. Os testes não iniciam conexões reais nem acessam o banco de produção.
+
+
+## Monitor externo de disponibilidade (heartbeat)
+
+O monitor de saúde pode enviar um sinal de vida para um serviço externo por meio da variável opcional `MONITOR_HEARTBEAT_URL`.
+
+- Configure uma URL HTTPS de heartbeat fornecida pelo serviço externo (por exemplo, um monitor do tipo Better Stack Heartbeats).
+- O bot envia um GET a cada ciclo de saúde bem-sucedido (aproximadamente a cada 60 segundos).
+- O sinal só é enviado depois que o SQLite, as filas e as verificações internas terminam sem erro. Se o monitor interno ou o processo parar, os sinais deixam de chegar e o serviço externo pode disparar a notificação configurada.
+- A URL é um segredo: configure somente na variável de ambiente da hospedagem, nunca no repositório, logs ou mensagens.
+- O envio tem timeout de 10 segundos e aceita somente HTTPS. Se a integração não estiver configurada, o recurso permanece desativado e não faz chamadas de rede.
+- Configure no serviço externo um intervalo de 1 minuto e uma tolerância/grace period de pelo menos 3 minutos para evitar alertas por pequenas oscilações. Configure também o canal de notificação (e-mail ou Telegram, conforme o serviço oferecer).
+
+**Importante:** o bot apenas envia o heartbeat. A criação da conta, do monitor externo e do canal de alerta é uma etapa de configuração no serviço escolhido. O monitor externo é o componente que pode avisar quando o processo inteiro estiver offline.
