@@ -8,7 +8,6 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(m
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
-PENDING_TASK_PROOFS={}
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
 
 def api(method, data=None):
@@ -701,11 +700,19 @@ def command(m):
 
 def callback(c):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
+    if chat is None: return
+    if uid and not admin(uid):
+        block=db.get_account_block(uid)
+        if block:
+            try:
+                api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Sua conta está bloqueada. Procure a equipe de atendimento.","show_alert":True})
+            except Exception:
+                log.warning("Não foi possível exibir o aviso de bloqueio ao usuário %s",uid,exc_info=True)
+            return
     try:
         api("answerCallbackQuery",{"callback_query_id":c["id"]})
     except Exception:
         log.warning("Não foi possível confirmar o clique do usuário %s",uid,exc_info=True)
-    if chat is None: return
     if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
@@ -832,7 +839,7 @@ def callback(c):
             task_id=int(data.split(":")[1])
             task=next((x for x in db.active_tasks_for_user(uid) if x["id"]==task_id),None)
             if not task: send(chat,"Essa tarefa não está mais disponível."); return
-            PENDING_TASK_PROOFS[uid]=task_id
+            db.set_pending_task_proof(uid,task_id)
             send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\n━━━━━━━━━━━━━━━━━━\nTarefa: <b>{escape(task['title'])}</b>\nRecompensa: <b>{task['reward_points']:,} pontos</b>\n\nLeia as instruções da tarefa e envie uma comprovação clara, em foto, print ou mensagem.\n\n⚠️ Envie apenas uma comprovação por vez. Enquanto estiver em análise, não será possível enviar outra. Se for rejeitada, você poderá corrigir e reenviar.")
         except (ValueError,IndexError): send(chat,"Tarefa inválida.")
     elif data=="profile": profile(chat,uid)
@@ -982,12 +989,13 @@ def process_update(update):
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
                     return
-                task_id=PENDING_TASK_PROOFS.pop(uid,None)
+                task_id=db.get_pending_task_proof(uid)
                 if task_id:
                     try:
                         photo=m.get("photo")
                         proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
                         submission_id=db.submit_task(task_id,uid,proof)
+                        db.clear_pending_task_proof(uid)
                         send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                         for aid in ADMIN_IDS:
                             if proof.startswith("photo:"):
@@ -995,6 +1003,8 @@ def process_update(update):
                             else:
                                 send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
                     except ValueError as e:
+                        if str(e)!="Envie a comprovação solicitada.":
+                            db.clear_pending_task_proof(uid)
                         send(m["chat"]["id"],escape(str(e)))
                 else:
                     send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
@@ -1140,9 +1150,17 @@ def main():
     global BOT_USERNAME
     db.init_db()
     start_outbound_worker()
-    # Recupera atualizações recebidas e ainda não concluídas antes de buscar novas.
-    for pending_update in db.pending_updates():
-        schedule_update(pending_update)
+    # Recupera todos os lotes pendentes antes de buscar novas atualizações.
+    last_pending_id=0
+    while True:
+        pending_batch=db.pending_updates(limit=500,after_update_id=last_pending_id)
+        if not pending_batch:
+            break
+        for pending_update in pending_batch:
+            schedule_update(pending_update)
+            last_pending_id=max(last_pending_id,int(pending_update["update_id"]))
+        if len(pending_batch)<500:
+            break
     threading.Thread(target=backup_scheduler,name="pit-backup",daemon=True).start()
     threading.Thread(target=health_monitor,name="pit-health",daemon=True).start()
     me=api("getMe")
