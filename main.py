@@ -884,7 +884,7 @@ def callback(c):
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes")
+        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
