@@ -1,7 +1,8 @@
-import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
+import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH
+from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("pit_premios")
@@ -1091,28 +1092,20 @@ def _send_backup_document(chat_id, filename, file_bytes):
     return result.get("result")
 
 def create_and_send_backup():
-    if not DATABASE_PATH.exists():
-        raise FileNotFoundError("Banco de dados não encontrado; backup não criado.")
-    with tempfile.TemporaryDirectory(prefix="pit-premios-backup-") as folder:
-        db_copy=os.path.join(folder,"pit_premios.db")
-        source=sqlite3.connect(str(DATABASE_PATH),timeout=30)
-        target=sqlite3.connect(db_copy)
+    payload=create_backup_archive(DATABASE_PATH)
+    from datetime import datetime
+    filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".zip"
+    sent=0
+    for admin_id in ADMIN_IDS:
         try:
-            source.backup(target)
-            target.commit()
-        finally:
-            target.close()
-            source.close()
-        buffer=io.BytesIO()
-        with zipfile.ZipFile(buffer,"w",zipfile.ZIP_DEFLATED) as archive:
-            archive.write(db_copy,"pit_premios.db")
-        from datetime import datetime
-        filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".zip"
-        payload=buffer.getvalue()
-        for admin_id in ADMIN_IDS:
             _send_backup_document(admin_id,filename,payload)
-        log.warning("Backup enviado ao(s) administrador(es); tamanho=%s bytes",len(payload))
-        return len(payload)
+            sent+=1
+        except Exception:
+            log.exception("Falha ao enviar backup ao administrador %s",admin_id)
+    if not sent:
+        raise RuntimeError("Backup criado e validado, mas não foi enviado a nenhum administrador.")
+    log.warning("Backup validado e enviado a %s administrador(es); tamanho=%s bytes",sent,len(payload))
+    return len(payload)
 
 def backup_scheduler():
     while True:
