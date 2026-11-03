@@ -36,12 +36,12 @@ def report_health_issue(alert_key, details):
             if should_notify:
                 HEALTH_FALLBACK_LAST[str(alert_key)]=now
     if should_notify:
-        _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\\n\\n<b>Problema:</b> "+escape(str(alert_key))+"\\n<b>Detalhes:</b> "+escape(message)+"\\n\\nA equipe deve verificar os logs e a hospedagem.")
+        _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\n\n<b>Problema:</b> "+escape(str(alert_key))+"\n<b>Detalhes:</b> "+escape(message)+"\n\nA equipe deve verificar os logs e a hospedagem.")
 
 def resolve_health_issue(alert_key, details="O serviço voltou a operar normalmente."):
     try:
         if db.resolve_health_alert(alert_key):
-            _send_health_message("✅ <b>RECUPERAÇÃO DO PIT PRÊMIOS</b>\\n\\n<b>Serviço:</b> "+escape(str(alert_key))+"\\n"+escape(str(details)))
+            _send_health_message("✅ <b>RECUPERAÇÃO DO PIT PRÊMIOS</b>\n\n<b>Serviço:</b> "+escape(str(alert_key))+"\n"+escape(str(details)))
     except Exception:
         log.exception("Não foi possível registrar recuperação de saúde %s",alert_key)
 
@@ -518,7 +518,7 @@ def shop(chat,uid):
     ]
     if not rows:
         lines.extend(["","📭 <b>Nenhum prêmio disponível no momento.</b>","Volte mais tarde para conferir as novidades!"])
-        send(chat,"\\n".join(lines),[[btn("📦 Meus pedidos","myorders")],[btn("⬅️ Menu principal","home")]])
+        send(chat,"\n".join(lines),[[btn("📦 Meus pedidos","myorders")],[btn("⬅️ Menu principal","home")]])
         return
     kb=[]
     for r in rows:
@@ -527,10 +527,10 @@ def shop(chat,uid):
         affordable=points>=cost
         state="✅ Você tem pontos suficientes" if affordable else f"🔒 Faltam {cost-points:,} pontos"
         lines.append(
-            f"\\n🎁 <b>{escape(r['title'])}</b>\\n"
-            f"{escape(r['description'])}\\n"
-            f"💎 Preço: <b>{cost:,} pontos</b>\\n"
-            f"{stock}\\n"
+            f"\n🎁 <b>{escape(r['title'])}</b>\n"
+            f"{escape(r['description'])}\n"
+            f"💎 Preço: <b>{cost:,} pontos</b>\n"
+            f"{stock}\n"
             f"{state}"
         )
         label=f"🎁 Solicitar {r['title'][:20]} ({cost:,} pts)"
@@ -541,7 +541,7 @@ def shop(chat,uid):
         [btn("💰 Minha carteira","wallet"),btn("📜 Meu extrato","history")],
         [btn("⬅️ Menu principal","home")]
     ])
-    send(chat,"\\n".join(lines),kb)
+    send(chat,"\n".join(lines),kb)
 def my_reward_orders(chat,uid):
     rows=db.user_reward_orders(uid)
     lines=["📦 <b>MEUS PEDIDOS DA LOJA</b>","━━━━━━━━━━━━━━━━━━"]
@@ -609,7 +609,7 @@ def command(m,update_id=None):
     if uid and not admin(uid):
         block=db.get_account_block(uid)
         if block:
-            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\n\\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\\nMotivo: "+escape(block["reason"])+"\\n\\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
+            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\n\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\nMotivo: "+escape(block["reason"])+"\n\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
             return
     if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
         try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
@@ -668,8 +668,8 @@ def command(m,update_id=None):
         elif cmd=="/auditoria":
             rows=db.recent_admin_audit(20)
             lines=["🧾 <b>ÚLTIMAS AÇÕES ADMINISTRATIVAS</b>"]
-            for row in rows: lines.append(f"\\n{row['created_at']} — admin <code>{row['admin_id']}</code>\\n{escape(row['action'])}: {escape(row['details'])}")
-            send(chat,"\\n".join(lines) if rows else "Ainda não há ações administrativas registradas.")
+            for row in rows: lines.append(f"\n{row['created_at']} — admin <code>{row['admin_id']}</code>\n{escape(row['action'])}: {escape(row['details'])}")
+            send(chat,"\n".join(lines) if rows else "Ainda não há ações administrativas registradas.")
         elif cmd=="/bloquear":
             if len(p)<3 or not p[1].isdigit() or not p[2].strip():
                 send(chat,"Use: /bloquear ID MOTIVO"); return
@@ -679,7 +679,7 @@ def command(m,update_id=None):
             reason=t.split(maxsplit=2)[2]
             if not db.block_account(target,uid,reason):
                 send(chat,"Usuário não encontrado no banco de dados."); return
-            try: send(target,"🚫 <b>SUA CONTA FOI BLOQUEADA</b>\\nMotivo: "+escape(reason)+"\\nEntre em contato com a equipe se precisar contestar.")
+            try: send(target,"🚫 <b>SUA CONTA FOI BLOQUEADA</b>\nMotivo: "+escape(reason)+"\nEntre em contato com a equipe se precisar contestar.")
             except Exception: log.warning("Não foi possível notificar usuário bloqueado %s",target)
             send(chat,f"✅ Conta <code>{target}</code> bloqueada. Cadastro, saldo e histórico foram preservados.")
         elif cmd=="/bloqueados":
@@ -689,19 +689,19 @@ def command(m,update_id=None):
             lines=["🚫 <b>CONTAS BLOQUEADAS</b>","━━━━━━━━━━━━━━━━━━"]
             for row in rows:
                 name=escape(row["first_name"] or "Sem nome")
-                lines.append(f"\\n<b>{name}</b> — <code>{row['user_id']}</code>\\nMotivo: {escape(row['reason'])}\\nBloqueada em: {row['blocked_at']}\\nPor admin: <code>{row['blocked_by']}</code>")
-            send(chat,"\\n".join(lines),admin_menu())
+                lines.append(f"\n<b>{name}</b> — <code>{row['user_id']}</code>\nMotivo: {escape(row['reason'])}\nBloqueada em: {row['blocked_at']}\nPor admin: <code>{row['blocked_by']}</code>")
+            send(chat,"\n".join(lines),admin_menu())
         elif cmd=="/historicoantifraude":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /historicoantifraude ID"); return
             target=int(p[1]); rows=db.account_block_history(target)
             if not rows:
                 send(chat,"Não há histórico de bloqueios para esse usuário."); return
-            lines=[f"🧾 <b>HISTÓRICO DE BLOQUEIO</b>\\nUsuário: <code>{target}</code>","━━━━━━━━━━━━━━━━━━"]
+            lines=[f"🧾 <b>HISTÓRICO DE BLOQUEIO</b>\nUsuário: <code>{target}</code>","━━━━━━━━━━━━━━━━━━"]
             for row in rows:
                 action="🔒 BLOQUEADO" if row["action"]=="blocked" else "🔓 DESBLOQUEADO"
-                lines.append(f"\\n{action} — {row['created_at']}\\nAdmin: <code>{row['admin_id']}</code>\\nMotivo: {escape(row['reason'] or 'Não informado')}")
-            send(chat,"\\n".join(lines),admin_menu())
+                lines.append(f"\n{action} — {row['created_at']}\nAdmin: <code>{row['admin_id']}</code>\nMotivo: {escape(row['reason'] or 'Não informado')}")
+            send(chat,"\n".join(lines),admin_menu())
         elif cmd=="/desbloquear":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /desbloquear ID"); return
@@ -710,7 +710,7 @@ def command(m,update_id=None):
                 send(chat,"⛔ Administradores não podem ser alterados por este comando."); return
             if not db.unblock_account(target,uid):
                 send(chat,"Esta conta não está bloqueada."); return
-            try: send(target,"✅ <b>SUA CONTA FOI DESBLOQUEADA</b>\\nVocê já pode voltar a utilizar o PIT PRÊMIOS.")
+            try: send(target,"✅ <b>SUA CONTA FOI DESBLOQUEADA</b>\nVocê já pode voltar a utilizar o PIT PRÊMIOS.")
             except Exception: log.warning("Não foi possível notificar usuário desbloqueado %s",target)
             send(chat,f"✅ Conta <code>{target}</code> desbloqueada. O saldo e todo o histórico continuam preservados.")
         elif cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
@@ -826,6 +826,33 @@ def _should_delete_callback_message(data,uid):
         return admin(uid)
     navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
     return data in navigation_actions or data.startswith("task:") or data.startswith("history:")
+
+
+def send_admin_user_ids(chat,page=0):
+    page_size=30
+    total,ids=db.admin_user_ids_page(page,page_size)
+    pages=max(1,(total+page_size-1)//page_size)
+    page=max(0,min(int(page),pages-1))
+    if not ids:
+        send(chat,"🆔 <b>IDs dos usuários</b>\nNenhum usuário cadastrado.",admin_menu())
+        return
+    first=page*page_size+1
+    last=first+len(ids)-1
+    body="\n".join(f"<code>{user_id}</code>" for user_id in ids)
+    message=(f"🆔 <b>IDs DE TODOS OS USUÁRIOS</b>\n"
+             f"Total cadastrado: <b>{total}</b>\n"
+             f"Página <b>{page+1}/{pages}</b> — exibindo <b>{first}–{last}</b>\n"
+             f"━━━━━━━━━━━━━━━━━━\n{body}")
+    keyboard=[]
+    navigation=[]
+    if page>0:
+        navigation.append(btn("⬅️ Anterior",f"admin:userids:{page-1}"))
+    if page+1<pages:
+        navigation.append(btn("Próxima ➡️",f"admin:userids:{page+1}"))
+    if navigation:
+        keyboard.append(navigation)
+    keyboard.append([btn("⬅️ Voltar ao painel","admin:back")])
+    send(chat,message,keyboard)
 
 
 def callback(c,update_id=None):
@@ -1115,7 +1142,7 @@ def process_update(update):
                 uid=m.get("from",{}).get("id")
                 block=db.get_account_block(uid) if uid and not admin(uid) else None
                 if block:
-                    send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+                    send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
                     return
                 task_id=db.get_pending_task_proof(uid)
@@ -1125,12 +1152,12 @@ def process_update(update):
                         proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
                         submission_id=db.submit_task(task_id,uid,proof)
                         db.clear_pending_task_proof(uid)
-                        send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+                        send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                         for aid in ADMIN_IDS:
                             if proof.startswith("photo:"):
-                                api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                                api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
                             else:
-                                send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                                send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
                     except ValueError as e:
                         if str(e)!="Envie a comprovação solicitada.":
                             db.clear_pending_task_proof(uid)
