@@ -28,6 +28,23 @@ def init_db():
         CREATE TABLE IF NOT EXISTS redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,points INTEGER NOT NULL,reward TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP,reviewed_by INTEGER,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE INDEX IF NOT EXISTS idx_history_user ON point_history(user_id);
         CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status);
+        CREATE TABLE IF NOT EXISTS account_blocks(
+            user_id INTEGER PRIMARY KEY,
+            reason TEXT NOT NULL,
+            blocked_by INTEGER NOT NULL,
+            blocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE TABLE IF NOT EXISTS account_block_history(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK(action IN ('blocked','unblocked')),
+            reason TEXT NOT NULL DEFAULT '',
+            admin_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
         CREATE TABLE IF NOT EXISTS referral_milestones(
             user_id INTEGER NOT NULL,
             milestone INTEGER NOT NULL,
