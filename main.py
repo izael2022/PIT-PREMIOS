@@ -828,6 +828,33 @@ def _should_delete_callback_message(data,uid):
     return data in navigation_actions or data.startswith("task:") or data.startswith("history:")
 
 
+def send_admin_user_ids(chat,page=0):
+    page_size=30
+    total,ids=db.admin_user_ids_page(page,page_size)
+    pages=max(1,(total+page_size-1)//page_size)
+    page=max(0,min(int(page),pages-1))
+    if not ids:
+        send(chat,"🆔 <b>IDs dos usuários</b>\\nNenhum usuário cadastrado.",admin_menu())
+        return
+    first=page*page_size+1
+    last=first+len(ids)-1
+    body="\\n".join(f"<code>{user_id}</code>" for user_id in ids)
+    message=(f"🆔 <b>IDs DE TODOS OS USUÁRIOS</b>\\n"
+             f"Total cadastrado: <b>{total}</b>\\n"
+             f"Página <b>{page+1}/{pages}</b> — exibindo <b>{first}–{last}</b>\\n"
+             f"━━━━━━━━━━━━━━━━━━\\n{body}")
+    keyboard=[]
+    navigation=[]
+    if page>0:
+        navigation.append(btn("⬅️ Anterior",f"admin:userids:{page-1}"))
+    if page+1<pages:
+        navigation.append(btn("Próxima ➡️",f"admin:userids:{page+1}"))
+    if navigation:
+        keyboard.append(navigation)
+    keyboard.append([btn("⬅️ Voltar ao painel","admin:back")])
+    send(chat,message,keyboard)
+
+
 def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
