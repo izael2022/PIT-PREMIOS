@@ -252,6 +252,7 @@ def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def admin_menu():
     return [[btn("📊 Estatísticas","admin:stats"),btn("👤 Consultar usuário","admin:user")],
+            [btn("🆔 IDs de todos os usuários","admin:userids:0")],
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
             [btn("🎁 Pedidos da loja","admin:rewardorders")],
@@ -859,6 +860,9 @@ def callback(c,update_id=None):
         elif action=="finance":
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado.</i>",admin_menu())
+        elif action=="userids" or action.startswith("userids:"):
+            page=int(action.split(":",1)[1]) if ":" in action else 0
+            send_admin_user_ids(chat,page)
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
