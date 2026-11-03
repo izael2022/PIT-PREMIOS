@@ -53,23 +53,6 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
-        CREATE TABLE IF NOT EXISTS account_blocks(
-            user_id INTEGER PRIMARY KEY,
-            reason TEXT NOT NULL,
-            blocked_by INTEGER NOT NULL,
-            blocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        );
-        CREATE TABLE IF NOT EXISTS account_block_history(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            action TEXT NOT NULL CHECK(action IN ('blocked','unblocked')),
-            reason TEXT NOT NULL DEFAULT '',
-            admin_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
         CREATE TABLE IF NOT EXISTS referral_manual_holds(
             referrer_id INTEGER PRIMARY KEY,
             reason TEXT NOT NULL DEFAULT 'Monitoramento manual da equipe',
@@ -213,6 +196,13 @@ def init_db():
             completed_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_durable_updates_status ON durable_updates(status,update_id);
+        CREATE TABLE IF NOT EXISTS pending_task_proofs(
+            user_id INTEGER PRIMARY KEY,
+            task_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(task_id) REFERENCES tasks(id)
+        );
         CREATE INDEX IF NOT EXISTS idx_processed_updates_time ON processed_updates(processed_at);
         CREATE TABLE IF NOT EXISTS admin_audit_log(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -963,10 +953,26 @@ def enqueue_update(update):
         db.commit()
         return cur.rowcount == 1
 
-def pending_updates(limit=500):
+def pending_updates(limit=500,after_update_id=0):
     with connect() as db:
-        rows=db.execute("SELECT payload FROM durable_updates WHERE status='pending' ORDER BY update_id LIMIT ?",(max(1,min(int(limit),2000)),)).fetchall()
+        rows=db.execute("SELECT payload FROM durable_updates WHERE status='pending' AND update_id>? ORDER BY update_id LIMIT ?",(int(after_update_id),max(1,min(int(limit),2000)))).fetchall()
         return [json.loads(row["payload"]) for row in rows]
+
+def set_pending_task_proof(user_id,task_id):
+    with connect() as db:
+        db.execute("INSERT INTO pending_task_proofs(user_id,task_id) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET task_id=excluded.task_id,created_at=CURRENT_TIMESTAMP",(int(user_id),int(task_id)))
+        db.commit()
+
+def get_pending_task_proof(user_id):
+    with connect() as db:
+        row=db.execute("SELECT task_id FROM pending_task_proofs WHERE user_id=?",(int(user_id),)).fetchone()
+        return int(row["task_id"]) if row else None
+
+def clear_pending_task_proof(user_id):
+    with connect() as db:
+        cur=db.execute("DELETE FROM pending_task_proofs WHERE user_id=?",(int(user_id),))
+        db.commit()
+        return cur.rowcount==1
 
 def update_was_processed(update_id):
     with connect() as db:
