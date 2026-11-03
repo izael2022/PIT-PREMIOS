@@ -17,9 +17,9 @@ Configure as variáveis diretamente no painel da hospedagem:
 - BOT_TOKEN: token secreto do Telegram.
 - ADMIN_IDS: IDs numéricos separados por vírgula.
 - DATABASE_PATH: padrão data/pit_premios.db.
-- POINTS_PER_REFERRAL: padrão 10.
-- DAILY_REWARD: padrão 2.
-- MIN_REDEEM_POINTS: padrão 100.
+- POINTS_PER_REFERRAL: pontos por indicação válida; padrão 100.
+- DAILY_REWARDS: sequência de pontos do check-in, separados por vírgula; padrão `3,4,5,6,7,8,10`. Após o último dia, a sequência recomeça.
+- MIN_REDEEM_POINTS: mínimo para resgate/saque; padrão 1000.
 
 ## Execução
 Python 3.11 ou superior:
