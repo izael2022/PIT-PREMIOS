@@ -136,3 +136,19 @@ Indicadores apresentados:
 **Segurança e limites:** o painel é protegido pela mesma verificação de administrador usada nas demais funções administrativas. A indicação “respondendo” apenas confirma que o processo atendeu à consulta; não prova disponibilidade contínua. A métrica de RAM é o pico fornecido pelo sistema, e pode aparecer como indisponível em plataformas sem suporte. O painel não substitui monitoramento externo da hospedagem.
 
 **Testes adicionados:** persistência/atualização de métricas e consulta de incidentes resolvidos, usando banco temporário isolado. O banco de produção não foi acessado nem migrado nesta alteração.
+
+
+## Complemento — supervisão e reinício de serviços internos
+
+**Implementado nesta revisão:** o loop principal verifica a saúde de três serviços em segundo plano e inicia novamente qualquer trabalhador que tenha encerrado inesperadamente:
+- fila de envio de mensagens;
+- agendador de backup;
+- monitor de saúde e alertas.
+
+A supervisão evita iniciar cópias duplicadas de trabalhadores que ainda estão ativos e aplica atraso progressivo limitado (até 60 segundos) em tentativas repetidas, para evitar ciclos rápidos de reinício. Quando detecta um encerramento inesperado, registra o incidente e tenta avisar os administradores pelo mecanismo de alertas existente.
+
+O painel de saúde agora também informa quantos desses três serviços estão ativos.
+
+**Limite importante:** isso recupera threads internas enquanto o processo principal continua executando. Não reinicia o processo Python se ele for encerrado, nem recupera uma máquina/contêiner desligado. Para esse cenário, a política de reinício automático precisa estar configurada no serviço de hospedagem (Discloud), e um monitor externo continua recomendado.
+
+**Testes:** adicionados testes que verificam que um trabalhador ativo não é duplicado e que um trabalhador encerrado pode ser iniciado novamente. Os testes não iniciam conexões reais nem acessam o banco de produção.
