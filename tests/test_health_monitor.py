@@ -117,5 +117,31 @@ class BackgroundWorkerSupervisionTests(unittest.TestCase):
             report.assert_called_once()
 
 
+class ExternalHeartbeatTests(unittest.TestCase):
+    def test_disabled_heartbeat_does_not_make_network_request(self):
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", ""):
+            with patch.object(bot.urllib.request, "urlopen") as open_url:
+                self.assertFalse(bot.send_external_heartbeat())
+                open_url.assert_not_called()
+
+    def test_heartbeat_requires_https(self):
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", "http://monitor.example/ping"):
+            with self.assertRaises(ValueError):
+                bot.send_external_heartbeat()
+
+    def test_successful_heartbeat_uses_timeout_and_returns_true(self):
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", "https://monitor.example/secret-token"):
+            with patch.object(bot.urllib.request, "urlopen", return_value=Response()) as open_url:
+                self.assertTrue(bot.send_external_heartbeat())
+                self.assertEqual(open_url.call_args.kwargs["timeout"], 10)
+                request = open_url.call_args.args[0]
+                self.assertEqual(request.full_url, "https://monitor.example/secret-token")
+
+
 if __name__ == "__main__":
     unittest.main()
