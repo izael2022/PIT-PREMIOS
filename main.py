@@ -1,7 +1,7 @@
 import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
 from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
@@ -1253,6 +1253,21 @@ def backup_scheduler():
             report_health_issue("backup",LAST_BACKUP_ERROR)
         time.sleep(24*60*60)
 
+def send_external_heartbeat():
+    """Ping a configured HTTPS heartbeat only after a successful health cycle."""
+    url=str(MONITOR_HEARTBEAT_URL or "").strip()
+    if not url:
+        return False
+    parsed=urllib.parse.urlparse(url)
+    if parsed.scheme!="https" or not parsed.netloc:
+        raise ValueError("MONITOR_HEARTBEAT_URL deve ser uma URL HTTPS válida.")
+    request=urllib.request.Request(url,headers={"User-Agent":"PIT-PREMIOS-Health/1.0"})
+    with urllib.request.urlopen(request,timeout=10) as response:
+        status=getattr(response,"status",response.getcode())
+        if not 200<=int(status)<300:
+            raise RuntimeError(f"Monitor externo respondeu HTTP {status}.")
+    return True
+
 def health_monitor():
     while True:
         try:
@@ -1294,6 +1309,13 @@ def health_monitor():
             if LAST_BACKUP_ERROR:
                 report_health_issue("backup",LAST_BACKUP_ERROR)
             db.cleanup_processed_updates(14)
+            if MONITOR_HEARTBEAT_URL:
+                try:
+                    send_external_heartbeat()
+                    resolve_health_issue("external_heartbeat_delivery","O sinal de vida foi enviado ao monitor externo.")
+                except Exception as heartbeat_exc:
+                    log.exception("Falha ao enviar heartbeat ao monitor externo")
+                    report_health_issue("external_heartbeat_delivery",str(heartbeat_exc))
         except Exception as exc:
             log.exception("Falha no monitoramento de saúde")
             report_health_issue("health_monitor",str(exc))
