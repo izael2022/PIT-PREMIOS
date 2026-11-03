@@ -213,6 +213,13 @@ def init_db():
             completed_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_durable_updates_status ON durable_updates(status,update_id);
+        CREATE TABLE IF NOT EXISTS idempotency_keys(
+            update_id INTEGER PRIMARY KEY,
+            action TEXT NOT NULL,
+            result TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency_keys(created_at);
         CREATE TABLE IF NOT EXISTS pending_task_proofs(
             user_id INTEGER PRIMARY KEY,
             task_id INTEGER NOT NULL,
@@ -591,7 +598,28 @@ def daily_claim(uid,reward):
 def ranking(limit=10):
     with connect() as db: return db.execute("SELECT user_id,first_name,username,points FROM users ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
 
-def create_redemption(uid,points,reward):
+def _idempotency_lookup(db,update_id,action):
+    if update_id is None:
+        return False,None
+    row=db.execute("SELECT action,result FROM idempotency_keys WHERE update_id=?",(int(update_id),)).fetchone()
+    if not row:
+        return False,None
+    if row["action"]!=action:
+        raise ValueError("Identificador de atualização já utilizado em outra operação.")
+    try:
+        return True,json.loads(row["result"])
+    except (TypeError,ValueError):
+        return True,None
+
+def _idempotency_save(db,update_id,action,result):
+    if update_id is None:
+        return
+    db.execute(
+        "INSERT INTO idempotency_keys(update_id,action,result) VALUES(?,?,?)",
+        (int(update_id),action,json.dumps(result,ensure_ascii=False,separators=(",",":")))
+    )
+
+def create_redemption(uid,points,reward,update_id=None):
     points=int(points)
     reward=(reward or "").strip()
     if points<1 or points>10000000:
@@ -599,11 +627,18 @@ def create_redemption(uid,points,reward):
     if not reward or len(reward)>500:
         raise ValueError("Informe uma descrição válida para o resgate (até 500 caracteres).")
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"redemption.create")
+        if found:
+            db.rollback()
+            return int(result)
+        row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["points"]<points: db.rollback(); raise ValueError("Saldo insuficiente.")
         db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
         cur=db.execute("INSERT INTO redemptions(user_id,points,reward) VALUES(?,?,?)",(uid,points,reward)); rid=cur.lastrowid
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Resgate #{rid}")); db.commit(); return rid
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Resgate #{rid}"))
+        _idempotency_save(db,update_id,"redemption.create",rid)
+        db.commit(); return rid
 
 def pending_redemptions():
     with connect() as db: return db.execute("SELECT * FROM redemptions WHERE status='pending' ORDER BY id").fetchall()
