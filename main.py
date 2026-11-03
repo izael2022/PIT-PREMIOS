@@ -1263,7 +1263,9 @@ def send_external_heartbeat():
         raise ValueError("MONITOR_HEARTBEAT_URL deve ser uma URL HTTPS válida.")
     request=urllib.request.Request(url,headers={"User-Agent":"PIT-PREMIOS-Health/1.0"})
     with urllib.request.urlopen(request,timeout=10) as response:
-        status=getattr(response,"status",response.getcode())
+        status=getattr(response,"status",None)
+        if status is None:
+            status=response.getcode()
         if not 200<=int(status)<300:
             raise RuntimeError(f"Monitor externo respondeu HTTP {status}.")
     return True
