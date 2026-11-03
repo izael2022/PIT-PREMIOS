@@ -387,9 +387,13 @@ def user_reward_orders(user_id,limit=15):
         """,(user_id,limit)).fetchall()
 
 
-def create_reward_order(user_id,reward_id):
+def create_reward_order(user_id,reward_id,update_id=None):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"shop.purchase")
+        if found:
+            db.rollback()
+            return int(result)
         reward=db.execute("SELECT * FROM rewards WHERE id=? AND active=1",(reward_id,)).fetchone()
         user=db.execute("SELECT points FROM users WHERE user_id=?",(user_id,)).fetchone()
         if not reward: db.rollback(); raise ValueError("Prêmio indisponível.")
@@ -400,6 +404,7 @@ def create_reward_order(user_id,reward_id):
         cur=db.execute("INSERT INTO reward_orders(reward_id,user_id,points_spent) VALUES(?,?,?)",(reward_id,user_id,reward["points_cost"]))
         order_id=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,-reward["points_cost"],f"Pedido de recompensa #{order_id}"))
+        _idempotency_save(db,update_id,"shop.purchase",order_id)
         db.commit(); return order_id
 
 def pending_reward_orders():
@@ -562,18 +567,29 @@ def all_user_ids():
     with connect() as db:
         return [row["user_id"] for row in db.execute("SELECT user_id FROM users ORDER BY user_id").fetchall()]
 
-def add_points(uid,amount,reason):
+def add_points(uid,amount,reason,update_id=None):
     if amount==0:return
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        found,_=_idempotency_lookup(db,update_id,"admin.points_adjustment")
+        if found:
+            db.rollback()
+            return False
+        row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row:
-            if amount<0: raise ValueError("Usuário não encontrado.")
+            if amount<0:
+                db.rollback()
+                raise ValueError("Usuário não encontrado.")
             db.execute("INSERT INTO users(user_id) VALUES(?)",(uid,))
-        elif row["points"]+amount<0: raise ValueError("Saldo insuficiente.")
+        elif row["points"]+amount<0:
+            db.rollback()
+            raise ValueError("Saldo insuficiente.")
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(amount,uid))
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,amount,reason))
         if amount>0: db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,amount,"admin_adjustment"))
+        _idempotency_save(db,update_id,"admin.points_adjustment",True)
         db.commit()
+        return True
 
 def daily_claim(uid,reward):
     from datetime import datetime, timezone, timedelta
@@ -773,7 +789,7 @@ def claim_referral_milestone(uid,milestone):
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,bonuses[milestone],"referral_milestone"))
         db.commit(); return bonuses[milestone]
 
-def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
+def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update_id=None):
     points=int(points)
     min_points=int(min_points)
     pix_key=(pix_key or "").strip()
@@ -786,6 +802,10 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
     if pix_key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): raise ValueError("Tipo de chave Pix inválido.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"payout.create")
+        if found:
+            db.rollback()
+            return int(result)
         row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["points"]<points:
             db.rollback(); raise ValueError("Saldo insuficiente.")
@@ -796,6 +816,7 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
         cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points, pix_key,pix_key_type))
         rid=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
+        _idempotency_save(db,update_id,"payout.create",rid)
         db.commit(); return rid
 
 def pending_payouts():
