@@ -39,6 +39,24 @@ class HealthMonitorStateTests(unittest.TestCase):
         self.assertFalse(db.resolve_health_alert("backup"))
         self.assertTrue(db.should_notify_health_alert("backup", "failed again", 30))
 
+    def test_health_metrics_survive_reopening_database(self):
+        db.set_health_metric("last_backup_ok", "2026-11-03 14:00:00")
+        metric = db.get_health_metric("last_backup_ok")
+        self.assertEqual(metric["metric_value"], "2026-11-03 14:00:00")
+        self.assertIsNotNone(metric["updated_at"])
+
+    def test_recent_health_alerts_include_resolved_incidents(self):
+        db.should_notify_health_alert("worker", "queue stalled")
+        db.resolve_health_alert("worker")
+        rows = db.recent_health_alerts(5)
+        self.assertEqual(rows[0]["alert_key"], "worker")
+        self.assertEqual(rows[0]["status"], "resolved")
+
+    def test_health_metrics_are_keyed_and_updated(self):
+        db.set_health_metric("last_backup_ok", "first")
+        db.set_health_metric("last_backup_ok", "second")
+        self.assertEqual(db.get_health_metric("last_backup_ok")["metric_value"], "second")
+
     def test_alert_details_are_bounded(self):
         db.should_notify_health_alert("large_detail", "x" * 1500)
         self.assertEqual(len(db.active_health_alerts()[0]["details"]), 1000)
