@@ -83,6 +83,45 @@ def api(method, data=None):
 OUTBOUND_QUEUE=queue.Queue(maxsize=500)
 OUTBOUND_READY=False
 OUTBOUND_STOP=threading.Event()
+BACKGROUND_THREADS={}
+BACKGROUND_THREADS_LOCK=threading.Lock()
+BACKGROUND_RESTART_AT={}
+BACKGROUND_FAILURES={}
+
+def ensure_background_worker(name,target,restart_backoff=5):
+    """Start a worker once, or restart it after an unexpected thread exit."""
+    now=time.monotonic()
+    should_alert=False
+    with BACKGROUND_THREADS_LOCK:
+        current=BACKGROUND_THREADS.get(name)
+        if current is not None and current.is_alive():
+            return current
+        if current is not None:
+            allowed_at=BACKGROUND_RESTART_AT.get(name,0)
+            if now<allowed_at:
+                return None
+            failures=BACKGROUND_FAILURES.get(name,0)+1
+            BACKGROUND_FAILURES[name]=failures
+            delay=min(60, max(float(restart_backoff), 2 ** min(failures,6)))
+            BACKGROUND_RESTART_AT[name]=now+delay
+            should_alert=True
+        worker=threading.Thread(target=target,name=name,daemon=True)
+        BACKGROUND_THREADS[name]=worker
+        worker.start()
+    if should_alert:
+        report_health_issue("worker_"+name,f"O serviço interno {name} parou inesperadamente e foi iniciado novamente.")
+    return worker
+
+def ensure_background_workers():
+    workers=(
+        ("pit-outbound",_outbound_worker),
+        ("pit-backup",backup_scheduler),
+        ("pit-health",health_monitor),
+    )
+    for name,target in workers:
+        ensure_background_worker(name,target)
+
+
 
 def _outbound_worker():
     last_chat={}
@@ -112,9 +151,9 @@ def _outbound_worker():
 
 def start_outbound_worker():
     global OUTBOUND_READY
-    if not OUTBOUND_READY:
-        threading.Thread(target=_outbound_worker,name="pit-outbound",daemon=True).start()
-        OUTBOUND_READY=True
+    worker=ensure_background_worker("pit-outbound",_outbound_worker)
+    OUTBOUND_READY=bool(worker and worker.is_alive())
+    return worker
 
 def send(chat, text, keyboard=None):
     if not OUTBOUND_READY:
@@ -248,7 +287,8 @@ def admin_health_report(chat):
             "━━━━━━━━━━━━━━━━━━",
             "🟢 Processo: <b>respondendo</b>",
             f"💾 RAM: <b>{ram_label}</b>",
-            f"🧵 Trabalhadores ativos: <b>{workers}</b>",
+            f"🧵 Trabalhadores de atualização ativos: <b>{workers}</b>",
+            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/3</b>",
             f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
             f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
             f"📥 Atualizações pendentes: <b>{snapshot['pending_updates']}</b>",
@@ -1274,14 +1314,15 @@ def main():
             last_pending_id=max(last_pending_id,int(pending_update["update_id"]))
         if len(pending_batch)<500:
             break
-    threading.Thread(target=backup_scheduler,name="pit-backup",daemon=True).start()
-    threading.Thread(target=health_monitor,name="pit-health",daemon=True).start()
+    ensure_background_workers()
     me=api("getMe")
     BOT_USERNAME=me.get("username","")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
     while True:
         try:
+            ensure_background_workers()
+            start_outbound_worker()
             q={"timeout":25,"allowed_updates":["message","callback_query"]}
             if offset is not None:
                 q["offset"]=offset
