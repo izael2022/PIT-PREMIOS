@@ -850,7 +850,10 @@ def fraud_profile(referrer_id,limit=10):
         level="alto" if score>=60 else "moderado" if score>=30 else "baixo"
         return {"user":dict(user),"stats":st,"recent":[dict(x) for x in recent],"risk_score":score,"risk_level":level,"risk_reasons":reasons}
 
-def review_referral(rid,admin_id,approve):
+def review_referral(rid,admin_id,approve,reward_points):
+    reward_points=int(reward_points)
+    if reward_points<0:
+        raise ValueError("A recompensa da indicação não pode ser negativa.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row=db.execute("SELECT * FROM referral_reviews WHERE id=? AND status='pending'",(rid,)).fetchone()
@@ -863,11 +866,11 @@ def review_referral(rid,admin_id,approve):
             db.rollback()
             return {"blocked_referred":True,"referred_user_id":row["referred_user_id"]}
         status="approved" if approve else "rejected"
-        db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,rid))
-        if approve:
-            db.execute("UPDATE users SET points=points+100 WHERE user_id=?",(row["referrer_id"],))
-            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],100,f"Indicação aprovada #{rid}"))
-            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],100,"referral_approved"))
+        db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",(status,admin_id,rid))
+        if approve and reward_points>0:
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(reward_points,row["referrer_id"]))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],reward_points,f"Indicação aprovada #{rid}"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],reward_points,"referral_approved"))
         db.commit(); return dict(row)
 
 def set_referral_manual_hold(referrer_id,enabled,admin_id,reason="Monitoramento manual da equipe"):
