@@ -567,14 +567,21 @@ def daily_claim(uid,reward):
         streak=row["daily_streak"]+1 if row["last_daily"]==yesterday else 1
         earned=rewards[(streak-1)%len(rewards)]
         db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,earned,uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%len(rewards)+1} da sequência"))
-        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,earned,"daily_checkin"))
+        if earned>0:
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%len(rewards)+1} da sequência"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,earned,"daily_checkin"))
         db.commit(); return True,streak,earned
 
 def ranking(limit=10):
     with connect() as db: return db.execute("SELECT user_id,first_name,username,points FROM users ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
 
 def create_redemption(uid,points,reward):
+    points=int(points)
+    reward=(reward or "").strip()
+    if points<1 or points>10000000:
+        raise ValueError("Quantidade de pontos inválida.")
+    if not reward or len(reward)>500:
+        raise ValueError("Informe uma descrição válida para o resgate (até 500 caracteres).")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["points"]<points: db.rollback(); raise ValueError("Saldo insuficiente.")
@@ -598,8 +605,9 @@ def review_redemption(rid,admin_id,approve):
 
 def set_vip(uid,enabled):
     with connect() as db:
-        db.execute("UPDATE users SET is_vip=?,vip_expires_at=NULL WHERE user_id=?",(int(enabled),uid))
+        cur=db.execute("UPDATE users SET is_vip=?,vip_expires_at=NULL WHERE user_id=?",(int(bool(enabled)),uid))
         db.commit()
+        return cur.rowcount==1
 
 def referral_vip_status(uid):
     goals=[{"milestone":25,"days":7},{"milestone":50,"days":30}]
@@ -715,8 +723,14 @@ def claim_referral_milestone(uid,milestone):
         db.commit(); return bonuses[milestone]
 
 def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
-    pix_key=pix_key.strip()
-    if points<min_points or points%100!=0: raise ValueError("O saque mínimo é 1.000 pontos e o valor deve ser múltiplo de 100.")
+    points=int(points)
+    min_points=int(min_points)
+    pix_key=(pix_key or "").strip()
+    pix_key_type=(pix_key_type or "").strip().upper()
+    if min_points<1:
+        raise ValueError("O valor mínimo de saque configurado é inválido.")
+    if points<min_points or points%100!=0:
+        raise ValueError(f"O saque mínimo é de {min_points:,} pontos e o valor deve ser múltiplo de 100.")
     if not pix_key or len(pix_key)>200: raise ValueError("Chave Pix inválida.")
     if pix_key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): raise ValueError("Tipo de chave Pix inválido.")
     with connect() as db:
@@ -753,8 +767,8 @@ def cancel_payout_request(user_id,payout_id):
         if not row:
             db.rollback()
             return None
-        db.execute("UPDATE payout_requests SET status='cancelled',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND status='pending'",(payout_id,user_id))
-        if db.total_changes < 1:
+        cur=db.execute("UPDATE payout_requests SET status='cancelled',reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND status='pending'",(payout_id,user_id))
+        if cur.rowcount != 1:
             db.rollback()
             return None
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points"],user_id))
@@ -904,38 +918,6 @@ def account_block_history(user_id,limit=20):
     with connect() as db:
         rows=db.execute("SELECT * FROM account_block_history WHERE user_id=? ORDER BY id DESC LIMIT ?",(user_id,max(1,min(int(limit),50)))).fetchall()
         return [dict(r) for r in rows]
-
-def block_account(user_id,admin_id,reason):
-    reason=(reason or "").strip()[:300]
-    if not reason:
-        raise ValueError("Informe o motivo do bloqueio.")
-    with connect() as db:
-        db.execute("BEGIN IMMEDIATE")
-        if not db.execute("SELECT 1 FROM users WHERE user_id=?",(user_id,)).fetchone():
-            db.rollback()
-            return False
-        db.execute("INSERT INTO account_blocks(user_id,reason,blocked_by) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason,blocked_by=excluded.blocked_by,blocked_at=CURRENT_TIMESTAMP",(user_id,reason,admin_id))
-        db.execute("INSERT INTO account_block_history(user_id,action,reason,admin_id) VALUES(?,'blocked',?,?)",(user_id,reason,admin_id))
-        db.commit()
-        return True
-
-def unblock_account(user_id,admin_id):
-    with connect() as db:
-        db.execute("BEGIN IMMEDIATE")
-        row=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(user_id,)).fetchone()
-        if not row:
-            db.rollback()
-            return False
-        db.execute("DELETE FROM account_blocks WHERE user_id=?",(user_id,))
-        db.execute("INSERT INTO account_block_history(user_id,action,reason,admin_id) VALUES(?,'unblocked',?,?)",(user_id,row["reason"],admin_id))
-        db.commit()
-        return True
-
-
-def get_account_block(user_id):
-    with connect() as db:
-        row=db.execute("SELECT * FROM account_blocks WHERE user_id=?",(user_id,)).fetchone()
-        return dict(row) if row else None
 
 def block_account(user_id,admin_id,reason):
     reason=(reason or "").strip()[:300]
