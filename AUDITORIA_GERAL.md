@@ -97,3 +97,22 @@ Copie o resultado diretamente para a variável de ambiente da Discloud. Não pub
 **Atenção à transição:** backups ZIP antigos não podem ser restaurados pelo novo fluxo. Antes de atualizar o bot em produção, faça e guarde um backup antigo em local privado, e configure a chave na Discloud antes de iniciar a nova versão; sem a variável, a rotina automática não enviará backups em texto puro.
 
 **Testes:** cobertura para round-trip, ausência de dados SQLite em claro, corrupção/tag inválida, chave errada/ausente, ZIP legado sem criptografia, validação do SQLite, preservação do banco de origem e restauração sem sobrescrever.
+
+
+## Complemento — monitoramento de saúde e alertas administrativos
+
+**Implementado nesta revisão:** monitoramento periódico a cada 60 segundos com alertas diretos aos administradores e mensagens de recuperação quando o serviço volta ao normal.
+
+Verificações incluídas:
+- Integridade rápida do SQLite por `PRAGMA quick_check`.
+- Quantidade de atualizações duráveis pendentes.
+- Pressão da fila de processamento por usuário.
+- Pressão da fila de mensagens enviadas ao Telegram.
+- Falhas na criação/validação/envio dos backups criptografados.
+- Falhas na conexão com a API do Telegram e aviso de recuperação quando a conexão retorna.
+
+**Anti-spam e resiliência:** estado dos alertas é persistido na tabela aditiva `health_alert_state`; alertas iguais respeitam intervalo mínimo de 30 minutos. Se o SQLite estiver indisponível, o monitor usa limitação temporária em memória para ainda tentar avisar os administradores. Falhas no envio do próprio alerta ficam registradas nos logs.
+
+**Limites:** o bot não consegue entregar um alerta pelo Telegram enquanto a API do Telegram estiver indisponível; a falha é registrada e a recuperação é comunicada quando a conexão voltar. Falha total do processo ou da hospedagem também não pode ser reportada pelo próprio processo parado; para esse cenário, é necessário monitor externo da Discloud/serviço de hospedagem.
+
+**Testes:** adicionados testes para snapshot de integridade/fila, deduplicação por janela de 30 minutos, resolução e reabertura de incidentes, e limite de tamanho dos detalhes. Todos os testes usam SQLite temporário.
