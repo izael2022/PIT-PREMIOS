@@ -236,6 +236,16 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
+        CREATE TABLE IF NOT EXISTS health_alert_state(
+            alert_key TEXT PRIMARY KEY,
+            status TEXT NOT NULL CHECK(status IN ('active','resolved')),
+            details TEXT NOT NULL DEFAULT '',
+            first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_notified_at TEXT,
+            resolved_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_alert_status ON health_alert_state(status,last_seen_at);
         CREATE TABLE IF NOT EXISTS notification_preferences(
             user_id INTEGER PRIMARY KEY,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -1073,3 +1083,64 @@ def log_admin_action(admin_id,action,details=""):
 def recent_admin_audit(limit=30):
     with connect() as db:
         return [dict(r) for r in db.execute("SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT ?",(max(1,min(int(limit),100)),)).fetchall()]
+
+
+def health_snapshot():
+    with connect() as db:
+        integrity=db.execute("PRAGMA quick_check").fetchone()
+        pending=db.execute("SELECT COUNT(*) AS total, MIN(received_at) AS oldest FROM durable_updates WHERE status='pending'").fetchone()
+        return {
+            "database_integrity": integrity[0] if integrity else "unknown",
+            "pending_updates": int(pending["total"] or 0),
+            "oldest_pending_at": pending["oldest"],
+        }
+
+
+def should_notify_health_alert(alert_key, details, cooldown_minutes=30):
+    key=str(alert_key)[:80]
+    message=str(details)[:1000]
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT status,last_notified_at FROM health_alert_state WHERE alert_key=?",(key,)).fetchone()
+        should_notify=(
+            row is None or row["status"]!="active" or row["last_notified_at"] is None
+            or db.execute(
+                "SELECT datetime(?) <= datetime('now',?)",
+                (row["last_notified_at"],f"-{max(1,int(cooldown_minutes))} minutes")
+            ).fetchone()[0]
+        )
+        db.execute(
+            """INSERT INTO health_alert_state(alert_key,status,details,first_seen_at,last_seen_at,last_notified_at,resolved_at)
+               VALUES(?,'active',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,NULL)
+               ON CONFLICT(alert_key) DO UPDATE SET
+                 status='active',details=excluded.details,last_seen_at=CURRENT_TIMESTAMP,
+                 last_notified_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE health_alert_state.last_notified_at END,
+                 resolved_at=NULL""",
+            (key,message,int(should_notify),int(should_notify))
+        )
+        db.commit()
+        return bool(should_notify)
+
+
+def resolve_health_alert(alert_key):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT status FROM health_alert_state WHERE alert_key=?",(str(alert_key)[:80],)).fetchone()
+        if not row or row["status"]!="active":
+            db.rollback()
+            return False
+        db.execute(
+            "UPDATE health_alert_state SET status='resolved',last_seen_at=CURRENT_TIMESTAMP,resolved_at=CURRENT_TIMESTAMP WHERE alert_key=?",
+            (str(alert_key)[:80],)
+        )
+        db.commit()
+        return True
+
+
+def active_health_alerts(limit=50):
+    with connect() as db:
+        rows=db.execute(
+            "SELECT alert_key,details,first_seen_at,last_seen_at,last_notified_at FROM health_alert_state WHERE status='active' ORDER BY last_seen_at DESC LIMIT ?",
+            (max(1,min(int(limit),100)),)
+        ).fetchall()
+        return [dict(row) for row in rows]
