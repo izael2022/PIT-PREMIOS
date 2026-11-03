@@ -7,6 +7,8 @@ os.environ.setdefault("BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("ADMIN_IDS", "1")
 
 import database as db
+import main as bot
+import threading
 
 
 class HealthMonitorStateTests(unittest.TestCase):
@@ -60,6 +62,56 @@ class HealthMonitorStateTests(unittest.TestCase):
     def test_alert_details_are_bounded(self):
         db.should_notify_health_alert("large_detail", "x" * 1500)
         self.assertEqual(len(db.active_health_alerts()[0]["details"]), 1000)
+
+
+class BackgroundWorkerSupervisionTests(unittest.TestCase):
+    def setUp(self):
+        self.names = ("test-worker-reuse", "test-worker-restart")
+        with bot.BACKGROUND_THREADS_LOCK:
+            for name in self.names:
+                bot.BACKGROUND_THREADS.pop(name, None)
+                bot.BACKGROUND_RESTART_AT.pop(name, None)
+                bot.BACKGROUND_FAILURES.pop(name, None)
+
+    def tearDown(self):
+        with bot.BACKGROUND_THREADS_LOCK:
+            for name in self.names:
+                bot.BACKGROUND_THREADS.pop(name, None)
+                bot.BACKGROUND_RESTART_AT.pop(name, None)
+                bot.BACKGROUND_FAILURES.pop(name, None)
+
+    def test_running_worker_is_not_duplicated(self):
+        release = threading.Event()
+        started = threading.Event()
+
+        def worker():
+            started.set()
+            release.wait(2)
+
+        first = bot.ensure_background_worker(self.names[0], worker, restart_backoff=0)
+        self.assertTrue(started.wait(1))
+        second = bot.ensure_background_worker(self.names[0], worker, restart_backoff=0)
+        self.assertIs(first, second)
+        release.set()
+        first.join(1)
+
+    def test_stopped_worker_is_restarted(self):
+        runs = []
+        done = threading.Event()
+
+        def worker():
+            runs.append(True)
+            done.set()
+
+        first = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
+        self.assertTrue(done.wait(1))
+        first.join(1)
+        done.clear()
+        second = bot.ensure_background_worker(self.names[1], worker, restart_backoff=0)
+        self.assertIsNot(first, second)
+        self.assertTrue(done.wait(1))
+        second.join(1)
+        self.assertEqual(len(runs), 2)
 
 
 if __name__ == "__main__":
