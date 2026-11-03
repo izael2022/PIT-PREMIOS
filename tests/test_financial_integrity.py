@@ -138,5 +138,42 @@ class FinancialIntegrityTests(unittest.TestCase):
                     parse_daily_rewards(invalid)
 
 
+    def test_referral_approval_uses_configured_reward_and_zero_disables_credit(self):
+        db.register_user(2003, "indicado_zero", "Indicado Zero", referrer=1001, is_bot=True)
+        with db.connect() as conn:
+            review = conn.execute(
+                "SELECT id FROM referral_reviews WHERE referred_user_id=?", (2003,)
+            ).fetchone()
+        self.assertIsNotNone(db.review_referral(review["id"], 1, True, 0))
+        self.assertEqual(self.balance(), 5000)
+
+    def test_referral_rejects_negative_reward_without_changing_review(self):
+        db.register_user(2004, "indicado_neg", "Indicado Neg", referrer=1001, is_bot=True)
+        with db.connect() as conn:
+            review = conn.execute(
+                "SELECT id FROM referral_reviews WHERE referred_user_id=?", (2004,)
+            ).fetchone()
+        with self.assertRaises(ValueError):
+            db.review_referral(review["id"], 1, True, -1)
+        with db.connect() as conn:
+            status = conn.execute(
+                "SELECT status FROM referral_reviews WHERE id=?", (review["id"],)
+            ).fetchone()["status"]
+        self.assertEqual(status, "pending")
+        self.assertEqual(self.balance(), 5000)
+
+    def test_payout_validates_configured_minimum_and_pix_type(self):
+        with self.assertRaises(ValueError):
+            db.create_payout_request(1001, 900, "user@example.com", "EMAIL", 1000)
+        with self.assertRaises(ValueError):
+            db.create_payout_request(1001, 1000, "user@example.com", "INVALID", 1000)
+        self.assertEqual(self.balance(), 5000)
+
+    def test_set_vip_reports_missing_user(self):
+        self.assertFalse(db.set_vip(999999, True))
+        self.assertTrue(db.set_vip(1001, True))
+        self.assertTrue(db.get_user(1001)["is_vip"])
+
+
 if __name__ == "__main__":
     unittest.main()
