@@ -9,6 +9,32 @@ log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
+LAST_BACKUP_OK=None
+LAST_BACKUP_ERROR=""
+HEALTH_ALERT_COOLDOWN_MINUTES=30
+
+def _send_health_message(message):
+    for admin_id in ADMIN_IDS:
+        try:
+            api("sendMessage",{"chat_id":admin_id,"text":message,"parse_mode":"HTML"})
+        except Exception:
+            log.exception("Não foi possível enviar alerta de saúde ao administrador %s",admin_id)
+
+def report_health_issue(alert_key, details):
+    message=str(details)[:700]
+    log.error("Alerta de saúde [%s]: %s",alert_key,message)
+    try:
+        if db.should_notify_health_alert(alert_key,message,HEALTH_ALERT_COOLDOWN_MINUTES):
+            _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\\n\\n<b>Problema:</b> "+escape(str(alert_key))+"\\n<b>Detalhes:</b> "+escape(message)+"\\n\\nA equipe deve verificar os logs e a hospedagem.")
+    except Exception:
+        log.exception("Não foi possível registrar alerta de saúde %s",alert_key)
+
+def resolve_health_issue(alert_key, details="O serviço voltou a operar normalmente."):
+    try:
+        if db.resolve_health_alert(alert_key):
+            _send_health_message("✅ <b>RECUPERAÇÃO DO PIT PRÊMIOS</b>\\n\\n<b>Serviço:</b> "+escape(str(alert_key))+"\\n"+escape(str(details)))
+    except Exception:
+        log.exception("Não foi possível registrar recuperação de saúde %s",alert_key)
 
 def api(method, data=None):
     payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
@@ -1114,18 +1140,25 @@ def create_and_send_backup():
     return len(payload)
 
 def backup_scheduler():
+    global LAST_BACKUP_OK,LAST_BACKUP_ERROR
     while True:
         time.sleep(60)
         try:
             create_and_send_backup()
-        except Exception:
+            LAST_BACKUP_OK=time.time()
+            LAST_BACKUP_ERROR=""
+            resolve_health_issue("backup","Um backup criptografado foi criado, validado e enviado.")
+        except Exception as exc:
+            LAST_BACKUP_ERROR=str(exc)[:700]
             log.exception("Falha ao gerar/enviar backup automático")
+            report_health_issue("backup",LAST_BACKUP_ERROR)
         time.sleep(24*60*60)
 
 def health_monitor():
     while True:
         try:
             import resource
+            from datetime import datetime
             rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             if platform.system()!="Darwin": rss_mb=rss/1024
             else: rss_mb=rss/(1024*1024)
@@ -1133,12 +1166,34 @@ def health_monitor():
             rss_mb=-1
         try:
             active=len([t for t in UPDATE_POOL._threads if t.is_alive()]) if "UPDATE_POOL" in globals() else 0
-            pending=OUTBOUND_QUEUE.qsize()
-            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,pending)
+            outbound=OUTBOUND_QUEUE.qsize()
+            with USER_QUEUE_LOCK:
+                queued_updates=sum(len(items) for items in USER_QUEUES.values())
+            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_updates=%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,queued_updates,outbound)
+            snapshot=db.health_snapshot()
+            if snapshot["database_integrity"]!="ok":
+                report_health_issue("database_integrity","PRAGMA quick_check retornou: "+str(snapshot["database_integrity"]))
+            else:
+                resolve_health_issue("database_integrity","A verificação rápida do SQLite voltou a passar.")
+            if snapshot["pending_updates"]>=250:
+                report_health_issue("update_backlog",f"Existem {snapshot['pending_updates']} atualizações pendentes na fila durável.")
+            else:
+                resolve_health_issue("update_backlog","A fila durável de atualizações está sob controle.")
+            if queued_updates>=80:
+                report_health_issue("update_queue_pressure",f"Há {queued_updates} atualizações aguardando processamento.")
+            else:
+                resolve_health_issue("update_queue_pressure","A fila de processamento voltou ao nível normal.")
+            if outbound>=400:
+                report_health_issue("outbound_queue_pressure",f"A fila de envio do Telegram está com {outbound} mensagens.")
+            else:
+                resolve_health_issue("outbound_queue_pressure","A fila de envio do Telegram voltou ao nível normal.")
+            if LAST_BACKUP_ERROR:
+                report_health_issue("backup",LAST_BACKUP_ERROR)
             db.cleanup_processed_updates(14)
-        except Exception:
+        except Exception as exc:
             log.exception("Falha no monitoramento de saúde")
-        time.sleep(600)
+            report_health_issue("health_monitor",str(exc))
+        time.sleep(60)
 
 def main():
     global BOT_USERNAME
@@ -1166,7 +1221,9 @@ def main():
             q={"timeout":25,"allowed_updates":["message","callback_query"]}
             if offset is not None:
                 q["offset"]=offset
-            for update in api("getUpdates",q):
+            updates=api("getUpdates",q)
+            resolve_health_issue("telegram_api","A conexão com a API do Telegram foi restabelecida.")
+            for update in updates:
                 # Persistir antes de avançar o offset confirma recebimento sem perder
                 # atualizações caso o processo reinicie durante o processamento.
                 db.enqueue_update(update)
@@ -1174,8 +1231,9 @@ def main():
                 offset=update["update_id"]+1
         except KeyboardInterrupt:
             break
-        except Exception:
+        except Exception as exc:
             log.exception("Falha na conexão; nova tentativa em 5 segundos")
+            report_health_issue("telegram_api",str(exc))
             time.sleep(5)
 
 if __name__=="__main__":
