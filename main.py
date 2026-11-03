@@ -12,6 +12,8 @@ BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/
 LAST_BACKUP_OK=None
 LAST_BACKUP_ERROR=""
 HEALTH_ALERT_COOLDOWN_MINUTES=30
+HEALTH_FALLBACK_LAST={}
+HEALTH_FALLBACK_LOCK=threading.Lock()
 
 def _send_health_message(message):
     for admin_id in ADMIN_IDS:
@@ -24,10 +26,17 @@ def report_health_issue(alert_key, details):
     message=str(details)[:700]
     log.error("Alerta de saúde [%s]: %s",alert_key,message)
     try:
-        if db.should_notify_health_alert(alert_key,message,HEALTH_ALERT_COOLDOWN_MINUTES):
-            _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\\n\\n<b>Problema:</b> "+escape(str(alert_key))+"\\n<b>Detalhes:</b> "+escape(message)+"\\n\\nA equipe deve verificar os logs e a hospedagem.")
+        should_notify=db.should_notify_health_alert(alert_key,message,HEALTH_ALERT_COOLDOWN_MINUTES)
     except Exception:
-        log.exception("Não foi possível registrar alerta de saúde %s",alert_key)
+        log.exception("Não foi possível persistir alerta de saúde %s; usando controle temporário em memória",alert_key)
+        now=time.monotonic()
+        with HEALTH_FALLBACK_LOCK:
+            previous=HEALTH_FALLBACK_LAST.get(str(alert_key),0)
+            should_notify=(now-previous)>=HEALTH_ALERT_COOLDOWN_MINUTES*60
+            if should_notify:
+                HEALTH_FALLBACK_LAST[str(alert_key)]=now
+    if should_notify:
+        _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\\n\\n<b>Problema:</b> "+escape(str(alert_key))+"\\n<b>Detalhes:</b> "+escape(message)+"\\n\\nA equipe deve verificar os logs e a hospedagem.")
 
 def resolve_health_issue(alert_key, details="O serviço voltou a operar normalmente."):
     try:
@@ -1170,7 +1179,12 @@ def health_monitor():
             with USER_QUEUE_LOCK:
                 queued_updates=sum(len(items) for items in USER_QUEUES.values())
             log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_updates=%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,queued_updates,outbound)
-            snapshot=db.health_snapshot()
+            try:
+                snapshot=db.health_snapshot()
+            except Exception as exc:
+                report_health_issue("database","Não foi possível consultar o SQLite: "+str(exc))
+                raise
+            resolve_health_issue("database","O banco SQLite voltou a responder.")
             if snapshot["database_integrity"]!="ok":
                 report_health_issue("database_integrity","PRAGMA quick_check retornou: "+str(snapshot["database_integrity"]))
             else:
