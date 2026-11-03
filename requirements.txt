@@ -1,2 +1,1 @@
-# PIT PRÊMIOS usa apenas a biblioteca padrão do Python.
-# Nenhuma dependência externa é necessária.
+cryptography==44.0.2
