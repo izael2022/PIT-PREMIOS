@@ -969,6 +969,7 @@ def process_update(update):
     update_id=update.get("update_id")
     try:
         if update_id is not None and db.update_was_processed(update_id):
+            db.mark_update_processed(update_id)
             return
         if "message" in update:
             m=update["message"]
@@ -979,6 +980,7 @@ def process_update(update):
                 block=db.get_account_block(uid) if uid and not admin(uid) else None
                 if block:
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+                    if update_id is not None: db.mark_update_processed(update_id)
                     return
                 task_id=PENDING_TASK_PROOFS.pop(uid,None)
                 if task_id:
@@ -1138,6 +1140,9 @@ def main():
     global BOT_USERNAME
     db.init_db()
     start_outbound_worker()
+    # Recupera atualizações recebidas e ainda não concluídas antes de buscar novas.
+    for pending_update in db.pending_updates():
+        schedule_update(pending_update)
     threading.Thread(target=backup_scheduler,name="pit-backup",daemon=True).start()
     threading.Thread(target=health_monitor,name="pit-health",daemon=True).start()
     me=api("getMe")
@@ -1150,8 +1155,11 @@ def main():
             if offset is not None:
                 q["offset"]=offset
             for update in api("getUpdates",q):
-                offset=update["update_id"]+1
+                # Persistir antes de avançar o offset confirma recebimento sem perder
+                # atualizações caso o processo reinicie durante o processamento.
+                db.enqueue_update(update)
                 schedule_update(update)
+                offset=update["update_id"]+1
         except KeyboardInterrupt:
             break
         except Exception:
