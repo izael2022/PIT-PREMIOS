@@ -13,12 +13,15 @@ def parse_ids(raw):
 ADMIN_IDS=parse_ids(os.getenv("ADMIN_IDS",""))
 POINTS_PER_REFERRAL=max(0,int(os.getenv("POINTS_PER_REFERRAL","100")))
 def parse_daily_rewards(raw):
+    values=raw.split(",")
+    if not values or any(not value.strip() for value in values):
+        raise ValueError("DAILY_REWARDS não pode conter valores vazios.")
     try:
-        rewards=tuple(int(value.strip()) for value in raw.split(",") if value.strip())
+        rewards=tuple(int(value.strip()) for value in values)
     except ValueError as exc:
         raise ValueError("DAILY_REWARDS deve conter apenas números inteiros separados por vírgula.") from exc
-    if not rewards or any(value < 0 for value in rewards):
-        raise ValueError("DAILY_REWARDS deve conter pelo menos um valor, todos iguais ou maiores que zero.")
+    if any(value < 0 for value in rewards):
+        raise ValueError("DAILY_REWARDS deve conter valores iguais ou maiores que zero.")
     return rewards
 
 # Recompensas dos dias 1 a 7; depois a sequência recomeça.
