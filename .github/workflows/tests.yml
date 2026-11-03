@@ -4,7 +4,6 @@ on:
   push:
     branches: ["main", "audit/**", "improvement/**", "fix/**"]
   pull_request:
-    branches: ["main"]
 
 jobs:
   financial-integrity:
