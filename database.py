@@ -554,7 +554,9 @@ def add_points(uid,amount,reason):
 
 def daily_claim(uid,reward):
     from datetime import datetime, timezone, timedelta
-    rewards=[3,4,5,6,7,8,10]
+    rewards=tuple(int(value) for value in reward) if isinstance(reward,(list,tuple)) else (int(reward),)
+    if not rewards or any(value < 0 for value in rewards):
+        raise ValueError("A sequência de recompensas diárias é inválida.")
     now=datetime.now(timezone(timedelta(hours=-3))); current=now.date().isoformat()
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -565,7 +567,7 @@ def daily_claim(uid,reward):
         streak=row["daily_streak"]+1 if row["last_daily"]==yesterday else 1
         earned=rewards[(streak-1)%len(rewards)]
         db.execute("UPDATE users SET last_daily=?,daily_streak=?,points=points+? WHERE user_id=?",(current,streak,earned,uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%7+1} da sequência"))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,earned,f"Check-in — dia {(streak-1)%len(rewards)+1} da sequência"))
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,earned,"daily_checkin"))
         db.commit(); return True,streak,earned
 

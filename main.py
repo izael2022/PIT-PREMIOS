@@ -1,7 +1,7 @@
 import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARD, MIN_REDEEM_POINTS, DATABASE_PATH
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("pit_premios")
@@ -245,11 +245,11 @@ def weekly_ranking(chat):
     send(chat,"\n".join(lines),[[btn("🏆 Ver ranking geral","ranking:general")],[btn("🔄 Atualizar ranking semanal","ranking:weekly")],[btn("⬅️ Voltar às opções","ranking")],[btn("🏠 Menu principal","home")]])
 
 def daily(chat,uid):
-    ok,streak,earned=db.daily_claim(uid,DAILY_REWARD)
+    ok,streak,earned=db.daily_claim(uid,DAILY_REWARDS)
     if ok:
-        day=(streak-1)%7+1
-        next_day=day%7+1
-        send(chat,f"🎉 <b>CHECK-IN CONFIRMADO!</b>\nVocê recebeu <b>+{earned} pontos</b>!\n🔥 Sequência atual: <b>{streak} dias</b>\n📅 Dia da recompensa: <b>{day}/7</b>\n\n<i>Volte amanhã para ganhar a recompensa do dia {next_day}!</i>",back())
+        day=(streak-1)%len(DAILY_REWARDS)+1
+        next_day=day%len(DAILY_REWARDS)+1
+        send(chat,f"🎉 <b>CHECK-IN CONFIRMADO!</b>\nVocê recebeu <b>+{earned} pontos</b>!\n🔥 Sequência atual: <b>{streak} dias</b>\n📅 Dia da recompensa: <b>{day}/{len(DAILY_REWARDS)}</b>\n\n<i>Volte amanhã para ganhar a recompensa do dia {next_day}!</i>",back())
     else:
         send(chat,f"⏳ <b>Check-in já realizado!</b>\nSua sequência atual é de <b>{streak} dias</b>. Volte amanhã.",back())
 
