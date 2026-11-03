@@ -116,3 +116,23 @@ Verificações incluídas:
 **Limites:** o bot não consegue entregar um alerta pelo Telegram enquanto a API do Telegram estiver indisponível; a falha é registrada e a recuperação é comunicada quando a conexão voltar. Falha total do processo ou da hospedagem também não pode ser reportada pelo próprio processo parado; para esse cenário, é necessário monitor externo da Discloud/serviço de hospedagem.
 
 **Testes:** adicionados testes para snapshot de integridade/fila, deduplicação por janela de 30 minutos, resolução e reabertura de incidentes, e limite de tamanho dos detalhes. Todos os testes usam SQLite temporário.
+
+
+## Complemento — painel administrativo de monitoramento
+
+**Implementado nesta revisão:** painel acessível somente aos administradores pelo botão **Monitoramento do bot** no painel administrativo e pelos comandos `/health` e `/saude`.
+
+Indicadores apresentados:
+- Processo respondendo à consulta administrativa.
+- Pico de memória reportado pelo sistema operacional (quando disponível).
+- Trabalhadores ativos, usuários cadastrados e pontos em circulação.
+- Atualizações duráveis pendentes e tamanho da fila de envio.
+- Integridade rápida do SQLite.
+- Quantidade de alertas ativos e os cinco incidentes mais recentes, incluindo os já resolvidos.
+- Data do último backup bem-sucedido.
+
+**Persistência:** criada a tabela aditiva `health_monitor_state`, sem alterar ou apagar tabelas existentes. O timestamp do último backup bem-sucedido é persistido nela e permanece disponível após reinícios. O histórico usa a tabela de alertas já existente.
+
+**Segurança e limites:** o painel é protegido pela mesma verificação de administrador usada nas demais funções administrativas. A indicação “respondendo” apenas confirma que o processo atendeu à consulta; não prova disponibilidade contínua. A métrica de RAM é o pico fornecido pelo sistema, e pode aparecer como indisponível em plataformas sem suporte. O painel não substitui monitoramento externo da hospedagem.
+
+**Testes adicionados:** persistência/atualização de métricas e consulta de incidentes resolvidos, usando banco temporário isolado. O banco de produção não foi acessado nem migrado nesta alteração.
