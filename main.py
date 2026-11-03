@@ -263,7 +263,7 @@ def admin_health_report(chat):
         if history:
             for item in history:
                 icon="🔴" if item["status"]=="active" else "✅"
-                lines.append(f"{icon} <b>{escape(item['alert_key'])}</b> — {escape(item['status'])}\n<small>{escape((item['details'] or '')[:180])}</small>\n<small>{escape(item['last_seen_at'] or '')}</small>")
+                lines.append(f"{icon} <b>{escape(item['alert_key'])}</b> — {escape(item['status'])}\n<i>{escape((item['details'] or '')[:180])}</i>\n<i>{escape(item['last_seen_at'] or '')}</i>")
         else:
             lines.append("Nenhum incidente registrado.")
         lines.extend(["","<i>O estado online significa que o processo respondeu a esta consulta. RAM é o pico reportado pelo sistema. Este painel não substitui monitor externo da hospedagem.</i>"])
