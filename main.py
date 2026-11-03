@@ -528,7 +528,8 @@ def command(m):
     elif cmd=="/resgatar":
         if len(p)<3 or not p[1].isdigit(): send(chat,"Use /resgatar PONTOS DESCRIÇÃO"); return
         pts=int(p[1]); reward=p[2].strip()
-        if pts<MIN_REDEEM_POINTS or pts>10000000 or not reward: send(chat,f"Resgate mínimo: {MIN_REDEEM_POINTS} pontos."); return
+        if pts<MIN_REDEEM_POINTS or pts>10000000 or not reward or len(reward)>500:
+            send(chat,f"Informe uma descrição de até 500 caracteres e pelo menos {MIN_REDEEM_POINTS:,} pontos."); return
         try: rid=db.create_redemption(uid,pts,reward)
         except ValueError as e: send(chat,escape(str(e))); return
         send(chat,f"✅ Pedido #{rid} enviado. Os pontos ficam reservados até análise.")
@@ -678,7 +679,9 @@ def command(m):
             send(chat,"✅ Saldo atualizado.")
         elif cmd=="/setvip":
             if len(p)<3 or not p[1].isdigit() or p[2].lower() not in ("on","off"): send(chat,"Use /setvip ID on|off"); return
-            db.set_vip(int(p[1]),p[2].lower()=="on"); send(chat,"✅ VIP atualizado.")
+            if not db.set_vip(int(p[1]),p[2].lower()=="on"):
+                send(chat,"Usuário não encontrado."); return
+            send(chat,"✅ VIP atualizado.")
         elif cmd=="/saques":
             rows=db.pending_payouts()
             if not rows: send(chat,"Nenhum saque pendente."); return
