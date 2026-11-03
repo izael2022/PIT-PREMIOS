@@ -102,7 +102,7 @@ def ensure_background_worker(name,target,restart_backoff=5):
                 return None
             failures=BACKGROUND_FAILURES.get(name,0)+1
             BACKGROUND_FAILURES[name]=failures
-            delay=min(60, max(float(restart_backoff), 2 ** min(failures,6)))
+            delay=0 if float(restart_backoff)<=0 else min(60, max(float(restart_backoff), 2 ** min(failures,6)))
             BACKGROUND_RESTART_AT[name]=now+delay
             should_alert=True
         worker=threading.Thread(target=target,name=name,daemon=True)
