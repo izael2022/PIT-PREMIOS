@@ -28,3 +28,6 @@ DAILY_REWARD=max(0,int(os.getenv("DAILY_REWARD","2")))
 MIN_REDEEM_POINTS=max(1,int(os.getenv("MIN_REDEEM_POINTS","1000")))
 if not BOT_TOKEN:raise RuntimeError("Configure BOT_TOKEN nas variáveis de ambiente.")
 if not ADMIN_IDS:raise RuntimeError("Configure ADMIN_IDS nas variáveis de ambiente.")
+
+# URL secreta de heartbeat fornecida por um monitor externo (ex.: Better Stack).
+MONITOR_HEARTBEAT_URL=os.getenv("MONITOR_HEARTBEAT_URL","").strip()
