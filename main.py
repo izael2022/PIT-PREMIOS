@@ -819,6 +819,14 @@ def command(m,update_id=None):
     elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
+def _should_delete_callback_message(data,uid):
+    """Remove telas temporárias ao navegar, sem apagar comprovantes ou decisões."""
+    if data.startswith("admin:"):
+        return admin(uid)
+    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
+    return data in navigation_actions or data.startswith("task:") or data.startswith("history:")
+
+
 def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
@@ -837,8 +845,7 @@ def callback(c,update_id=None):
     if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
-    navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
-    if (data in navigation_actions or data.startswith("task:") or data.startswith("history:")) and msg.get("message_id"):
+    if _should_delete_callback_message(data,uid) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
     if data.startswith("admin:"):
