@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from contextlib import contextmanager
 from config import DATABASE_PATH
 
@@ -27,14 +28,6 @@ def init_db():
         CREATE TABLE IF NOT EXISTS redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,points INTEGER NOT NULL,reward TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP,reviewed_by INTEGER,FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE INDEX IF NOT EXISTS idx_history_user ON point_history(user_id);
         CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status);
-        CREATE TABLE IF NOT EXISTS referral_milestones(
-            user_id INTEGER NOT NULL,
-            milestone INTEGER NOT NULL,
-            bonus_points INTEGER NOT NULL,
-            claimed_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY(user_id,milestone),
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        );
         CREATE TABLE IF NOT EXISTS account_blocks(
             user_id INTEGER PRIMARY KEY,
             reason TEXT NOT NULL,
@@ -52,6 +45,14 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
+        CREATE TABLE IF NOT EXISTS referral_milestones(
+            user_id INTEGER NOT NULL,
+            milestone INTEGER NOT NULL,
+            bonus_points INTEGER NOT NULL,
+            claimed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id,milestone),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
         CREATE TABLE IF NOT EXISTS account_blocks(
             user_id INTEGER PRIMARY KEY,
             reason TEXT NOT NULL,
@@ -204,6 +205,28 @@ def init_db():
             update_id INTEGER PRIMARY KEY,
             processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS durable_updates(
+            update_id INTEGER PRIMARY KEY,
+            payload TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed')),
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_durable_updates_status ON durable_updates(status,update_id);
+        CREATE TABLE IF NOT EXISTS idempotency_keys(
+            update_id INTEGER PRIMARY KEY,
+            action TEXT NOT NULL,
+            result TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency_keys(created_at);
+        CREATE TABLE IF NOT EXISTS pending_task_proofs(
+            user_id INTEGER PRIMARY KEY,
+            task_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(task_id) REFERENCES tasks(id)
+        );
         CREATE INDEX IF NOT EXISTS idx_processed_updates_time ON processed_updates(processed_at);
         CREATE TABLE IF NOT EXISTS admin_audit_log(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,6 +236,17 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
+        CREATE TABLE IF NOT EXISTS health_alert_state(
+            alert_key TEXT PRIMARY KEY,
+            status TEXT NOT NULL CHECK(status IN ('active','resolved')),
+            details TEXT NOT NULL DEFAULT '',
+            first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_notified_at TEXT,
+            resolved_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_health_alert_status ON health_alert_state(status,last_seen_at);
+        CREATE TABLE IF NOT EXISTS health_monitor_state(metric_key TEXT PRIMARY KEY,metric_value TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS notification_preferences(
             user_id INTEGER PRIMARY KEY,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -364,9 +398,13 @@ def user_reward_orders(user_id,limit=15):
         """,(user_id,limit)).fetchall()
 
 
-def create_reward_order(user_id,reward_id):
+def create_reward_order(user_id,reward_id,update_id=None):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"shop.purchase")
+        if found:
+            db.rollback()
+            return int(result)
         reward=db.execute("SELECT * FROM rewards WHERE id=? AND active=1",(reward_id,)).fetchone()
         user=db.execute("SELECT points FROM users WHERE user_id=?",(user_id,)).fetchone()
         if not reward: db.rollback(); raise ValueError("Prêmio indisponível.")
@@ -377,6 +415,7 @@ def create_reward_order(user_id,reward_id):
         cur=db.execute("INSERT INTO reward_orders(reward_id,user_id,points_spent) VALUES(?,?,?)",(reward_id,user_id,reward["points_cost"]))
         order_id=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,-reward["points_cost"],f"Pedido de recompensa #{order_id}"))
+        _idempotency_save(db,update_id,"shop.purchase",order_id)
         db.commit(); return order_id
 
 def pending_reward_orders():
@@ -539,18 +578,29 @@ def all_user_ids():
     with connect() as db:
         return [row["user_id"] for row in db.execute("SELECT user_id FROM users ORDER BY user_id").fetchall()]
 
-def add_points(uid,amount,reason):
+def add_points(uid,amount,reason,update_id=None):
     if amount==0:return
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        found,_=_idempotency_lookup(db,update_id,"admin.points_adjustment")
+        if found:
+            db.rollback()
+            return False
+        row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row:
-            if amount<0: raise ValueError("Usuário não encontrado.")
+            if amount<0:
+                db.rollback()
+                raise ValueError("Usuário não encontrado.")
             db.execute("INSERT INTO users(user_id) VALUES(?)",(uid,))
-        elif row["points"]+amount<0: raise ValueError("Saldo insuficiente.")
+        elif row["points"]+amount<0:
+            db.rollback()
+            raise ValueError("Saldo insuficiente.")
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(amount,uid))
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,amount,reason))
         if amount>0: db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,amount,"admin_adjustment"))
+        _idempotency_save(db,update_id,"admin.points_adjustment",True)
         db.commit()
+        return True
 
 def daily_claim(uid,reward):
     from datetime import datetime, timezone, timedelta
@@ -575,7 +625,28 @@ def daily_claim(uid,reward):
 def ranking(limit=10):
     with connect() as db: return db.execute("SELECT user_id,first_name,username,points FROM users ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
 
-def create_redemption(uid,points,reward):
+def _idempotency_lookup(db,update_id,action):
+    if update_id is None:
+        return False,None
+    row=db.execute("SELECT action,result FROM idempotency_keys WHERE update_id=?",(int(update_id),)).fetchone()
+    if not row:
+        return False,None
+    if row["action"]!=action:
+        raise ValueError("Identificador de atualização já utilizado em outra operação.")
+    try:
+        return True,json.loads(row["result"])
+    except (TypeError,ValueError):
+        return True,None
+
+def _idempotency_save(db,update_id,action,result):
+    if update_id is None:
+        return
+    db.execute(
+        "INSERT INTO idempotency_keys(update_id,action,result) VALUES(?,?,?)",
+        (int(update_id),action,json.dumps(result,ensure_ascii=False,separators=(",",":")))
+    )
+
+def create_redemption(uid,points,reward,update_id=None):
     points=int(points)
     reward=(reward or "").strip()
     if points<1 or points>10000000:
@@ -583,11 +654,18 @@ def create_redemption(uid,points,reward):
     if not reward or len(reward)>500:
         raise ValueError("Informe uma descrição válida para o resgate (até 500 caracteres).")
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"redemption.create")
+        if found:
+            db.rollback()
+            return int(result)
+        row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["points"]<points: db.rollback(); raise ValueError("Saldo insuficiente.")
         db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
         cur=db.execute("INSERT INTO redemptions(user_id,points,reward) VALUES(?,?,?)",(uid,points,reward)); rid=cur.lastrowid
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Resgate #{rid}")); db.commit(); return rid
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Resgate #{rid}"))
+        _idempotency_save(db,update_id,"redemption.create",rid)
+        db.commit(); return rid
 
 def pending_redemptions():
     with connect() as db: return db.execute("SELECT * FROM redemptions WHERE status='pending' ORDER BY id").fetchall()
@@ -722,7 +800,7 @@ def claim_referral_milestone(uid,milestone):
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,bonuses[milestone],"referral_milestone"))
         db.commit(); return bonuses[milestone]
 
-def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
+def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update_id=None):
     points=int(points)
     min_points=int(min_points)
     pix_key=(pix_key or "").strip()
@@ -735,6 +813,10 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
     if pix_key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): raise ValueError("Tipo de chave Pix inválido.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"payout.create")
+        if found:
+            db.rollback()
+            return int(result)
         row=db.execute("SELECT points FROM users WHERE user_id=?",(uid,)).fetchone()
         if not row or row["points"]<points:
             db.rollback(); raise ValueError("Saldo insuficiente.")
@@ -745,6 +827,7 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000):
         cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points, pix_key,pix_key_type))
         rid=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
+        _idempotency_save(db,update_id,"payout.create",rid)
         db.commit(); return rid
 
 def pending_payouts():
@@ -946,6 +1029,35 @@ def unblock_account(user_id,admin_id):
         return True
 
 
+def enqueue_update(update):
+    update_id=int(update["update_id"])
+    payload=json.dumps(update,ensure_ascii=False,separators=(",",":"))
+    with connect() as db:
+        cur=db.execute("INSERT OR IGNORE INTO durable_updates(update_id,payload) VALUES(?,?)",(update_id,payload))
+        db.commit()
+        return cur.rowcount == 1
+
+def pending_updates(limit=500,after_update_id=0):
+    with connect() as db:
+        rows=db.execute("SELECT payload FROM durable_updates WHERE status='pending' AND update_id>? ORDER BY update_id LIMIT ?",(int(after_update_id),max(1,min(int(limit),2000)))).fetchall()
+        return [json.loads(row["payload"]) for row in rows]
+
+def set_pending_task_proof(user_id,task_id):
+    with connect() as db:
+        db.execute("INSERT INTO pending_task_proofs(user_id,task_id) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET task_id=excluded.task_id,created_at=CURRENT_TIMESTAMP",(int(user_id),int(task_id)))
+        db.commit()
+
+def get_pending_task_proof(user_id):
+    with connect() as db:
+        row=db.execute("SELECT task_id FROM pending_task_proofs WHERE user_id=?",(int(user_id),)).fetchone()
+        return int(row["task_id"]) if row else None
+
+def clear_pending_task_proof(user_id):
+    with connect() as db:
+        cur=db.execute("DELETE FROM pending_task_proofs WHERE user_id=?",(int(user_id),))
+        db.commit()
+        return cur.rowcount==1
+
 def update_was_processed(update_id):
     with connect() as db:
         return db.execute("SELECT 1 FROM processed_updates WHERE update_id=?",(int(update_id),)).fetchone() is not None
@@ -953,11 +1065,14 @@ def update_was_processed(update_id):
 def mark_update_processed(update_id):
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO processed_updates(update_id) VALUES(?)",(int(update_id),))
+        db.execute("UPDATE durable_updates SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE update_id=?",(int(update_id),))
         db.commit()
 
 def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.execute("DELETE FROM idempotency_keys WHERE created_at<datetime('now','-30 days')")
         db.commit()
         return cur.rowcount
 
@@ -969,3 +1084,97 @@ def log_admin_action(admin_id,action,details=""):
 def recent_admin_audit(limit=30):
     with connect() as db:
         return [dict(r) for r in db.execute("SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT ?",(max(1,min(int(limit),100)),)).fetchall()]
+
+
+def health_snapshot():
+    with connect() as db:
+        integrity=db.execute("PRAGMA quick_check").fetchone()
+        pending=db.execute("SELECT COUNT(*) AS total, MIN(received_at) AS oldest FROM durable_updates WHERE status='pending'").fetchone()
+        return {
+            "database_integrity": integrity[0] if integrity else "unknown",
+            "pending_updates": int(pending["total"] or 0),
+            "oldest_pending_at": pending["oldest"],
+        }
+
+
+def should_notify_health_alert(alert_key, details, cooldown_minutes=30):
+    key=str(alert_key)[:80]
+    message=str(details)[:1000]
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT status,last_notified_at FROM health_alert_state WHERE alert_key=?",(key,)).fetchone()
+        should_notify=(
+            row is None or row["status"]!="active" or row["last_notified_at"] is None
+            or db.execute(
+                "SELECT datetime(?) <= datetime('now',?)",
+                (row["last_notified_at"],f"-{max(1,int(cooldown_minutes))} minutes")
+            ).fetchone()[0]
+        )
+        db.execute(
+            """INSERT INTO health_alert_state(alert_key,status,details,first_seen_at,last_seen_at,last_notified_at,resolved_at)
+               VALUES(?,'active',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,NULL)
+               ON CONFLICT(alert_key) DO UPDATE SET
+                 status='active',details=excluded.details,last_seen_at=CURRENT_TIMESTAMP,
+                 last_notified_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE health_alert_state.last_notified_at END,
+                 resolved_at=NULL""",
+            (key,message,int(should_notify),int(should_notify))
+        )
+        db.commit()
+        return bool(should_notify)
+
+
+def resolve_health_alert(alert_key):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT status FROM health_alert_state WHERE alert_key=?",(str(alert_key)[:80],)).fetchone()
+        if not row or row["status"]!="active":
+            db.rollback()
+            return False
+        db.execute(
+            "UPDATE health_alert_state SET status='resolved',last_seen_at=CURRENT_TIMESTAMP,resolved_at=CURRENT_TIMESTAMP WHERE alert_key=?",
+            (str(alert_key)[:80],)
+        )
+        db.commit()
+        return True
+
+
+def active_health_alerts(limit=50):
+    with connect() as db:
+        rows=db.execute(
+            "SELECT alert_key,details,first_seen_at,last_seen_at,last_notified_at FROM health_alert_state WHERE status='active' ORDER BY last_seen_at DESC LIMIT ?",
+            (max(1,min(int(limit),100)),)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def set_health_metric(metric_key, metric_value):
+    key=str(metric_key)[:80]
+    value=str(metric_value)[:500]
+    with connect() as db:
+        db.execute(
+            """INSERT INTO health_monitor_state(metric_key,metric_value,updated_at)
+               VALUES(?,?,CURRENT_TIMESTAMP)
+               ON CONFLICT(metric_key) DO UPDATE SET
+                 metric_value=excluded.metric_value,updated_at=CURRENT_TIMESTAMP""",
+            (key,value)
+        )
+        db.commit()
+
+
+def get_health_metric(metric_key):
+    with connect() as db:
+        row=db.execute(
+            "SELECT metric_value,updated_at FROM health_monitor_state WHERE metric_key=?",
+            (str(metric_key)[:80],)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def recent_health_alerts(limit=10):
+    with connect() as db:
+        rows=db.execute(
+            """SELECT alert_key,status,details,first_seen_at,last_seen_at,resolved_at
+               FROM health_alert_state ORDER BY last_seen_at DESC LIMIT ?""",
+            (max(1,min(int(limit),50)),)
+        ).fetchall()
+        return [dict(row) for row in rows]

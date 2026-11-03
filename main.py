@@ -1,14 +1,49 @@
-import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, sqlite3, tempfile, os, queue, zipfile, io, platform
+import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
+from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
-PENDING_TASK_PROOFS={}
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
+LAST_BACKUP_OK=None
+LAST_BACKUP_ERROR=""
+HEALTH_ALERT_COOLDOWN_MINUTES=30
+HEALTH_FALLBACK_LAST={}
+HEALTH_FALLBACK_LOCK=threading.Lock()
+
+def _send_health_message(message):
+    for admin_id in ADMIN_IDS:
+        try:
+            api("sendMessage",{"chat_id":admin_id,"text":message,"parse_mode":"HTML"})
+        except Exception:
+            log.exception("Não foi possível enviar alerta de saúde ao administrador %s",admin_id)
+
+def report_health_issue(alert_key, details):
+    message=str(details)[:700]
+    log.error("Alerta de saúde [%s]: %s",alert_key,message)
+    try:
+        should_notify=db.should_notify_health_alert(alert_key,message,HEALTH_ALERT_COOLDOWN_MINUTES)
+    except Exception:
+        log.exception("Não foi possível persistir alerta de saúde %s; usando controle temporário em memória",alert_key)
+        now=time.monotonic()
+        with HEALTH_FALLBACK_LOCK:
+            previous=HEALTH_FALLBACK_LAST.get(str(alert_key),0)
+            should_notify=(now-previous)>=HEALTH_ALERT_COOLDOWN_MINUTES*60
+            if should_notify:
+                HEALTH_FALLBACK_LAST[str(alert_key)]=now
+    if should_notify:
+        _send_health_message("🚨 <b>ALERTA DO PIT PRÊMIOS</b>\\n\\n<b>Problema:</b> "+escape(str(alert_key))+"\\n<b>Detalhes:</b> "+escape(message)+"\\n\\nA equipe deve verificar os logs e a hospedagem.")
+
+def resolve_health_issue(alert_key, details="O serviço voltou a operar normalmente."):
+    try:
+        if db.resolve_health_alert(alert_key):
+            _send_health_message("✅ <b>RECUPERAÇÃO DO PIT PRÊMIOS</b>\\n\\n<b>Serviço:</b> "+escape(str(alert_key))+"\\n"+escape(str(details)))
+    except Exception:
+        log.exception("Não foi possível registrar recuperação de saúde %s",alert_key)
 
 def api(method, data=None):
     payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
@@ -48,6 +83,45 @@ def api(method, data=None):
 OUTBOUND_QUEUE=queue.Queue(maxsize=500)
 OUTBOUND_READY=False
 OUTBOUND_STOP=threading.Event()
+BACKGROUND_THREADS={}
+BACKGROUND_THREADS_LOCK=threading.Lock()
+BACKGROUND_RESTART_AT={}
+BACKGROUND_FAILURES={}
+
+def ensure_background_worker(name,target,restart_backoff=5):
+    """Start a worker once, or restart it after an unexpected thread exit."""
+    now=time.monotonic()
+    should_alert=False
+    with BACKGROUND_THREADS_LOCK:
+        current=BACKGROUND_THREADS.get(name)
+        if current is not None and current.is_alive():
+            return current
+        if current is not None:
+            allowed_at=BACKGROUND_RESTART_AT.get(name,0)
+            if now<allowed_at:
+                return None
+            failures=BACKGROUND_FAILURES.get(name,0)+1
+            BACKGROUND_FAILURES[name]=failures
+            delay=0 if float(restart_backoff)<=0 else min(60, max(float(restart_backoff), 2 ** min(failures,6)))
+            BACKGROUND_RESTART_AT[name]=now+delay
+            should_alert=True
+        worker=threading.Thread(target=target,name=name,daemon=True)
+        BACKGROUND_THREADS[name]=worker
+        worker.start()
+    if should_alert:
+        report_health_issue("worker_"+name,f"O serviço interno {name} parou inesperadamente e foi iniciado novamente.")
+    return worker
+
+def ensure_background_workers():
+    workers=(
+        ("pit-outbound",_outbound_worker),
+        ("pit-backup",backup_scheduler),
+        ("pit-health",health_monitor),
+    )
+    for name,target in workers:
+        ensure_background_worker(name,target)
+
+
 
 def _outbound_worker():
     last_chat={}
@@ -77,9 +151,9 @@ def _outbound_worker():
 
 def start_outbound_worker():
     global OUTBOUND_READY
-    if not OUTBOUND_READY:
-        threading.Thread(target=_outbound_worker,name="pit-outbound",daemon=True).start()
-        OUTBOUND_READY=True
+    worker=ensure_background_worker("pit-outbound",_outbound_worker)
+    OUTBOUND_READY=bool(worker and worker.is_alive())
+    return worker
 
 def send(chat, text, keyboard=None):
     if not OUTBOUND_READY:
@@ -186,7 +260,58 @@ def admin_menu():
             [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
+            [btn("🩺 Monitoramento do bot","admin:health")],
             [btn("⬅️ Fechar painel","home")]]
+
+def admin_health_report(chat):
+    try:
+        snapshot=db.health_snapshot()
+        stats=db.stats()
+        active_alerts=db.active_health_alerts(10)
+        history=db.recent_health_alerts(5)
+        last_backup=db.get_health_metric("last_backup_ok")
+        try:
+            import resource
+            peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            ram_mb=peak/(1024*1024 if platform.system()=="Darwin" else 1024)
+            ram_label=f"{ram_mb:.1f} MB (pico)"
+        except Exception:
+            ram_label="indisponível neste sistema"
+        workers=sum(1 for thread in UPDATE_POOL._threads if thread.is_alive()) if "UPDATE_POOL" in globals() else 0
+        integrity=str(snapshot.get("database_integrity") or "desconhecida")
+        integrity_label="✅ íntegro" if integrity.lower()=="ok" else "⚠️ "+escape(integrity)
+        backup_label=escape(last_backup["metric_value"][:40]) if last_backup else "Ainda não registrado"
+        backup_updated=escape(last_backup["updated_at"][:19]) if last_backup else "—"
+        lines=[
+            "🩺 <b>MONITORAMENTO DO PIT PRÊMIOS</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            "🟢 Processo: <b>respondendo</b>",
+            f"💾 RAM: <b>{ram_label}</b>",
+            f"🧵 Trabalhadores de atualização ativos: <b>{workers}</b>",
+            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/3</b>",
+            f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
+            f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
+            f"📥 Atualizações pendentes: <b>{snapshot['pending_updates']}</b>",
+            f"📤 Fila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>",
+            f"🗄️ SQLite: <b>{integrity_label}</b>",
+            f"🚨 Alertas ativos: <b>{len(active_alerts)}</b>",
+            f"💾 Último backup: <b>{backup_label}</b>",
+            f"🕒 Registro do backup: <b>{backup_updated}</b>",
+            "",
+            "<b>Alertas recentes</b>"
+        ]
+        if history:
+            for item in history:
+                icon="🔴" if item["status"]=="active" else "✅"
+                lines.append(f"{icon} <b>{escape(item['alert_key'])}</b> — {escape(item['status'])}\n<i>{escape((item['details'] or '')[:180])}</i>\n<i>{escape(item['last_seen_at'] or '')}</i>")
+        else:
+            lines.append("Nenhum incidente registrado.")
+        lines.extend(["","<i>O estado online significa que o processo respondeu a esta consulta. RAM é o pico reportado pelo sistema. Este painel não substitui monitor externo da hospedagem.</i>"])
+        send(chat,"\n".join(lines),[[btn("🔄 Atualizar monitoramento","admin:health")],[btn("⬅️ Voltar ao painel","admin:back")]])
+    except Exception:
+        log.exception("Falha ao montar painel de saúde")
+        send(chat,"⚠️ Não foi possível carregar todos os indicadores. Verifique os logs e tente novamente.",[[btn("🔄 Tentar novamente","admin:health")],[btn("⬅️ Voltar ao painel","admin:back")]])
+
 
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
@@ -477,7 +602,7 @@ def notifications_page(chat,uid):
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
-def command(m):
+def command(m,update_id=None):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
     if uid and not admin(uid):
@@ -518,7 +643,7 @@ def command(m):
         args=t.split(maxsplit=3)
         if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
         pts=int(args[1]); key_type=args[2].upper(); pix_key=args[3].strip()
-        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS)
+        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/100
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
@@ -530,19 +655,15 @@ def command(m):
         pts=int(p[1]); reward=p[2].strip()
         if pts<MIN_REDEEM_POINTS or pts>10000000 or not reward or len(reward)>500:
             send(chat,f"Informe uma descrição de até 500 caracteres e pelo menos {MIN_REDEEM_POINTS:,} pontos."); return
-        try: rid=db.create_redemption(uid,pts,reward)
+        try: rid=db.create_redemption(uid,pts,reward,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         send(chat,f"✅ Pedido #{rid} enviado. Os pontos ficam reservados até análise.")
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria") and admin(uid):
-        if cmd=="/saude":
-            try:
-                import resource
-                rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
-            except Exception: rss=-1
-            send(chat,f"🩺 <b>SAÚDE DO PIT PRÊMIOS</b>\\nRAM pico: <b>{rss:.1f} MB</b>\\nTrabalhadores: <b>{WORKERS}</b>\\nFila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>\\nEstado: <b>online</b>")
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and admin(uid):
+        if cmd in ("/saude","/health"):
+            admin_health_report(chat)
         elif cmd=="/auditoria":
             rows=db.recent_admin_audit(20)
             lines=["🧾 <b>ÚLTIMAS AÇÕES ADMINISTRATIVAS</b>"]
@@ -674,7 +795,7 @@ def command(m):
             if len(p)<3 or not p[1].isdigit() or not p[2].lstrip("-").isdigit(): send(chat,"Use /addpoints ID QUANTIDADE"); return
             amount=int(p[2])
             if not amount or abs(amount)>1000000: send(chat,"Quantidade inválida."); return
-            try: db.add_points(int(p[1]),amount,f"Ajuste por admin {uid}")
+            try: db.add_points(int(p[1]),amount,f"Ajuste por admin {uid}",update_id=update_id)
             except ValueError as e: send(chat,escape(str(e))); return
             send(chat,"✅ Saldo atualizado.")
         elif cmd=="/setvip":
@@ -695,24 +816,27 @@ def command(m):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
-def callback(c):
+def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
+    if chat is None: return
+    if uid and not admin(uid):
+        block=db.get_account_block(uid)
+        if block:
+            try:
+                api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Sua conta está bloqueada. Procure a equipe de atendimento.","show_alert":True})
+            except Exception:
+                log.warning("Não foi possível exibir o aviso de bloqueio ao usuário %s",uid,exc_info=True)
+            return
     try:
         api("answerCallbackQuery",{"callback_query_id":c["id"]})
     except Exception:
         log.warning("Não foi possível confirmar o clique do usuário %s",uid,exc_info=True)
-    if chat is None: return
     if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
-    if uid and not admin(uid):
-        block=db.get_account_block(uid)
-        if block:
-            send(chat,"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
-            return
     navigation_actions={"home","profile","wallet","invite","toprefs","missions","history","help","redeem_info","balance","ranking","daily","vip","help_redeem","tasks","mytasks","notifications","ranking:weekly","ranking:general","shop","myorders","mypayouts","myrefs"}
     if (data in navigation_actions or data.startswith("task:") or data.startswith("history:")) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
@@ -723,6 +847,8 @@ def callback(c):
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+        elif action=="health":
+            admin_health_report(chat)
         elif action=="finance":
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado.</i>",admin_menu())
@@ -820,7 +946,7 @@ def callback(c):
     elif data.startswith("shopbuy:"):
         try:
             reward_id=int(data.split(":",1)[1])
-            order_id=db.create_reward_order(uid,reward_id)
+            order_id=db.create_reward_order(uid,reward_id,update_id=update_id)
             send(chat,f"✅ Seu pedido da loja foi enviado!\nNúmero: <b>#{order_id}</b>\nOs pontos foram reservados até a análise da equipe.",back())
             for aid in ADMIN_IDS:
                 try: send(aid,f"🎁 <b>NOVO PEDIDO DA LOJA #{order_id}</b>\nUsuário: <code>{uid}</code>",[[btn("Revisar pedidos da loja","admin:rewardorders")]])
@@ -831,7 +957,7 @@ def callback(c):
             task_id=int(data.split(":")[1])
             task=next((x for x in db.active_tasks_for_user(uid) if x["id"]==task_id),None)
             if not task: send(chat,"Essa tarefa não está mais disponível."); return
-            PENDING_TASK_PROOFS[uid]=task_id
+            db.set_pending_task_proof(uid,task_id)
             send(chat,f"📋 <b>ENVIAR COMPROVAÇÃO</b>\n━━━━━━━━━━━━━━━━━━\nTarefa: <b>{escape(task['title'])}</b>\nRecompensa: <b>{task['reward_points']:,} pontos</b>\n\nLeia as instruções da tarefa e envie uma comprovação clara, em foto, print ou mensagem.\n\n⚠️ Envie apenas uma comprovação por vez. Enquanto estiver em análise, não será possível enviar outra. Se for rejeitada, você poderá corrigir e reenviar.")
         except (ValueError,IndexError): send(chat,"Tarefa inválida.")
     elif data=="profile": profile(chat,uid)
@@ -968,23 +1094,26 @@ def process_update(update):
     update_id=update.get("update_id")
     try:
         if update_id is not None and db.update_was_processed(update_id):
+            db.mark_update_processed(update_id)
             return
         if "message" in update:
             m=update["message"]
             if (m.get("text") or "").startswith("/"):
-                command(m)
+                command(m,update_id=update_id)
             elif m.get("chat",{}).get("type")=="private":
                 uid=m.get("from",{}).get("id")
                 block=db.get_account_block(uid) if uid and not admin(uid) else None
                 if block:
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\\nMotivo: "+escape(block["reason"])+"\\nEntre em contato com a equipe responsável.")
+                    if update_id is not None: db.mark_update_processed(update_id)
                     return
-                task_id=PENDING_TASK_PROOFS.pop(uid,None)
+                task_id=db.get_pending_task_proof(uid)
                 if task_id:
                     try:
                         photo=m.get("photo")
                         proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
                         submission_id=db.submit_task(task_id,uid,proof)
+                        db.clear_pending_task_proof(uid)
                         send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                         for aid in ADMIN_IDS:
                             if proof.startswith("photo:"):
@@ -992,11 +1121,13 @@ def process_update(update):
                             else:
                                 send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
                     except ValueError as e:
+                        if str(e)!="Envie a comprovação solicitada.":
+                            db.clear_pending_task_proof(uid)
                         send(m["chat"]["id"],escape(str(e)))
                 else:
                     send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
         elif "callback_query" in update:
-            callback(update["callback_query"])
+            callback(update["callback_query"],update_id=update_id)
         if update_id is not None:
             db.mark_update_processed(update_id)
     except Exception:
@@ -1046,10 +1177,9 @@ def schedule_update(update):
     if uid is None:
         process_update(update)
         return
-    if not UPDATE_CAPACITY.acquire(timeout=60):
-        log.error("Fila permaneceu cheia por 60 segundos; atualização %s será processada em contenção",update.get("update_id"))
-        process_update(update)
-        return
+    # Aplicar backpressure em vez de processar fora da fila por usuário.
+    # Isso preserva a ordem das atualizações quando a fila está cheia.
+    UPDATE_CAPACITY.acquire()
     submit_worker=False
     with USER_QUEUE_LOCK:
         pending=USER_QUEUES.setdefault(uid,deque())
@@ -1081,7 +1211,7 @@ def _send_backup_document(chat_id, filename, file_bytes):
         body.extend(value.encode("utf-8")+crlf)
     body.extend(("--"+boundary).encode()+crlf)
     body.extend(('Content-Disposition: form-data; name="document"; filename="'+filename+'"').encode()+crlf)
-    body.extend(b"Content-Type: application/zip"+crlf+crlf)
+    body.extend(b"Content-Type: application/octet-stream"+crlf+crlf)
     body.extend(file_bytes+crlf)
     body.extend(("--"+boundary+"--").encode()+crlf)
     req=urllib.request.Request(API+"sendDocument",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
@@ -1091,42 +1221,60 @@ def _send_backup_document(chat_id, filename, file_bytes):
     return result.get("result")
 
 def create_and_send_backup():
-    if not DATABASE_PATH.exists():
-        raise FileNotFoundError("Banco de dados não encontrado; backup não criado.")
-    with tempfile.TemporaryDirectory(prefix="pit-premios-backup-") as folder:
-        db_copy=os.path.join(folder,"pit_premios.db")
-        source=sqlite3.connect(str(DATABASE_PATH),timeout=30)
-        target=sqlite3.connect(db_copy)
+    payload=create_backup_archive(DATABASE_PATH)
+    from datetime import datetime
+    filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".pitbackup"
+    sent=0
+    for admin_id in ADMIN_IDS:
         try:
-            source.backup(target)
-            target.commit()
-        finally:
-            target.close()
-            source.close()
-        buffer=io.BytesIO()
-        with zipfile.ZipFile(buffer,"w",zipfile.ZIP_DEFLATED) as archive:
-            archive.write(db_copy,"pit_premios.db")
-        from datetime import datetime
-        filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".zip"
-        payload=buffer.getvalue()
-        for admin_id in ADMIN_IDS:
             _send_backup_document(admin_id,filename,payload)
-        log.warning("Backup enviado ao(s) administrador(es); tamanho=%s bytes",len(payload))
-        return len(payload)
+            sent+=1
+        except Exception:
+            log.exception("Falha ao enviar backup ao administrador %s",admin_id)
+    if not sent:
+        raise RuntimeError("Backup criado e validado, mas não foi enviado a nenhum administrador.")
+    log.warning("Backup validado e enviado a %s administrador(es); tamanho=%s bytes",sent,len(payload))
+    return len(payload)
 
 def backup_scheduler():
+    global LAST_BACKUP_OK,LAST_BACKUP_ERROR
     while True:
         time.sleep(60)
         try:
             create_and_send_backup()
-        except Exception:
+            LAST_BACKUP_OK=time.time()
+            LAST_BACKUP_ERROR=""
+            try: db.set_health_metric("last_backup_ok",time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(LAST_BACKUP_OK)))
+            except Exception: log.exception("Não foi possível persistir a data do último backup")
+            resolve_health_issue("backup","Um backup criptografado foi criado, validado e enviado.")
+        except Exception as exc:
+            LAST_BACKUP_ERROR=str(exc)[:700]
             log.exception("Falha ao gerar/enviar backup automático")
+            report_health_issue("backup",LAST_BACKUP_ERROR)
         time.sleep(24*60*60)
+
+def send_external_heartbeat():
+    """Ping a configured HTTPS heartbeat only after a successful health cycle."""
+    url=str(MONITOR_HEARTBEAT_URL or "").strip()
+    if not url:
+        return False
+    parsed=urllib.parse.urlparse(url)
+    if parsed.scheme!="https" or not parsed.netloc:
+        raise ValueError("MONITOR_HEARTBEAT_URL deve ser uma URL HTTPS válida.")
+    request=urllib.request.Request(url,headers={"User-Agent":"PIT-PREMIOS-Health/1.0"})
+    with urllib.request.urlopen(request,timeout=10) as response:
+        status=getattr(response,"status",None)
+        if status is None:
+            status=response.getcode()
+        if not 200<=int(status)<300:
+            raise RuntimeError(f"Monitor externo respondeu HTTP {status}.")
+    return True
 
 def health_monitor():
     while True:
         try:
             import resource
+            from datetime import datetime
             rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             if platform.system()!="Darwin": rss_mb=rss/1024
             else: rss_mb=rss/(1024*1024)
@@ -1134,35 +1282,87 @@ def health_monitor():
             rss_mb=-1
         try:
             active=len([t for t in UPDATE_POOL._threads if t.is_alive()]) if "UPDATE_POOL" in globals() else 0
-            pending=OUTBOUND_QUEUE.qsize()
-            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,pending)
+            outbound=OUTBOUND_QUEUE.qsize()
+            with USER_QUEUE_LOCK:
+                queued_updates=sum(len(items) for items in USER_QUEUES.values())
+            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_updates=%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,queued_updates,outbound)
+            try:
+                snapshot=db.health_snapshot()
+            except Exception as exc:
+                report_health_issue("database","Não foi possível consultar o SQLite: "+str(exc))
+                raise
+            resolve_health_issue("database","O banco SQLite voltou a responder.")
+            if snapshot["database_integrity"]!="ok":
+                report_health_issue("database_integrity","PRAGMA quick_check retornou: "+str(snapshot["database_integrity"]))
+            else:
+                resolve_health_issue("database_integrity","A verificação rápida do SQLite voltou a passar.")
+            if snapshot["pending_updates"]>=250:
+                report_health_issue("update_backlog",f"Existem {snapshot['pending_updates']} atualizações pendentes na fila durável.")
+            else:
+                resolve_health_issue("update_backlog","A fila durável de atualizações está sob controle.")
+            if queued_updates>=80:
+                report_health_issue("update_queue_pressure",f"Há {queued_updates} atualizações aguardando processamento.")
+            else:
+                resolve_health_issue("update_queue_pressure","A fila de processamento voltou ao nível normal.")
+            if outbound>=400:
+                report_health_issue("outbound_queue_pressure",f"A fila de envio do Telegram está com {outbound} mensagens.")
+            else:
+                resolve_health_issue("outbound_queue_pressure","A fila de envio do Telegram voltou ao nível normal.")
+            if LAST_BACKUP_ERROR:
+                report_health_issue("backup",LAST_BACKUP_ERROR)
             db.cleanup_processed_updates(14)
-        except Exception:
+            if MONITOR_HEARTBEAT_URL:
+                try:
+                    send_external_heartbeat()
+                    resolve_health_issue("external_heartbeat_delivery","O sinal de vida foi enviado ao monitor externo.")
+                except Exception as heartbeat_exc:
+                    log.exception("Falha ao enviar heartbeat ao monitor externo")
+                    report_health_issue("external_heartbeat_delivery",str(heartbeat_exc))
+        except Exception as exc:
             log.exception("Falha no monitoramento de saúde")
-        time.sleep(600)
+            report_health_issue("health_monitor",str(exc))
+        time.sleep(60)
 
 def main():
     global BOT_USERNAME
     db.init_db()
     start_outbound_worker()
-    threading.Thread(target=backup_scheduler,name="pit-backup",daemon=True).start()
-    threading.Thread(target=health_monitor,name="pit-health",daemon=True).start()
+    # Recupera todos os lotes pendentes antes de buscar novas atualizações.
+    last_pending_id=0
+    while True:
+        pending_batch=db.pending_updates(limit=500,after_update_id=last_pending_id)
+        if not pending_batch:
+            break
+        for pending_update in pending_batch:
+            schedule_update(pending_update)
+            last_pending_id=max(last_pending_id,int(pending_update["update_id"]))
+        if len(pending_batch)<500:
+            break
+    ensure_background_workers()
     me=api("getMe")
     BOT_USERNAME=me.get("username","")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
     while True:
         try:
+            ensure_background_workers()
+            start_outbound_worker()
             q={"timeout":25,"allowed_updates":["message","callback_query"]}
             if offset is not None:
                 q["offset"]=offset
-            for update in api("getUpdates",q):
-                offset=update["update_id"]+1
+            updates=api("getUpdates",q)
+            resolve_health_issue("telegram_api","A conexão com a API do Telegram foi restabelecida.")
+            for update in updates:
+                # Persistir antes de avançar o offset confirma recebimento sem perder
+                # atualizações caso o processo reinicie durante o processamento.
+                db.enqueue_update(update)
                 schedule_update(update)
+                offset=update["update_id"]+1
         except KeyboardInterrupt:
             break
-        except Exception:
+        except Exception as exc:
             log.exception("Falha na conexão; nova tentativa em 5 segundos")
+            report_health_issue("telegram_api",str(exc))
             time.sleep(5)
 
 if __name__=="__main__":
