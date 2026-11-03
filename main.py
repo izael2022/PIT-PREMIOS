@@ -477,7 +477,7 @@ def notifications_page(chat,uid):
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
-def command(m):
+def command(m,update_id=None):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
     if uid and not admin(uid):
@@ -518,7 +518,7 @@ def command(m):
         args=t.split(maxsplit=3)
         if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
         pts=int(args[1]); key_type=args[2].upper(); pix_key=args[3].strip()
-        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS)
+        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/100
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
@@ -530,7 +530,7 @@ def command(m):
         pts=int(p[1]); reward=p[2].strip()
         if pts<MIN_REDEEM_POINTS or pts>10000000 or not reward or len(reward)>500:
             send(chat,f"Informe uma descrição de até 500 caracteres e pelo menos {MIN_REDEEM_POINTS:,} pontos."); return
-        try: rid=db.create_redemption(uid,pts,reward)
+        try: rid=db.create_redemption(uid,pts,reward,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         send(chat,f"✅ Pedido #{rid} enviado. Os pontos ficam reservados até análise.")
         for aid in ADMIN_IDS:
@@ -674,7 +674,7 @@ def command(m):
             if len(p)<3 or not p[1].isdigit() or not p[2].lstrip("-").isdigit(): send(chat,"Use /addpoints ID QUANTIDADE"); return
             amount=int(p[2])
             if not amount or abs(amount)>1000000: send(chat,"Quantidade inválida."); return
-            try: db.add_points(int(p[1]),amount,f"Ajuste por admin {uid}")
+            try: db.add_points(int(p[1]),amount,f"Ajuste por admin {uid}",update_id=update_id)
             except ValueError as e: send(chat,escape(str(e))); return
             send(chat,"✅ Saldo atualizado.")
         elif cmd=="/setvip":
@@ -698,7 +698,7 @@ def command(m):
     elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
-def callback(c):
+def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
     if uid and not admin(uid):
@@ -823,7 +823,7 @@ def callback(c):
     elif data.startswith("shopbuy:"):
         try:
             reward_id=int(data.split(":",1)[1])
-            order_id=db.create_reward_order(uid,reward_id)
+            order_id=db.create_reward_order(uid,reward_id,update_id=update_id)
             send(chat,f"✅ Seu pedido da loja foi enviado!\nNúmero: <b>#{order_id}</b>\nOs pontos foram reservados até a análise da equipe.",back())
             for aid in ADMIN_IDS:
                 try: send(aid,f"🎁 <b>NOVO PEDIDO DA LOJA #{order_id}</b>\nUsuário: <code>{uid}</code>",[[btn("Revisar pedidos da loja","admin:rewardorders")]])
@@ -976,7 +976,7 @@ def process_update(update):
         if "message" in update:
             m=update["message"]
             if (m.get("text") or "").startswith("/"):
-                command(m)
+                command(m,update_id=update_id)
             elif m.get("chat",{}).get("type")=="private":
                 uid=m.get("from",{}).get("id")
                 block=db.get_account_block(uid) if uid and not admin(uid) else None
@@ -1004,7 +1004,7 @@ def process_update(update):
                 else:
                     send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
         elif "callback_query" in update:
-            callback(update["callback_query"])
+            callback(update["callback_query"],update_id=update_id)
         if update_id is not None:
             db.mark_update_processed(update_id)
     except Exception:
