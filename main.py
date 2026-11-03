@@ -884,7 +884,7 @@ def callback(c):
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes")
+        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
@@ -895,7 +895,9 @@ def callback(c):
         status="aprovada" if decision=="yes" else "rejeitada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         try:
-            if decision=="yes": notify_user(result["referrer_id"],"🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira.")
+            if decision=="yes":
+                message=("🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira." if POINTS_PER_REFERRAL>0 else "✅ Sua indicação foi aprovada na análise de segurança. No momento, a recompensa em pontos está desativada.")
+                notify_user(result["referrer_id"],message)
             else: notify_user(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
         except Exception: log.exception("Falha ao notificar resultado da análise")
     elif data.startswith("payoutcancel:"):
