@@ -1088,7 +1088,7 @@ def _send_backup_document(chat_id, filename, file_bytes):
         body.extend(value.encode("utf-8")+crlf)
     body.extend(("--"+boundary).encode()+crlf)
     body.extend(('Content-Disposition: form-data; name="document"; filename="'+filename+'"').encode()+crlf)
-    body.extend(b"Content-Type: application/zip"+crlf+crlf)
+    body.extend(b"Content-Type: application/octet-stream"+crlf+crlf)
     body.extend(file_bytes+crlf)
     body.extend(("--"+boundary+"--").encode()+crlf)
     req=urllib.request.Request(API+"sendDocument",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
@@ -1100,7 +1100,7 @@ def _send_backup_document(chat_id, filename, file_bytes):
 def create_and_send_backup():
     payload=create_backup_archive(DATABASE_PATH)
     from datetime import datetime
-    filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".zip"
+    filename="pit_premios_backup_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".pitbackup"
     sent=0
     for admin_id in ADMIN_IDS:
         try:
