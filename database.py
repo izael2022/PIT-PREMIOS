@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from contextlib import contextmanager
 from config import DATABASE_PATH
 
@@ -204,6 +205,14 @@ def init_db():
             update_id INTEGER PRIMARY KEY,
             processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS durable_updates(
+            update_id INTEGER PRIMARY KEY,
+            payload TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed')),
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_durable_updates_status ON durable_updates(status,update_id);
         CREATE INDEX IF NOT EXISTS idx_processed_updates_time ON processed_updates(processed_at);
         CREATE TABLE IF NOT EXISTS admin_audit_log(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -946,6 +955,19 @@ def unblock_account(user_id,admin_id):
         return True
 
 
+def enqueue_update(update):
+    update_id=int(update["update_id"])
+    payload=json.dumps(update,ensure_ascii=False,separators=(",",":"))
+    with connect() as db:
+        cur=db.execute("INSERT OR IGNORE INTO durable_updates(update_id,payload) VALUES(?,?)",(update_id,payload))
+        db.commit()
+        return cur.rowcount == 1
+
+def pending_updates(limit=500):
+    with connect() as db:
+        rows=db.execute("SELECT payload FROM durable_updates WHERE status='pending' ORDER BY update_id LIMIT ?",(max(1,min(int(limit),2000)),)).fetchall()
+        return [json.loads(row["payload"]) for row in rows]
+
 def update_was_processed(update_id):
     with connect() as db:
         return db.execute("SELECT 1 FROM processed_updates WHERE update_id=?",(int(update_id),)).fetchone() is not None
@@ -953,11 +975,13 @@ def update_was_processed(update_id):
 def mark_update_processed(update_id):
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO processed_updates(update_id) VALUES(?)",(int(update_id),))
+        db.execute("UPDATE durable_updates SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE update_id=?",(int(update_id),))
         db.commit()
 
 def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
         db.commit()
         return cur.rowcount
 
