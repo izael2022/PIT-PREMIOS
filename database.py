@@ -1061,6 +1061,7 @@ def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
         db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.execute("DELETE FROM idempotency_keys WHERE created_at<datetime('now','-30 days')")
         db.commit()
         return cur.rowcount
 
