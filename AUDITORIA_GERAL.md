@@ -74,3 +74,26 @@ A chave não pode ser reutilizada por outro tipo de operação. Os registros ide
 **Testes adicionais:** 5 testes verificam replay de cada operação e rejeição de reutilização da chave por ação diferente. A suíte acumulada alcança 34 testes; o CI está sendo executado novamente em Python 3.11 e 3.12 para o commit mais recente.
 
 **Limite remanescente:** a proteção cobre os quatro fluxos de escrita financeira listados. Outros fluxos que já possuem trava de estado/constraint própria (check-in diário, jogos diários, metas únicas, aprovação de análises e submissões de tarefa) continuam dependendo dessas regras específicas. Efeitos externos, como envio de mensagens do Telegram, podem ser repetidos se o processo cair após o commit; a garantia aqui é não duplicar a alteração financeira local.
+
+
+## Complemento — criptografia autenticada dos backups
+
+**Implementado nesta revisão:** o conteúdo ZIP do snapshot SQLite agora é cifrado com AES-256-GCM (biblioteca `cryptography`). O envelope possui identificador de formato, nonce aleatório e tag de autenticação. Qualquer alteração, corrupção ou chave incorreta faz a validação falhar antes da restauração.
+
+- A chave é lida exclusivamente da variável de ambiente `BACKUP_ENCRYPTION_KEY`, em Base64 URL-safe, representando exatamente 32 bytes.
+- A chave não é gravada no repositório nem anexada ao backup.
+- Backup sem chave configurada falha de forma segura; arquivos ZIP antigos sem criptografia são rejeitados.
+- O arquivo enviado aos administradores usa extensão `.pitbackup` e tipo binário genérico.
+- A restauração autentica e valida o SQLite antes de criar o destino exclusivo; não sobrescreve arquivos existentes.
+- O conteúdo temporário usado para validar o SQLite fica em diretório temporário e é removido ao sair do contexto. A cópia restaurada só é criada no destino solicitado.
+- Dependência fixada: `cryptography==44.0.2`; o workflow instala `requirements.txt` antes dos testes.
+
+**Configuração obrigatória na Discloud após o merge:** adicionar `BACKUP_ENCRYPTION_KEY` como variável secreta. Gere localmente uma chave com:
+```bash
+python -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+Copie o resultado diretamente para a variável de ambiente da Discloud. Não publique a chave no GitHub, em mensagens ou junto dos backups. Guarde uma cópia segura fora do servidor: perder a chave significa perder a possibilidade de restaurar esses backups.
+
+**Atenção à transição:** backups ZIP antigos não podem ser restaurados pelo novo fluxo. Antes de atualizar o bot em produção, faça e guarde um backup antigo em local privado, e configure a chave na Discloud antes de iniciar a nova versão; sem a variável, a rotina automática não enviará backups em texto puro.
+
+**Testes:** cobertura para round-trip, ausência de dados SQLite em claro, corrupção/tag inválida, chave errada/ausente, ZIP legado sem criptografia, validação do SQLite, preservação do banco de origem e restauração sem sobrescrever.
