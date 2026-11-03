@@ -221,7 +221,57 @@ def admin_menu():
             [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
+            [btn("🩺 Monitoramento do bot","admin:health")],
             [btn("⬅️ Fechar painel","home")]]
+
+def admin_health_report(chat):
+    try:
+        snapshot=db.health_snapshot()
+        stats=db.stats()
+        active_alerts=db.active_health_alerts(10)
+        history=db.recent_health_alerts(5)
+        last_backup=db.get_health_metric("last_backup_ok")
+        try:
+            import resource
+            peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            ram_mb=peak/(1024*1024 if platform.system()=="Darwin" else 1024)
+            ram_label=f"{ram_mb:.1f} MB (pico)"
+        except Exception:
+            ram_label="indisponível neste sistema"
+        workers=sum(1 for thread in UPDATE_POOL._threads if thread.is_alive()) if "UPDATE_POOL" in globals() else 0
+        integrity=str(snapshot.get("database_integrity") or "desconhecida")
+        integrity_label="✅ íntegro" if integrity.lower()=="ok" else "⚠️ "+escape(integrity)
+        backup_label=escape(last_backup["metric_value"][:40]) if last_backup else "Ainda não registrado"
+        backup_updated=escape(last_backup["updated_at"][:19]) if last_backup else "—"
+        lines=[
+            "🩺 <b>MONITORAMENTO DO PIT PRÊMIOS</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            "🟢 Processo: <b>respondendo</b>",
+            f"💾 RAM: <b>{ram_label}</b>",
+            f"🧵 Trabalhadores ativos: <b>{workers}</b>",
+            f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
+            f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
+            f"📥 Atualizações pendentes: <b>{snapshot['pending_updates']}</b>",
+            f"📤 Fila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>",
+            f"🗄️ SQLite: <b>{integrity_label}</b>",
+            f"🚨 Alertas ativos: <b>{len(active_alerts)}</b>",
+            f"💾 Último backup: <b>{backup_label}</b>",
+            f"🕒 Registro do backup: <b>{backup_updated}</b>",
+            "",
+            "<b>Alertas recentes</b>"
+        ]
+        if history:
+            for item in history:
+                icon="🔴" if item["status"]=="active" else "✅"
+                lines.append(f"{icon} <b>{escape(item['alert_key'])}</b> — {escape(item['status'])}\n<small>{escape((item['details'] or '')[:180])}</small>\n<small>{escape(item['last_seen_at'] or '')}</small>")
+        else:
+            lines.append("Nenhum incidente registrado.")
+        lines.extend(["","<i>O estado online significa que o processo respondeu a esta consulta. RAM é o pico reportado pelo sistema. Este painel não substitui monitor externo da hospedagem.</i>"])
+        send(chat,"\n".join(lines),[[btn("🔄 Atualizar monitoramento","admin:health")],[btn("⬅️ Voltar ao painel","admin:back")]])
+    except Exception:
+        log.exception("Falha ao montar painel de saúde")
+        send(chat,"⚠️ Não foi possível carregar todos os indicadores. Verifique os logs e tente novamente.",[[btn("🔄 Tentar novamente","admin:health")],[btn("⬅️ Voltar ao painel","admin:back")]])
+
 
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
@@ -571,13 +621,9 @@ def command(m,update_id=None):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria") and admin(uid):
-        if cmd=="/saude":
-            try:
-                import resource
-                rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
-            except Exception: rss=-1
-            send(chat,f"🩺 <b>SAÚDE DO PIT PRÊMIOS</b>\\nRAM pico: <b>{rss:.1f} MB</b>\\nTrabalhadores: <b>{WORKERS}</b>\\nFila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>\\nEstado: <b>online</b>")
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and admin(uid):
+        if cmd in ("/saude","/health"):
+            admin_health_report(chat)
         elif cmd=="/auditoria":
             rows=db.recent_admin_audit(20)
             lines=["🧾 <b>ÚLTIMAS AÇÕES ADMINISTRATIVAS</b>"]
@@ -730,7 +776,7 @@ def command(m,update_id=None):
             for r in rows:
                 kb=[[{"text":"Aprovar","callback_data":f"review:{r['id']}:yes"},{"text":"Rejeitar","callback_data":f"review:{r['id']}:no"}]]
                 send(chat,f"Pedido #{r['id']}\nUsuário: {r['user_id']}\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/auditoria"): pass
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria"): pass
     else: send(chat,"Não entendi. Use /start para abrir o menu.")
 
 def callback(c,update_id=None):
@@ -761,6 +807,8 @@ def callback(c,update_id=None):
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+        elif action=="health":
+            admin_health_report(chat)
         elif action=="finance":
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado.</i>",admin_menu())
@@ -1156,6 +1204,8 @@ def backup_scheduler():
             create_and_send_backup()
             LAST_BACKUP_OK=time.time()
             LAST_BACKUP_ERROR=""
+            try: db.set_health_metric("last_backup_ok",time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(LAST_BACKUP_OK)))
+            except Exception: log.exception("Não foi possível persistir a data do último backup")
             resolve_health_issue("backup","Um backup criptografado foi criado, validado e enviado.")
         except Exception as exc:
             LAST_BACKUP_ERROR=str(exc)[:700]
