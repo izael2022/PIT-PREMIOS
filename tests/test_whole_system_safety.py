@@ -50,6 +50,19 @@ class WholeSystemSafetyRegressionTests(unittest.TestCase):
         self.assertFalse(main._should_delete_callback_message("taskreview:12:yes", 1))
         self.assertFalse(main._should_delete_callback_message("rewardreview:8:no", 1))
 
+    def test_admin_user_ids_are_paginated_without_changing_user_data(self):
+        for uid in range(7002, 7034):
+            db.register_user(uid, f"user{uid}", f"User {uid}")
+        total, first = db.admin_user_ids_page(0, 30)
+        total_second, second = db.admin_user_ids_page(1, 30)
+        self.assertEqual(total, 33)
+        self.assertEqual(total_second, 33)
+        self.assertEqual(len(first), 30)
+        self.assertEqual(len(second), 3)
+        self.assertEqual(first, sorted(first))
+        self.assertEqual(second, sorted(second))
+        self.assertEqual(db.get_user(7001)["points"], 0)
+
     def test_pending_updates_can_be_recovered_in_multiple_batches(self):
         for update_id in range(1, 502):
             db.enqueue_update({"update_id": update_id, "message": {"text": "test"}})
