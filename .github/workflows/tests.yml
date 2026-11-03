@@ -1,0 +1,26 @@
+name: Testes de integridade do PIT PRÊMIOS
+
+on:
+  push:
+    branches: ["main", "audit/**", "improvement/**", "fix/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  financial-integrity:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Executar testes
+        env:
+          BOT_TOKEN: "123456:test-token"
+          ADMIN_IDS: "1"
+        run: python -m unittest discover -s tests -v
