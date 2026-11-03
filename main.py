@@ -895,7 +895,9 @@ def callback(c):
         status="aprovada" if decision=="yes" else "rejeitada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         try:
-            if decision=="yes": notify_user(result["referrer_id"],"🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira.")
+            if decision=="yes":
+                message=("🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira." if POINTS_PER_REFERRAL>0 else "✅ Sua indicação foi aprovada na análise de segurança. No momento, a recompensa em pontos está desativada.")
+                notify_user(result["referrer_id"],message)
             else: notify_user(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
         except Exception: log.exception("Falha ao notificar resultado da análise")
     elif data.startswith("payoutcancel:"):
