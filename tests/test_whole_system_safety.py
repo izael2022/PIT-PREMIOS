@@ -41,6 +41,15 @@ class WholeSystemSafetyRegressionTests(unittest.TestCase):
         send_mock.assert_not_called()
         self.assertEqual(db.game_status(7001), {})
 
+    def test_admin_panel_navigation_marks_previous_screen_for_deletion(self):
+        self.assertTrue(main._should_delete_callback_message("admin:stats", 1))
+        self.assertTrue(main._should_delete_callback_message("admin:back", 1))
+
+    def test_non_admin_and_review_cards_are_not_marked_for_deletion(self):
+        self.assertFalse(main._should_delete_callback_message("admin:stats", 7001))
+        self.assertFalse(main._should_delete_callback_message("taskreview:12:yes", 1))
+        self.assertFalse(main._should_delete_callback_message("rewardreview:8:no", 1))
+
     def test_pending_updates_can_be_recovered_in_multiple_batches(self):
         for update_id in range(1, 502):
             db.enqueue_update({"update_id": update_id, "message": {"text": "test"}})
