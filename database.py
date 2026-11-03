@@ -246,6 +246,7 @@ def init_db():
             resolved_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_health_alert_status ON health_alert_state(status,last_seen_at);
+        CREATE TABLE IF NOT EXISTS health_monitor_state(metric_key TEXT PRIMARY KEY,metric_value TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS notification_preferences(
             user_id INTEGER PRIMARY KEY,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -1142,5 +1143,38 @@ def active_health_alerts(limit=50):
         rows=db.execute(
             "SELECT alert_key,details,first_seen_at,last_seen_at,last_notified_at FROM health_alert_state WHERE status='active' ORDER BY last_seen_at DESC LIMIT ?",
             (max(1,min(int(limit),100)),)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def set_health_metric(metric_key, metric_value):
+    key=str(metric_key)[:80]
+    value=str(metric_value)[:500]
+    with connect() as db:
+        db.execute(
+            """INSERT INTO health_monitor_state(metric_key,metric_value,updated_at)
+               VALUES(?,?,CURRENT_TIMESTAMP)
+               ON CONFLICT(metric_key) DO UPDATE SET
+                 metric_value=excluded.metric_value,updated_at=CURRENT_TIMESTAMP""",
+            (key,value)
+        )
+        db.commit()
+
+
+def get_health_metric(metric_key):
+    with connect() as db:
+        row=db.execute(
+            "SELECT metric_value,updated_at FROM health_monitor_state WHERE metric_key=?",
+            (str(metric_key)[:80],)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def recent_health_alerts(limit=10):
+    with connect() as db:
+        rows=db.execute(
+            """SELECT alert_key,status,details,first_seen_at,last_seen_at,resolved_at
+               FROM health_alert_state ORDER BY last_seen_at DESC LIMIT ?""",
+            (max(1,min(int(limit),50)),)
         ).fetchall()
         return [dict(row) for row in rows]
