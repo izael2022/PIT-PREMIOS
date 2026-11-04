@@ -278,7 +278,8 @@ def admin_health_report(chat):
             ram_label=f"{ram_mb:.1f} MB (pico)"
         except Exception:
             ram_label="indisponível neste sistema"
-        workers=sum(1 for thread in UPDATE_POOL._threads if thread.is_alive()) if "UPDATE_POOL" in globals() else 0
+        runtime=update_runtime_snapshot()
+        workers=runtime["in_flight"]
         integrity=str(snapshot.get("database_integrity") or "desconhecida")
         integrity_label="✅ íntegro" if integrity.lower()=="ok" else "⚠️ "+escape(integrity)
         backup_label=escape(last_backup["metric_value"][:40]) if last_backup else "Ainda não registrado"
@@ -288,7 +289,10 @@ def admin_health_report(chat):
             "━━━━━━━━━━━━━━━━━━",
             "🟢 Processo: <b>respondendo</b>",
             f"💾 RAM: <b>{ram_label}</b>",
-            f"🧵 Trabalhadores de atualização ativos: <b>{workers}</b>",
+            f"🧵 Trabalhadores ocupados: <b>{workers}/{runtime['workers_created']}</b>",
+            f"📨 Atualizações aguardando: <b>{runtime['queued']}</b>",
+            f"👤 Usuários com fila ativa: <b>{runtime['active_users']}</b>",
+            f"📊 Processadas desde o início: <b>{runtime['completed']:,}</b> | falhas: <b>{runtime['failed']:,}</b>",
             f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/3</b>",
             f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
             f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
@@ -886,7 +890,7 @@ def callback(c,update_id=None):
             admin_health_report(chat)
         elif action=="finance":
             f=db.financial_dashboard()
-            send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado.</i>",admin_menu())
+            send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu())
         elif action=="userids" or action.startswith("userids:"):
             page=int(action.split(":",1)[1]) if ":" in action else 0
             send_admin_user_ids(chat,page)
@@ -1186,6 +1190,22 @@ UPDATE_CAPACITY=threading.BoundedSemaphore(QUEUE_LIMIT)
 USER_QUEUE_LOCK=threading.Lock()
 USER_QUEUES={}
 ACTIVE_USERS=set()
+UPDATE_METRICS_LOCK=threading.Lock()
+UPDATE_IN_FLIGHT=0
+UPDATE_COMPLETED_TOTAL=0
+UPDATE_FAILED_TOTAL=0
+
+def update_runtime_snapshot():
+    with USER_QUEUE_LOCK:
+        queued=sum(len(items) for items in USER_QUEUES.values())
+        active_users=len(ACTIVE_USERS)
+    with UPDATE_METRICS_LOCK:
+        in_flight=UPDATE_IN_FLIGHT
+        completed=UPDATE_COMPLETED_TOTAL
+        failed=UPDATE_FAILED_TOTAL
+    created=sum(1 for worker in UPDATE_POOL._threads if worker.is_alive()) if "UPDATE_POOL" in globals() else 0
+    return {"workers_created":created,"in_flight":in_flight,"queued":queued,"active_users":active_users,
+            "completed":completed,"failed":failed,"capacity":QUEUE_LIMIT if "QUEUE_LIMIT" in globals() else 0}
 
 def update_user_id(update):
     if "message" in update:
@@ -1195,6 +1215,7 @@ def update_user_id(update):
     return None
 
 def drain_user_queue(uid):
+    global UPDATE_IN_FLIGHT, UPDATE_COMPLETED_TOTAL, UPDATE_FAILED_TOTAL
     while True:
         with USER_QUEUE_LOCK:
             pending=USER_QUEUES.get(uid)
@@ -1203,11 +1224,21 @@ def drain_user_queue(uid):
                 ACTIVE_USERS.discard(uid)
                 return
             update=pending.popleft()
+        with UPDATE_METRICS_LOCK:
+            UPDATE_IN_FLIGHT+=1
+        succeeded=False
         try:
             process_update(update)
+            succeeded=True
         except Exception:
             log.exception("Falha inesperada ao processar atualização do usuário %s",uid)
         finally:
+            with UPDATE_METRICS_LOCK:
+                UPDATE_IN_FLIGHT-=1
+                if succeeded:
+                    UPDATE_COMPLETED_TOTAL+=1
+                else:
+                    UPDATE_FAILED_TOTAL+=1
             UPDATE_CAPACITY.release()
 
 def schedule_update(update):
@@ -1319,11 +1350,12 @@ def health_monitor():
         except Exception:
             rss_mb=-1
         try:
-            active=len([t for t in UPDATE_POOL._threads if t.is_alive()]) if "UPDATE_POOL" in globals() else 0
+            runtime=update_runtime_snapshot()
             outbound=OUTBOUND_QUEUE.qsize()
-            with USER_QUEUE_LOCK:
-                queued_updates=sum(len(items) for items in USER_QUEUES.values())
-            log.warning("Saúde PIT | RAM pico=%.1f MB | trabalhadores=%s/%s | fila_updates=%s | fila_envio=%s",rss_mb,active,WORKERS if "WORKERS" in globals() else 0,queued_updates,outbound)
+            queued_updates=runtime["queued"]
+            log.warning("Saúde PIT | RAM pico=%.1f MB | ocupados=%s/%s | fila_updates=%s/%s | usuarios_ativos=%s | concluidas=%s | falhas=%s | fila_envio=%s",
+                        rss_mb,runtime["in_flight"],runtime["workers_created"],queued_updates,runtime["capacity"],
+                        runtime["active_users"],runtime["completed"],runtime["failed"],outbound)
             try:
                 snapshot=db.health_snapshot()
             except Exception as exc:
@@ -1405,3 +1437,5 @@ def main():
 
 if __name__=="__main__":
     main()
+
+# deep-audit branch marker

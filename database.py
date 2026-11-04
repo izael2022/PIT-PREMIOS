@@ -53,23 +53,6 @@ def init_db():
             PRIMARY KEY(user_id,milestone),
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
-        CREATE TABLE IF NOT EXISTS account_blocks(
-            user_id INTEGER PRIMARY KEY,
-            reason TEXT NOT NULL,
-            blocked_by INTEGER NOT NULL,
-            blocked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        );
-        CREATE TABLE IF NOT EXISTS account_block_history(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            action TEXT NOT NULL CHECK(action IN ('blocked','unblocked')),
-            reason TEXT NOT NULL DEFAULT '',
-            admin_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_account_block_history_user ON account_block_history(user_id,created_at);
         CREATE TABLE IF NOT EXISTS referral_manual_holds(
             referrer_id INTEGER PRIMARY KEY,
             reason TEXT NOT NULL DEFAULT 'Monitoramento manual da equipe',
@@ -765,9 +748,16 @@ def financial_dashboard():
               COALESCE((SELECT SUM(points) FROM payout_requests WHERE status='rejected'),0) AS rejected_payout_points,
               COALESCE((SELECT SUM(points) FROM redemptions WHERE status='approved'),0) AS approved_redemptions,
               COALESCE((SELECT SUM(points_spent) FROM reward_orders WHERE status='approved'),0) AS approved_store_points,
-              COALESCE((SELECT SUM(points) FROM daily_games),0) AS game_points
+              COALESCE((SELECT SUM(points) FROM daily_games),0) AS game_points,
+              COALESCE((SELECT SUM(points) FROM users),0) AS wallet_balance_points,
+              COALESCE((SELECT SUM(amount) FROM point_history),0) AS ledger_net_points,
+              COALESCE((SELECT SUM(points) FROM redemptions WHERE status='pending'),0) AS pending_redemption_points,
+              COALESCE((SELECT SUM(points_spent) FROM reward_orders WHERE status='pending'),0) AS pending_store_points
         """).fetchone()
-        return dict(row)
+        result=dict(row)
+        result["ledger_difference"]=int(result["wallet_balance_points"])-int(result["ledger_net_points"])
+        result["ledger_reconciled"]=result["ledger_difference"]==0
+        return result
 
 def stats():
     with connect() as db:
