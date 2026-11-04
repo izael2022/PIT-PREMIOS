@@ -284,6 +284,16 @@ def admin_health_report(chat):
         integrity_label="✅ íntegro" if integrity.lower()=="ok" else "⚠️ "+escape(integrity)
         backup_label=escape(last_backup["metric_value"][:40]) if last_backup else "Ainda não registrado"
         backup_updated=escape(last_backup["updated_at"][:19]) if last_backup else "—"
+        heartbeat_label="✅ configurado" if MONITOR_HEARTBEAT_URL else "⚠️ não configurado"
+        backup_state="⚠️ sem backup registrado" if not last_backup else "✅ registro disponível"
+        if last_backup:
+            try:
+                from datetime import datetime, timezone
+                stamp=datetime.strptime(last_backup["metric_value"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                age_hours=(datetime.now(timezone.utc)-stamp).total_seconds()/3600
+                backup_state=("🚨 ATRASADO" if age_hours>30 else "✅ recente")+f" ({age_hours:.1f} h)"
+            except (ValueError, TypeError):
+                backup_state="⚠️ data do backup inválida"
         lines=[
             "🩺 <b>MONITORAMENTO DO PIT PRÊMIOS</b>",
             "━━━━━━━━━━━━━━━━━━",
@@ -300,8 +310,9 @@ def admin_health_report(chat):
             f"📤 Fila de envio: <b>{OUTBOUND_QUEUE.qsize()}</b>",
             f"🗄️ SQLite: <b>{integrity_label}</b>",
             f"🚨 Alertas ativos: <b>{len(active_alerts)}</b>",
-            f"💾 Último backup: <b>{backup_label}</b>",
+            f"💾 Último backup: <b>{backup_label}</b> — {backup_state}",
             f"🕒 Registro do backup: <b>{backup_updated}</b>",
+            f"🌐 Heartbeat externo: <b>{heartbeat_label}</b>",
             "",
             "<b>Alertas recentes</b>"
         ]
@@ -1450,6 +1461,20 @@ def health_monitor():
                 resolve_health_issue("outbound_queue_pressure","A fila de envio do Telegram voltou ao nível normal.")
             if LAST_BACKUP_ERROR:
                 report_health_issue("backup",LAST_BACKUP_ERROR)
+            last_backup_metric=db.get_health_metric("last_backup_ok")
+            if last_backup_metric:
+                try:
+                    from datetime import datetime, timezone
+                    stamp=datetime.strptime(last_backup_metric["metric_value"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    backup_age=(datetime.now(timezone.utc)-stamp).total_seconds()
+                    if backup_age>30*60*60:
+                        report_health_issue("backup_stale",f"Último backup registrado há {backup_age/3600:.1f} horas.")
+                    else:
+                        resolve_health_issue("backup_stale","O último backup está dentro da janela esperada.")
+                except (ValueError, TypeError):
+                    report_health_issue("backup_stale","A data do último backup não pôde ser interpretada.")
+            else:
+                report_health_issue("backup_stale","Ainda não existe registro de backup bem-sucedido.")
             db.cleanup_processed_updates(14)
             if MONITOR_HEARTBEAT_URL:
                 try:

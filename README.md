@@ -43,3 +43,27 @@ Nunca coloque BOT_TOKEN no GitHub. Cadastre o token nas variáveis de ambiente d
 - Resgates são analisados manualmente; o bot não realiza pagamentos PIX.
 - VIP é ativado manualmente.
 - Ainda é necessário testar os comandos na hospedagem após o deploy.
+
+## Verificações operacionais (sem tocar no banco ativo)
+
+### Testar restauração de um backup
+Baixe o arquivo `.pitbackup` enviado pelo bot e execute em um computador confiável com a mesma `BACKUP_ENCRYPTION_KEY` configurada na hospedagem:
+
+```bash
+python scripts/verify_backup.py caminho/do/backup.pitbackup
+```
+
+O script descriptografa e restaura somente em uma pasta temporária, executa `integrity_check` e `foreign_key_check`, lista tabelas e quantidades e descarta a cópia temporária. Não sobrescreve arquivos existentes nem abre `DATABASE_PATH`.
+
+### Teste isolado de concorrência SQLite
+
+```bash
+python scripts/sqlite_load_test.py --workers 4 --writes 500
+```
+
+Esse benchmark cria um banco temporário, executa transações concorrentes e verifica o resultado. Ele ajuda a comparar mudanças de código, mas **não representa um teste de carga real da Discloud**.
+
+### Monitor externo
+Configure `MONITOR_HEARTBEAT_URL` no painel da hospedagem com a URL HTTPS secreta fornecida por um monitor de heartbeat (por exemplo, Better Stack). O bot envia o ping após cada ciclo de saúde bem-sucedido. Mantenha a URL somente nas variáveis de ambiente, nunca no GitHub. O painel administrativo passa a indicar se o heartbeat está configurado e alerta quando não há backup bem-sucedido registrado ou quando o último registro passa de 30 horas.
+
+O registro de backup confirma que o arquivo foi criado, validado e enviado a pelo menos um administrador; o teste de restauração manual continua necessário para comprovar recuperação ponta a ponta.
