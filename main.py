@@ -632,7 +632,12 @@ def _valid_pix_key(key_type,key):
         import re
         return len(value)<=254 and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",value) is not None
     if kind=="TELEFONE":
-        return len(digits) in (10,11,12,13)
+        import re
+        if re.fullmatch(r"\\+?[0-9().\\-\\s]+",value) is None:
+            return False
+        if len(digits) in (10,11):
+            return True
+        return len(digits) in (12,13) and digits.startswith("55")
     if kind=="ALEATORIA":
         import re
         return re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",value) is not None
