@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+import tracemalloc
 import unittest
 import zipfile
 from io import BytesIO
@@ -103,6 +104,23 @@ class BackupRestoreTests(unittest.TestCase):
         before = self.source.read_bytes()
         create_backup_archive(self.source, self.key)
         self.assertEqual(self.source.read_bytes(), before)
+
+    def test_larger_database_backup_stays_within_memory_budget(self):
+        connection = sqlite3.connect(self.source)
+        connection.execute("CREATE TABLE large_payload(data BLOB)")
+        connection.execute("INSERT INTO large_payload(data) VALUES(zeroblob(?))", (4 * 1024 * 1024,))
+        connection.commit()
+        connection.close()
+
+        tracemalloc.start()
+        try:
+            payload = create_backup_archive(self.source, self.key)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        self.assertTrue(validate_backup_archive(payload, self.key).startswith(b"SQLite format 3"))
+        self.assertLess(peak, 64 * 1024 * 1024, "Pico de memória Python excedeu 64 MiB no teste de 4 MiB")
 
     def test_decrypt_rejects_unrecognized_envelope(self):
         with self.assertRaises(ValueError):
