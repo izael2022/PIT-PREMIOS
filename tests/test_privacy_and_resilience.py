@@ -84,11 +84,10 @@ class PrivacyAndResilienceTests(unittest.TestCase):
         self.assertEqual(bot.telegram_reconnect_delay(5), 60)
 
     def test_startup_authentication_retries_after_temporary_failure(self):
-        with patch.object(bot, "api", side_effect=[RuntimeError("offline"), {"username": "pit_test"}]), \\
-             patch.object(bot.time, "sleep") as sleep, \\
-             patch.object(bot, "report_health_issue") as alert:
+        with patch.object(bot, "api", side_effect=[RuntimeError("offline"), {"username": "pit_test"}]) as api_mock, patch.object(bot.time, "sleep") as sleep, patch.object(bot, "report_health_issue") as alert:
             result = bot.telegram_get_me_with_retry()
         self.assertEqual(result["username"], "pit_test")
+        self.assertEqual(api_mock.call_count, 2)
         sleep.assert_called_once_with(5)
         alert.assert_called_once()
 
