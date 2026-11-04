@@ -3,6 +3,7 @@
 Uso: BACKUP_ENCRYPTION_KEY=<chave> python scripts/verify_backup.py caminho/backup.pitbackup
 """
 import argparse
+from contextlib import closing
 import os
 import sqlite3
 import tempfile
@@ -22,7 +23,9 @@ def main():
         parser.error("Configure BACKUP_ENCRYPTION_KEY no ambiente antes do teste.")
     with tempfile.TemporaryDirectory(prefix="pit-restore-check-") as folder:
         restored = restore_backup_archive(args.backup.read_bytes(), Path(folder) / "restored.db", key)
-        with sqlite3.connect(restored) as db:
+        # sqlite3.Connection.__exit__ does not close the handle; close it explicitly
+        # before TemporaryDirectory tries to remove the database (required on Windows).
+        with closing(sqlite3.connect(restored)) as db:
             integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
             foreign_keys = db.execute("PRAGMA foreign_key_check").fetchall()
             tables = [row[0] for row in db.execute(
