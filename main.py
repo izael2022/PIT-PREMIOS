@@ -607,9 +607,47 @@ def notifications_page(chat,uid):
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
+def _valid_pix_key(key_type,key):
+    value=str(key or "").strip()
+    kind=str(key_type or "").strip().upper()
+    if not value or len(value)>200:
+        return False
+    digits="".join(ch for ch in value if ch.isdigit())
+    if kind=="CPF":
+        if len(digits)!=11 or len(set(digits))==1: return False
+        nums=[int(x) for x in digits]
+        first=(sum(nums[i]*(10-i) for i in range(9))*10)%11
+        first=0 if first==10 else first
+        second=(sum(nums[i]*(11-i) for i in range(10))*10)%11
+        second=0 if second==10 else second
+        return nums[9]==first and nums[10]==second
+    if kind=="CNPJ":
+        if len(digits)!=14 or len(set(digits))==1: return False
+        nums=[int(x) for x in digits]
+        def digit(part,weights):
+            value=sum(a*b for a,b in zip(part,weights))%11
+            return 0 if value<2 else 11-value
+        return nums[12]==digit(nums[:12],[5,4,3,2,9,8,7,6,5,4,3,2]) and nums[13]==digit(nums[:13],[6,5,4,3,2,9,8,7,6,5,4,3,2])
+    if kind=="EMAIL":
+        import re
+        return len(value)<=254 and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",value) is not None
+    if kind=="TELEFONE":
+        return len(digits) in (10,11,12,13)
+    if kind=="ALEATORIA":
+        import re
+        return re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",value) is not None
+    return False
+
+
 def command(m,update_id=None):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
+    if m.get("chat",{}).get("type")!="private":
+        if cmd=="/start":
+            send(chat,"🐾 Para participar do PIT PRÊMIOS e consultar sua carteira com segurança, abra uma conversa privada com o bot: https://t.me/"+(BOT_USERNAME or "PIT_PREMIOS_BOT"))
+        else:
+            send(chat,"🔒 Por segurança, os comandos do PIT PRÊMIOS só podem ser usados na conversa privada com o bot.")
+        return
     if uid and not admin(uid):
         block=db.get_account_block(uid)
         if block:
@@ -648,6 +686,9 @@ def command(m,update_id=None):
         args=t.split(maxsplit=3)
         if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
         pts=int(args[1]); key_type=args[2].upper(); pix_key=args[3].strip()
+        if not _valid_pix_key(key_type,pix_key):
+            send(chat,"❌ A chave Pix não corresponde ao tipo informado. Confira CPF, CNPJ, e-mail, telefone ou chave aleatória e tente novamente.")
+            return
         try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/100
@@ -862,6 +903,10 @@ def send_admin_user_ids(chat,page=0):
 def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
+    if msg.get("chat",{}).get("type")!="private":
+        try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Por segurança, abra o bot no privado.","show_alert":True})
+        except Exception: log.warning("Falha ao bloquear callback em grupo",exc_info=True)
+        return
     if uid and not admin(uid):
         block=db.get_account_block(uid)
         if block:
@@ -1173,7 +1218,9 @@ def process_update(update):
         if update_id is not None:
             db.mark_update_processed(update_id)
     except Exception:
-        log.exception("Erro ao processar atualização %s",update.get("update_id"))
+        log.exception("Erro ao processar atualização %s; ela permanecerá pendente para nova tentativa.",update.get("update_id"))
+        raise
+    return True
 
 
 from concurrent.futures import ThreadPoolExecutor
@@ -1228,10 +1275,17 @@ def drain_user_queue(uid):
             UPDATE_IN_FLIGHT+=1
         succeeded=False
         try:
-            process_update(update)
-            succeeded=True
-        except Exception:
-            log.exception("Falha inesperada ao processar atualização do usuário %s",uid)
+            for attempt in range(3):
+                try:
+                    succeeded=process_update(update) is True
+                    if succeeded: break
+                except Exception:
+                    if attempt==2:
+                        log.exception("Atualização %s falhou após 3 tentativas; permanecerá na fila durável.",update.get("update_id"))
+                    else:
+                        delay=min(30,2**attempt)
+                        log.warning("Nova tentativa %s/3 para atualização %s em %s segundos.",attempt+2,update.get("update_id"),delay,exc_info=True)
+                        time.sleep(delay)
         finally:
             with UPDATE_METRICS_LOCK:
                 UPDATE_IN_FLIGHT-=1
@@ -1305,22 +1359,33 @@ def create_and_send_backup():
     log.warning("Backup validado e enviado a %s administrador(es); tamanho=%s bytes",sent,len(payload))
     return len(payload)
 
+def backup_retry_delay(consecutive_failures):
+    """Intervalos de retry: 5 min, 15 min, 1 h e no máximo 6 h."""
+    failures=max(1,int(consecutive_failures))
+    return (300,900,3600,21600)[min(failures-1,3)]
+
+
 def backup_scheduler():
     global LAST_BACKUP_OK,LAST_BACKUP_ERROR
+    consecutive_failures=0
+    time.sleep(60)
     while True:
-        time.sleep(60)
         try:
             create_and_send_backup()
             LAST_BACKUP_OK=time.time()
             LAST_BACKUP_ERROR=""
+            consecutive_failures=0
             try: db.set_health_metric("last_backup_ok",time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(LAST_BACKUP_OK)))
             except Exception: log.exception("Não foi possível persistir a data do último backup")
             resolve_health_issue("backup","Um backup criptografado foi criado, validado e enviado.")
+            time.sleep(24*60*60)
         except Exception as exc:
+            consecutive_failures+=1
             LAST_BACKUP_ERROR=str(exc)[:700]
-            log.exception("Falha ao gerar/enviar backup automático")
+            retry_delay=backup_retry_delay(consecutive_failures)
+            log.exception("Falha ao gerar/enviar backup automático; nova tentativa em %s segundos (falha %s).",retry_delay,consecutive_failures)
             report_health_issue("backup",LAST_BACKUP_ERROR)
-        time.sleep(24*60*60)
+            time.sleep(retry_delay)
 
 def send_external_heartbeat():
     """Ping a configured HTTPS heartbeat only after a successful health cycle."""
@@ -1415,8 +1480,19 @@ def main():
         if len(pending_batch)<500:
             break
     ensure_background_workers()
-    me=api("getMe")
-    BOT_USERNAME=me.get("username","")
+    consecutive_startup_failures=0
+    while True:
+        try:
+            me=api("getMe")
+            BOT_USERNAME=me.get("username","")
+            break
+        except Exception as exc:
+            consecutive_startup_failures+=1
+            retry_delay=telegram_reconnect_delay(consecutive_startup_failures)
+            log.exception("Telegram indisponível durante inicialização; nova tentativa em %s segundos.",retry_delay)
+            report_health_issue("telegram_startup",str(exc))
+            time.sleep(retry_delay)
+    resolve_health_issue("telegram_startup","O bot autenticou-se na API do Telegram.")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
     consecutive_connection_failures=0
