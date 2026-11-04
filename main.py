@@ -1182,7 +1182,7 @@ def process_update(update):
     try:
         if update_id is not None and db.update_was_processed(update_id):
             db.mark_update_processed(update_id)
-            return
+            return True
         if "message" in update:
             m=update["message"]
             if (m.get("text") or "").startswith("/"):
@@ -1193,7 +1193,7 @@ def process_update(update):
                 if block:
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
-                    return
+                    return True
                 task_id=db.get_pending_task_proof(uid)
                 if task_id:
                     try:
