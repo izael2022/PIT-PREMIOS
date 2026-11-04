@@ -43,3 +43,6 @@ Nunca coloque BOT_TOKEN no GitHub. Cadastre o token nas variáveis de ambiente d
 - Resgates são analisados manualmente; o bot não realiza pagamentos PIX.
 - VIP é ativado manualmente.
 - Ainda é necessário testar os comandos na hospedagem após o deploy.
+
+
+Auditoria profunda em andamento.
