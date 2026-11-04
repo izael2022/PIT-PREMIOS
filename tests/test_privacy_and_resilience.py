@@ -17,6 +17,8 @@ class PrivacyAndResilienceTests(unittest.TestCase):
         self.assertFalse(bot._valid_pix_key("EMAIL", "cliente@"))
         self.assertTrue(bot._valid_pix_key("TELEFONE", "+5511999999999"))
         self.assertFalse(bot._valid_pix_key("TELEFONE", "abc"))
+        self.assertFalse(bot._valid_pix_key("TELEFONE", "abc11999999999"))
+        self.assertFalse(bot._valid_pix_key("TELEFONE", "4411999999999"))
         self.assertTrue(bot._valid_pix_key("ALEATORIA", "123e4567-e89b-12d3-a456-426614174000"))
         self.assertFalse(bot._valid_pix_key("ALEATORIA", "not-a-uuid"))
 
