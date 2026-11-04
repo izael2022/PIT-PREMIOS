@@ -73,6 +73,26 @@ class PrivacyAndResilienceTests(unittest.TestCase):
                 bot.process_update(update)
         mark.assert_not_called()
 
+    def test_external_heartbeat_requires_https(self):
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", "http://monitor.example/secret"):
+            with self.assertRaises(ValueError):
+                bot.send_external_heartbeat()
+
+    def test_external_heartbeat_sends_configured_https_ping(self):
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", "https://uptime.example/secret"), \
+             patch.object(bot.urllib.request, "urlopen", return_value=Response()) as opened:
+            self.assertTrue(bot.send_external_heartbeat())
+        opened.assert_called_once()
+        self.assertEqual(opened.call_args.args[0].full_url, "https://uptime.example/secret")
+
+    def test_external_heartbeat_can_be_disabled(self):
+        with patch.object(bot, "MONITOR_HEARTBEAT_URL", ""):
+            self.assertFalse(bot.send_external_heartbeat())
+
     def test_backup_retry_schedule_is_bounded(self):
         self.assertEqual(bot.backup_retry_delay(1), 300)
         self.assertEqual(bot.backup_retry_delay(2), 900)
