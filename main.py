@@ -1393,6 +1393,12 @@ def health_monitor():
             report_health_issue("health_monitor",str(exc))
         time.sleep(60)
 
+def telegram_reconnect_delay(consecutive_failures):
+    """Progressive backoff for Telegram polling failures, capped at one minute."""
+    failures=max(1,int(consecutive_failures))
+    return min(60,5*(2**min(failures-1,4)))
+
+
 def main():
     global BOT_USERNAME
     db.init_db()
@@ -1413,6 +1419,7 @@ def main():
     BOT_USERNAME=me.get("username","")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
+    consecutive_connection_failures=0
     while True:
         try:
             ensure_background_workers()
@@ -1421,6 +1428,9 @@ def main():
             if offset is not None:
                 q["offset"]=offset
             updates=api("getUpdates",q)
+            if consecutive_connection_failures:
+                log.warning("Conexão com a API do Telegram restabelecida após %s falha(s) consecutiva(s).",consecutive_connection_failures)
+            consecutive_connection_failures=0
             resolve_health_issue("telegram_api","A conexão com a API do Telegram foi restabelecida.")
             for update in updates:
                 # Persistir antes de avançar o offset confirma recebimento sem perder
@@ -1431,9 +1441,11 @@ def main():
         except KeyboardInterrupt:
             break
         except Exception as exc:
-            log.exception("Falha na conexão; nova tentativa em 5 segundos")
+            consecutive_connection_failures+=1
+            retry_delay=telegram_reconnect_delay(consecutive_connection_failures)
+            log.exception("Falha na conexão com o Telegram; nova tentativa em %s segundos (falha consecutiva %s).",retry_delay,consecutive_connection_failures)
             report_health_issue("telegram_api",str(exc))
-            time.sleep(5)
+            time.sleep(retry_delay)
 
 if __name__=="__main__":
     main()
