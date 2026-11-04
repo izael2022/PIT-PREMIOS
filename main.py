@@ -1464,6 +1464,20 @@ def telegram_reconnect_delay(consecutive_failures):
     return min(60,5*(2**min(failures-1,4)))
 
 
+def telegram_get_me_with_retry():
+    """Authenticate on startup and keep retrying while Telegram is unavailable."""
+    failures=0
+    while True:
+        try:
+            return api("getMe")
+        except Exception as exc:
+            failures+=1
+            delay=telegram_reconnect_delay(failures)
+            log.exception("Telegram indisponível durante inicialização; nova tentativa em %s segundos.",delay)
+            report_health_issue("telegram_startup",str(exc))
+            time.sleep(delay)
+
+
 def main():
     global BOT_USERNAME
     db.init_db()
@@ -1480,18 +1494,8 @@ def main():
         if len(pending_batch)<500:
             break
     ensure_background_workers()
-    consecutive_startup_failures=0
-    while True:
-        try:
-            me=api("getMe")
-            BOT_USERNAME=me.get("username","")
-            break
-        except Exception as exc:
-            consecutive_startup_failures+=1
-            retry_delay=telegram_reconnect_delay(consecutive_startup_failures)
-            log.exception("Telegram indisponível durante inicialização; nova tentativa em %s segundos.",retry_delay)
-            report_health_issue("telegram_startup",str(exc))
-            time.sleep(retry_delay)
+    me=telegram_get_me_with_retry()
+    BOT_USERNAME=me.get("username","")
     resolve_health_issue("telegram_startup","O bot autenticou-se na API do Telegram.")
     log.warning("PIT PRÊMIOS iniciado como @%s | trabalhadores=%s | fila=%s",BOT_USERNAME,WORKERS,QUEUE_LIMIT)
     offset=None
