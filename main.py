@@ -1,7 +1,7 @@
 import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
 from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
@@ -333,7 +333,7 @@ def admin_health_report(chat):
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
     ref=int(p[1]) if len(p)>1 and p[1].isdigit() else None
-    created,refid,review_id=db.register_user(u["id"],u.get("username"),u.get("first_name") or "",ref,POINTS_PER_REFERRAL,bool(u.get("is_bot")))
+    created,refid,review_id=db.register_user(u["id"],u.get("username"),u.get("first_name") or "",ref,POINTS_PER_REFERRAL,bool(u.get("is_bot")),welcome_reward=POINTS_WELCOME)
     if created and refid and POINTS_PER_REFERRAL:
         if review_id:
             try:
@@ -347,7 +347,8 @@ def start(m):
     global BOT_USERNAME
     pr=db.get_profile(u["id"])
     first=escape((u.get("first_name") or "participante")[:40])
-    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
+    welcome_text=(f"🎁 Você recebeu <b>{POINTS_WELCOME:,} pontos</b> de boas-vindas!" if created and not u.get("is_bot") and POINTS_WELCOME>0 else "")
+    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n{welcome_text + chr(10) + chr(10) if welcome_text else ""}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
     u=db.get_user(uid); points=int(u["points"] if u else 0)
