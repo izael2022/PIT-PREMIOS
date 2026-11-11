@@ -845,24 +845,66 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update
         if pending:
             db.rollback(); raise ValueError("Você já possui um saque aguardando análise.")
         db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
-        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points, pix_key,pix_key_type))
+        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points,_encrypt_payout_pix_key(pix_key),pix_key_type))
         rid=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
         _idempotency_save(db,update_id,"payout.create",rid)
         db.commit(); return rid
 
+_PAYOUT_PIX_PREFIX="enc:v1:"
+
+def _encrypt_payout_pix_key(value):
+    return _PAYOUT_PIX_PREFIX+_encrypt_pix_value(value)
+
+def _decrypt_payout_pix_key(value):
+    value=str(value or "")
+    if value.startswith(_PAYOUT_PIX_PREFIX):
+        return _decrypt_pix_value(value[len(_PAYOUT_PIX_PREFIX):])
+    # Registros anteriores à correção permanecem legíveis durante a migração.
+    return value
+
+def _migrate_legacy_payout_pix_keys(db):
+    rows=db.execute("SELECT id,pix_key FROM payout_requests WHERE pix_key NOT LIKE ?",(_PAYOUT_PIX_PREFIX+"%",)).fetchall()
+    for row in rows:
+        encrypted=_encrypt_payout_pix_key(row["pix_key"])
+        db.execute("UPDATE payout_requests SET pix_key=? WHERE id=? AND pix_key=?", (encrypted,row["id"],row["pix_key"]))
+
+def _masked_pix_key(value):
+    value=str(value or "")
+    if not value: return "não informada"
+    return (value[:2]+"••••"+value[-2:]) if len(value)>6 else "••••"
+
 def pending_payouts():
     with connect() as db:
-        return db.execute("SELECT * FROM payout_requests WHERE status='pending' ORDER BY id").fetchall()
+        db.execute("BEGIN IMMEDIATE")
+        _migrate_legacy_payout_pix_keys(db)
+        rows=db.execute("SELECT * FROM payout_requests WHERE status='pending' ORDER BY id").fetchall()
+        result=[]
+        for row in rows:
+            item=dict(row)
+            item["pix_key"]=_decrypt_payout_pix_key(item["pix_key"])
+            result.append(item)
+        db.commit()
+        return result
 
 def user_payout_requests(user_id,limit=10):
     with connect() as db:
-        return db.execute("""
+        db.execute("BEGIN IMMEDIATE")
+        _migrate_legacy_payout_pix_keys(db)
+        rows=db.execute("""
             SELECT id,points,amount_cents,pix_key_type,pix_key,status,created_at,reviewed_at
             FROM payout_requests
             WHERE user_id=?
             ORDER BY id DESC LIMIT ?
         """,(user_id,limit)).fetchall()
+        result=[]
+        for row in rows:
+            item=dict(row)
+            item["pix_key_masked"]=_masked_pix_key(_decrypt_payout_pix_key(item["pix_key"]))
+            item.pop("pix_key",None)
+            result.append(item)
+        db.commit()
+        return result
 
 def cancel_payout_request(user_id,payout_id):
     with connect() as db:
@@ -891,7 +933,11 @@ def review_payout(rid,admin_id,approve):
         if not approve:
             db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points"],row["user_id"]))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points"],f"Estorno do saque #{rid}"))
-        db.commit(); return dict(row)
+        else:
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],0,f"Pagamento Pix confirmado — saque #{rid} (R$ {row['amount_cents']/100:.2f})"))
+        result=dict(row)
+        result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
+        db.commit(); return result
 
 def pending_referral_reviews():
     with connect() as db:
