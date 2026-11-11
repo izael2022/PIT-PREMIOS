@@ -1046,7 +1046,6 @@ def callback(c,update_id=None):
     elif data=="pixprofile":
         pix_profile_page(chat,uid)
     elif data=="pix:change":
-        db.delete_pix_profile(uid)
         send(chat,"Escolha o tipo da nova chave Pix:",[[btn("CPF","pix:type:CPF"),btn("CNPJ","pix:type:CNPJ")],[btn("E-mail","pix:type:EMAIL"),btn("Telefone","pix:type:TELEFONE")],[btn("Chave aleatória","pix:type:ALEATORIA")]])
     elif data.startswith("pix:type:"):
         key_type=data.split(":",2)[2]
@@ -1273,23 +1272,23 @@ def process_update(update):
                 else:
                     task_id=db.get_pending_task_proof(uid)
                     if task_id:
-                    try:
-                        photo=m.get("photo")
-                        proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
-                        submission_id=db.submit_task(task_id,uid,proof)
-                        db.clear_pending_task_proof(uid)
-                        send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
-                        for aid in ADMIN_IDS:
-                            if proof.startswith("photo:"):
-                                api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
-                            else:
-                                send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
-                    except ValueError as e:
-                        if str(e)!="Envie a comprovação solicitada.":
+                        try:
+                            photo=m.get("photo")
+                            proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
+                            submission_id=db.submit_task(task_id,uid,proof)
                             db.clear_pending_task_proof(uid)
-                        send(m["chat"]["id"],escape(str(e)))
-                else:
-                    send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
+                            send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+                            for aid in ADMIN_IDS:
+                                if proof.startswith("photo:"):
+                                    api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                                else:
+                                    send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                        except ValueError as e:
+                            if str(e)!="Envie a comprovação solicitada.":
+                                db.clear_pending_task_proof(uid)
+                            send(m["chat"]["id"],escape(str(e)))
+                    else:
+                        send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
         elif "callback_query" in update:
             callback(update["callback_query"],update_id=update_id)
         if update_id is not None:
