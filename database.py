@@ -538,13 +538,18 @@ def history(uid,limit=8,offset=0):
     with connect() as db:
         return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
-def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False):
+def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False,welcome_reward=0):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM users WHERE user_id=?",(uid,)).fetchone():
             db.execute("UPDATE users SET username=?,first_name=? WHERE user_id=?",(username,first_name,uid)); db.commit(); return False,None,None
         if referrer==uid or (referrer and not db.execute("SELECT 1 FROM users WHERE user_id=?",(referrer,)).fetchone()): referrer=None
         db.execute("INSERT INTO users(user_id,username,first_name,referred_by) VALUES(?,?,?,?)",(uid,username,first_name,referrer))
+        if not is_bot and int(welcome_reward)>0:
+            welcome_points=int(welcome_reward)
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(welcome_points,uid))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,welcome_points,"Bônus de boas-vindas"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,welcome_points,"welcome"))
         review_id=None
         if referrer:
             reasons=[]
