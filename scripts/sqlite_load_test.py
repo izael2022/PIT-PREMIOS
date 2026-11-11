@@ -3,6 +3,7 @@
 Uso: python scripts/sqlite_load_test.py --workers 4 --writes 500
 """
 import argparse
+from contextlib import closing
 import sqlite3
 import tempfile
 import time
@@ -19,14 +20,15 @@ def main():
         parser.error("Use workers entre 1 e 16 e writes entre 1 e 100000.")
     with tempfile.TemporaryDirectory(prefix="pit-sqlite-load-") as folder:
         path = Path(folder) / "load-test.db"
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE counter(id INTEGER PRIMARY KEY, value INTEGER NOT NULL)")
             db.execute("INSERT INTO counter VALUES(1,0)")
+            db.commit()
         started = time.perf_counter()
 
         def worker(count):
-            with sqlite3.connect(path, timeout=30) as db:
+            with closing(sqlite3.connect(path, timeout=30)) as db:
                 db.execute("PRAGMA busy_timeout=30000")
                 for _ in range(count):
                     db.execute("BEGIN IMMEDIATE")
@@ -39,7 +41,7 @@ def main():
             for future in futures:
                 future.result()
         elapsed = time.perf_counter() - started
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db:
             actual = db.execute("SELECT value FROM counter WHERE id=1").fetchone()[0]
             integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         if actual != args.writes or integrity != "ok":
