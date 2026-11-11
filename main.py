@@ -1252,16 +1252,16 @@ def process_update(update):
                     if not value:
                         send(m["chat"]["id"],"Envie os dados em texto para continuar.")
                     elif pix_step["step"]=="key":
-                        if not _valid_pix_key(pix_step["key_type"],value):
+                        if not _valid_pix_key(pix_step["pix_key_type"],value):
                             send(m["chat"]["id"],"❌ O formato da chave não corresponde ao tipo escolhido. Tente novamente.")
                         else:
-                            db.set_pix_setup_step(uid,"owner",pix_step["key_type"],value)
+                            db.set_pix_setup_step(uid,"owner",pix_step["pix_key_type"],value)
                             send(m["chat"]["id"],"Agora informe o nome completo do titular da chave Pix, exatamente como aparece no banco.")
                     elif pix_step["step"]=="owner":
                         if len(value)<3 or len(value)>120 or any(ch.isdigit() for ch in value):
                             send(m["chat"]["id"],"Informe o nome completo do titular (3 a 120 caracteres, sem números).")
                         else:
-                            db.save_pix_profile(uid,pix_step["key_type"],pix_step["pix_key"],value)
+                            db.save_pix_profile(uid,pix_step["pix_key_type"],pix_step["pix_key"],value)
                             db.clear_pix_setup_step(uid)
                             send(m["chat"]["id"],"✅ Cadastro recebido! Sua chave Pix ficará aguardando conferência manual da equipe. Você será avisado quando houver uma decisão.",[[btn("Ver minha chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]])
                             profile=db.get_pix_profile(uid)
