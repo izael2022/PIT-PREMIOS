@@ -244,6 +244,7 @@ def menu():
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR PONTOS","redeem_info")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
         [btn("📦 MEUS PEDIDOS","myorders"),btn("💸 MEUS SAQUES","mypayouts")],
+        [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
         [btn("❓ CENTRAL DE AJUDA","help")]
@@ -353,7 +354,7 @@ def balance(chat,uid):
     minimum=int(MIN_REDEEM_POINTS)
     remaining=max(0,minimum-points)
     status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
-    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n100 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, use:\n<code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>\nExemplo: <code>/sacar 1000 CPF 12345678900</code>\nTipos aceitos: CPF, CNPJ, EMAIL, TELEFONE ou ALEATORIA.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n100 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
     rows=db.ranking()
@@ -616,7 +617,7 @@ def notifications_page(chat,uid):
     send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\n\n<b>Últimos avisos</b>\n{history}",[[btn(label,action)],[btn("🔄 Atualizar","notifications")],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
-    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nUse <code>/sacar PONTOS TIPO_CHAVE CHAVE_PIX</code>. O pagamento é analisado pela equipe; acompanhe em Meus saques.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
 def _valid_pix_key(key_type,key):
     value=str(key or "").strip()
@@ -653,6 +654,22 @@ def _valid_pix_key(key_type,key):
         import re
         return re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",value) is not None
     return False
+
+
+
+def _masked_pix(value):
+    value=str(value or "")
+    if len(value)<=6: return "••••"
+    return value[:2]+"••••"+value[-2:]
+
+
+def pix_profile_page(chat,uid):
+    profile=db.get_pix_profile(uid)
+    if not profile:
+        send(chat,"🔐 <b>CADASTRO DA CHAVE PIX</b>\n\nCadastre uma chave que esteja em seu nome. A equipe fará a conferência manual antes de aprovar.\n\nEscolha o tipo:",[[btn("CPF","pix:type:CPF"),btn("CNPJ","pix:type:CNPJ")],[btn("E-mail","pix:type:EMAIL"),btn("Telefone","pix:type:TELEFONE")],[btn("Chave aleatória","pix:type:ALEATORIA")],[btn("⬅️ Menu principal","home")]])
+        return
+    status={"pending":"⏳ Aguardando conferência","approved":"✅ Aprovada pela equipe","rejected":"❌ Reprovada — cadastre novamente"}.get(profile["status"],profile["status"])
+    send(chat,f"🔐 <b>MINHA CHAVE PIX</b>\n\nTipo: <b>{escape(profile['pix_key_type'])}</b>\nChave: <code>{escape(_masked_pix(profile['pix_key']))}</code>\nTitular informado: <b>{escape(profile['owner_name'])}</b>\nStatus: <b>{status}</b>\n\nA validação é administrativa; o bot não consulta automaticamente o DICT nem confirma a titularidade no Mercado Pago.",[[btn("🔄 Alterar chave Pix","pix:change")],[btn("⬅️ Menu principal","home")]])
 
 
 def command(m,update_id=None):
@@ -699,18 +716,20 @@ def command(m,update_id=None):
             send(chat,f"✅ Tarefa #{task_id} cadastrada com {int(parts[0])} pontos.")
         except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/sacar":
-        args=t.split(maxsplit=3)
-        if len(args)<4 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS TIPO_CHAVE CHAVE_PIX"); return
-        pts=int(args[1]); key_type=args[2].upper(); pix_key=args[3].strip()
+        args=t.split(maxsplit=1)
+        if len(args)<2 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS"); return
+        pts=int(args[1]); profile=db.get_pix_profile(uid)
+        if not profile or profile["status"]!="approved":
+            send(chat,"🔐 Você precisa cadastrar uma chave Pix e aguardar a aprovação da equipe antes de solicitar um saque.",[[btn("Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]]); return
+        pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
         if not _valid_pix_key(key_type,pix_key):
-            send(chat,"❌ A chave Pix não corresponde ao tipo informado. Confira CPF, CNPJ, e-mail, telefone ou chave aleatória e tente novamente.")
-            return
+            send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
         try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/100
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
         for aid in ADMIN_IDS:
-            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\n\n⚠️ Faça a transferência Pix primeiro. Depois confirme abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
+            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
             except Exception: log.exception("Falha ao notificar admin sobre saque")
     elif cmd=="/resgatar":
         if len(p)<3 or not p[1].isdigit(): send(chat,"Use /resgatar PONTOS DESCRIÇÃO"); return
@@ -1016,7 +1035,24 @@ def callback(c,update_id=None):
                 kb=[[btn("✅ Confirmar Pix pago","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar pedido","payout:"+str(r["id"])+":no")]]
                 send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         return
-    if data=="notifications":
+    if data.startswith("pixreview:"):
+        if not admin(uid): return
+        _,target,decision=data.split(":")
+        result=db.review_pix_profile(int(target),uid,decision=="yes")
+        if not result: send(chat,"Esse cadastro Pix não está mais aguardando análise."); return
+        status="aprovada" if decision=="yes" else "reprovada"
+        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
+        notify_user(int(target),f"Sua chave Pix foi {status} pela equipe. "+("Você já pode solicitar saques." if decision=="yes" else "Acesse Minha chave Pix para cadastrar novamente."))
+    elif data=="pixprofile":
+        pix_profile_page(chat,uid)
+    elif data=="pix:change":
+        send(chat,"Escolha o tipo da nova chave Pix:",[[btn("CPF","pix:type:CPF"),btn("CNPJ","pix:type:CNPJ")],[btn("E-mail","pix:type:EMAIL"),btn("Telefone","pix:type:TELEFONE")],[btn("Chave aleatória","pix:type:ALEATORIA")]])
+    elif data.startswith("pix:type:"):
+        key_type=data.split(":",2)[2]
+        if key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): return
+        db.set_pix_setup_step(uid,"key",key_type)
+        send(chat,f"Envie agora sua chave Pix do tipo <b>{escape(key_type)}</b> em uma única mensagem.\n\nNão envie senha, código ou token bancário.")
+    elif data=="notifications":
         notifications_page(chat,uid)
     elif data=="notifications:on":
         db.set_notifications(uid,True); notifications_page(chat,uid)
@@ -1210,25 +1246,49 @@ def process_update(update):
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
                     return True
-                task_id=db.get_pending_task_proof(uid)
-                if task_id:
-                    try:
-                        photo=m.get("photo")
-                        proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
-                        submission_id=db.submit_task(task_id,uid,proof)
-                        db.clear_pending_task_proof(uid)
-                        send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
-                        for aid in ADMIN_IDS:
-                            if proof.startswith("photo:"):
-                                api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
-                            else:
-                                send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
-                    except ValueError as e:
-                        if str(e)!="Envie a comprovação solicitada.":
-                            db.clear_pending_task_proof(uid)
-                        send(m["chat"]["id"],escape(str(e)))
+                pix_step=db.get_pix_setup_step(uid)
+                if pix_step:
+                    value=(m.get("text") or "").strip()
+                    if not value:
+                        send(m["chat"]["id"],"Envie os dados em texto para continuar.")
+                    elif pix_step["step"]=="key":
+                        if not _valid_pix_key(pix_step["key_type"],value):
+                            send(m["chat"]["id"],"❌ O formato da chave não corresponde ao tipo escolhido. Tente novamente.")
+                        else:
+                            db.set_pix_setup_step(uid,"owner",pix_step["key_type"],value)
+                            send(m["chat"]["id"],"Agora informe o nome completo do titular da chave Pix, exatamente como aparece no banco.")
+                    elif pix_step["step"]=="owner":
+                        if len(value)<3 or len(value)>120 or any(ch.isdigit() for ch in value):
+                            send(m["chat"]["id"],"Informe o nome completo do titular (3 a 120 caracteres, sem números).")
+                        else:
+                            db.save_pix_profile(uid,pix_step["key_type"],pix_step["pix_key"],value)
+                            db.clear_pix_setup_step(uid)
+                            send(m["chat"]["id"],"✅ Cadastro recebido! Sua chave Pix ficará aguardando conferência manual da equipe. Você será avisado quando houver uma decisão.",[[btn("Ver minha chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]])
+                            profile=db.get_pix_profile(uid)
+                            for aid in ADMIN_IDS:
+                                try:
+                                    send(aid,f"🔐 <b>NOVA CHAVE PIX PARA CONFERÊNCIA</b>\nUsuário: <code>{uid}</code>\nTipo: {escape(profile['pix_key_type'])}\nChave: <code>{escape(profile['pix_key'])}</code>\nTitular informado: {escape(profile['owner_name'])}\n\nConfira manualmente e decida:",[[btn("✅ Aprovar chave","pixreview:"+str(uid)+":yes"),btn("❌ Reprovar","pixreview:"+str(uid)+":no")]])
+                                except Exception: log.exception("Falha ao notificar admin sobre cadastro Pix")
                 else:
-                    send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
+                    task_id=db.get_pending_task_proof(uid)
+                    if task_id:
+                        try:
+                            photo=m.get("photo")
+                            proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
+                            submission_id=db.submit_task(task_id,uid,proof)
+                            db.clear_pending_task_proof(uid)
+                            send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+                            for aid in ADMIN_IDS:
+                                if proof.startswith("photo:"):
+                                    api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                                else:
+                                    send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                        except ValueError as e:
+                            if str(e)!="Envie a comprovação solicitada.":
+                                db.clear_pending_task_proof(uid)
+                            send(m["chat"]["id"],escape(str(e)))
+                    else:
+                        send(m["chat"]["id"],"Não entendi. Use /start para abrir o menu.")
         elif "callback_query" in update:
             callback(update["callback_query"],update_id=update_id)
         if update_id is not None:

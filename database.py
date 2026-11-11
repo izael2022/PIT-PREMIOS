@@ -1,5 +1,9 @@
 import sqlite3
 import json
+import os
+import base64
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from backup_utils import _load_key
 from contextlib import contextmanager
 from config import DATABASE_PATH
 
@@ -74,6 +78,25 @@ def init_db():
             FOREIGN KEY(referred_user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_referral_reviews_status ON referral_reviews(status);
+        CREATE TABLE IF NOT EXISTS pix_profiles(
+            user_id INTEGER PRIMARY KEY,
+            pix_key_encrypted TEXT NOT NULL,
+            pix_key_type TEXT NOT NULL CHECK(pix_key_type IN ('CPF','CNPJ','EMAIL','TELEFONE','ALEATORIA')),
+            owner_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
+        CREATE TABLE IF NOT EXISTS pix_setup_state(
+            user_id INTEGER PRIMARY KEY,
+            step TEXT NOT NULL CHECK(step IN ('key','owner')),
+            pix_key_type TEXT NOT NULL,
+            pix_key_encrypted TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        );
         CREATE TABLE IF NOT EXISTS payout_requests(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -1176,3 +1199,87 @@ def recent_health_alerts(limit=10):
             (max(1,min(int(limit),50)),)
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def _encrypt_pix_value(value):
+    key=_load_key()
+    nonce=os.urandom(12)
+    encrypted=AESGCM(key).encrypt(nonce,str(value).encode("utf-8"),b"PITPIX1")
+    return base64.urlsafe_b64encode(nonce+encrypted).decode("ascii")
+
+
+def _decrypt_pix_value(value):
+    raw=base64.urlsafe_b64decode(str(value).encode("ascii"))
+    if len(raw)<29:
+        raise ValueError("Cadastro Pix criptografado inválido.")
+    return AESGCM(_load_key()).decrypt(raw[:12],raw[12:],b"PITPIX1").decode("utf-8")
+
+
+def set_pix_setup_step(user_id,step,key_type,pix_key=None):
+    encrypted=_encrypt_pix_value(pix_key) if pix_key is not None else None
+    with connect() as db:
+        db.execute("""INSERT INTO pix_setup_state(user_id,step,pix_key_type,pix_key_encrypted,updated_at)
+                      VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+                      ON CONFLICT(user_id) DO UPDATE SET step=excluded.step,pix_key_type=excluded.pix_key_type,
+                      pix_key_encrypted=excluded.pix_key_encrypted,updated_at=CURRENT_TIMESTAMP""",
+                   (int(user_id),str(step),str(key_type).upper(),encrypted))
+        if str(step)=="key":
+            db.execute("UPDATE pix_profiles SET status='pending',reviewed_by=NULL,reviewed_at=NULL WHERE user_id=?",(int(user_id),))
+        db.commit()
+
+
+def get_pix_setup_step(user_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM pix_setup_state WHERE user_id=?",(int(user_id),)).fetchone()
+        if not row: return None
+        result=dict(row)
+        if result["pix_key_encrypted"]:
+            result["pix_key"]=_decrypt_pix_value(result["pix_key_encrypted"])
+        return result
+
+
+def clear_pix_setup_step(user_id):
+    with connect() as db:
+        db.execute("DELETE FROM pix_setup_state WHERE user_id=?",(int(user_id),))
+        db.commit()
+
+
+def save_pix_profile(user_id,key_type,pix_key,owner_name):
+    encrypted=_encrypt_pix_value(pix_key)
+    with connect() as db:
+        db.execute("""INSERT INTO pix_profiles(user_id,pix_key_encrypted,pix_key_type,owner_name,status)
+                      VALUES(?,?,?,?, 'pending')
+                      ON CONFLICT(user_id) DO UPDATE SET pix_key_encrypted=excluded.pix_key_encrypted,
+                      pix_key_type=excluded.pix_key_type,owner_name=excluded.owner_name,status='pending',
+                      created_at=CURRENT_TIMESTAMP,reviewed_by=NULL,reviewed_at=NULL""",
+                   (int(user_id),encrypted,str(key_type).upper(),str(owner_name).strip()[:120]))
+        db.commit()
+
+
+def get_pix_profile(user_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM pix_profiles WHERE user_id=?",(int(user_id),)).fetchone()
+        if not row: return None
+        result=dict(row)
+        result["pix_key"]=_decrypt_pix_value(result["pix_key_encrypted"])
+        return result
+
+
+def delete_pix_profile(user_id):
+    with connect() as db:
+        db.execute("DELETE FROM pix_profiles WHERE user_id=?",(int(user_id),))
+        db.commit()
+
+
+def review_pix_profile(user_id,admin_id,approve):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT status FROM pix_profiles WHERE user_id=?",(int(user_id),)).fetchone()
+        if not row or row["status"]!="pending":
+            db.rollback()
+            return None
+        status="approved" if approve else "rejected"
+        db.execute("UPDATE pix_profiles SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE user_id=? AND status='pending'",
+                   (status,int(admin_id),int(user_id)))
+        db.commit()
+    return {"user_id":int(user_id),"status":status}
