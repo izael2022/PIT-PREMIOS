@@ -175,5 +175,60 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertTrue(db.get_user(1001)["is_vip"])
 
 
+    def test_payout_reduction_refunds_difference_and_records_history_and_audit(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        result = db.reduce_pending_payout(payout_id, 1000, 1)
+        self.assertEqual(result["refunded_points"], 1000)
+        self.assertEqual(result["amount_cents"], 100)
+        self.assertEqual(self.balance(), 4000)
+        with db.connect() as conn:
+            payout = conn.execute("SELECT points,amount_cents,status FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+            history = conn.execute("SELECT amount,reason FROM point_history WHERE user_id=1001 ORDER BY id DESC LIMIT 1").fetchone()
+            audit = conn.execute("SELECT admin_id,action,details FROM admin_audit_log ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual((payout["points"], payout["amount_cents"], payout["status"]), (1000, 100, "pending"))
+        self.assertEqual(history["amount"], 1000)
+        self.assertIn(f"#{payout_id}", history["reason"])
+        self.assertEqual((audit["admin_id"], audit["action"]), (1, "payout_reduced"))
+        self.assertIn(f"#{payout_id}", audit["details"])
+
+    def test_payout_reduction_rejects_non_admin(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        with self.assertRaisesRegex(ValueError, "Apenas administradores"):
+            db.reduce_pending_payout(payout_id, 1000, 999)
+        self.assertEqual(self.balance(), 3000)
+        with db.connect() as conn:
+            payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual((payout["points"], payout["amount_cents"]), (2000, 200))
+
+    def test_payout_reduction_rejects_invalid_or_non_reducing_amount(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        for invalid in (0, -10, 999, 2000, 2010):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    db.reduce_pending_payout(payout_id, invalid, 1)
+        self.assertEqual(self.balance(), 3000)
+
+    def test_payout_reduction_only_works_while_pending(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        self.assertIsNotNone(db.review_payout(payout_id, 1, False))
+        with self.assertRaises(ValueError):
+            db.reduce_pending_payout(payout_id, 1000, 1)
+        self.assertEqual(self.balance(), 5000)
+
+    def test_concurrent_payout_reduction_refunds_only_once(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: db.reduce_pending_payout(payout_id, 1000, 1), range(2)))
+        self.assertEqual(sum(result is not None for result in results), 1)
+        self.assertEqual(self.balance(), 4000)
+        with db.connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM point_history WHERE user_id=1001 AND reason=?",
+                (f"Devolução após redução do saque #{payout_id}",),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+
+
 if __name__ == "__main__":
     unittest.main()
