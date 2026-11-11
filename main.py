@@ -728,7 +728,7 @@ def command(m,update_id=None):
             return
         try:
             payout_id=int(args[1]); new_points=int(args[2])
-            result=db.reduce_pending_payout(payout_id,new_points,uid)
+            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_REDEEM_POINTS)
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
