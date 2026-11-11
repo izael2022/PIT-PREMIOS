@@ -84,6 +84,40 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertIsNone(db.review_task_submission(submission_id, 1, True))
         self.assertEqual(self.balance(), 5250)
 
+    def test_welcome_bonus_is_credited_once_only_for_new_real_users(self):
+        created, referrer, review_id = db.register_user(
+            3001, "welcome_user", "Welcome User", welcome_reward=1000
+        )
+        self.assertTrue(created)
+        self.assertIsNone(referrer)
+        self.assertIsNone(review_id)
+        self.assertEqual(db.get_user(3001)["points"], 1000)
+        with db.connect() as conn:
+            history = conn.execute(
+                "SELECT amount,reason FROM point_history WHERE user_id=?", (3001,)
+            ).fetchall()
+            weekly = conn.execute(
+                "SELECT points,source FROM weekly_earnings WHERE user_id=?", (3001,)
+            ).fetchall()
+        self.assertEqual([(row["amount"], row["reason"]) for row in history], [(1000, "Bônus de boas-vindas")])
+        self.assertEqual([(row["points"], row["source"]) for row in weekly], [(1000, "welcome")])
+        created_again, _, _ = db.register_user(
+            3001, "welcome_user", "Welcome User", welcome_reward=1000
+        )
+        self.assertFalse(created_again)
+        self.assertEqual(db.get_user(3001)["points"], 1000)
+
+    def test_welcome_bonus_and_referral_reward_are_separate(self):
+        created, referrer, review_id = db.register_user(
+            3002, "referred_user", "Referred User", referrer=1001,
+            referral_reward=1000, welcome_reward=1000
+        )
+        self.assertTrue(created)
+        self.assertEqual(referrer, 1001)
+        self.assertIsNone(review_id)
+        self.assertEqual(db.get_user(3002)["points"], 1000)
+        self.assertEqual(db.get_user(1001)["points"], 6000)
+
     def test_referral_approval_credits_only_once(self):
         db.register_user(2002, "indicado", "Indicado", referrer=1001, is_bot=True)
         with db.connect() as conn:
