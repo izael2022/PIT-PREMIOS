@@ -5,7 +5,7 @@ import base64
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from backup_utils import _load_key
 from contextlib import contextmanager
-from config import DATABASE_PATH
+from config import DATABASE_PATH, ADMIN_IDS
 
 @contextmanager
 def connect():
@@ -925,6 +925,8 @@ def cancel_payout_request(user_id,payout_id):
 
 def reduce_pending_payout(rid,new_points,admin_id):
     rid=int(rid); new_points=int(new_points); admin_id=int(admin_id)
+    if admin_id not in ADMIN_IDS:
+        raise ValueError('Apenas administradores podem diminuir saques.')
     if new_points<=0 or new_points%10!=0:
         raise ValueError('O novo valor deve ser maior que zero e múltiplo de 10 pontos.')
     with connect() as db:
