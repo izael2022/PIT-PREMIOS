@@ -102,6 +102,7 @@ def init_db():
             user_id INTEGER NOT NULL,
             points INTEGER NOT NULL CHECK(points > 0),
             amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+            conversion_version INTEGER NOT NULL DEFAULT 1,
             pix_key TEXT NOT NULL,
             pix_key_type TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
@@ -265,6 +266,10 @@ def init_db():
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
         if "vip_expires_at" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN vip_expires_at TEXT")
+        payout_columns={r["name"] for r in db.execute("PRAGMA table_info(payout_requests)")}
+        if "conversion_version" not in payout_columns:
+            # Registros já existentes mantêm a conversão histórica (100 pontos = R$ 1).
+            db.execute("ALTER TABLE payout_requests ADD COLUMN conversion_version INTEGER NOT NULL DEFAULT 1")
         db.commit()
 
 def get_auto_delete_settings():
@@ -845,7 +850,7 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update
         if pending:
             db.rollback(); raise ValueError("Você já possui um saque aguardando análise.")
         db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
-        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points//10,_encrypt_payout_pix_key(pix_key),pix_key_type))
+        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,conversion_version,pix_key,pix_key_type) VALUES(?,?,?,?,?,?)",(uid,points,points//10,2,_encrypt_payout_pix_key(pix_key),pix_key_type))
         rid=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
         _idempotency_save(db,update_id,"payout.create",rid)
@@ -942,7 +947,10 @@ def reduce_pending_payout(rid,new_points,admin_id,min_points=1000):
         if new_points>=old_points:
             db.rollback(); raise ValueError('O novo valor precisa ser menor que o valor atual do saque.')
         refunded=old_points-new_points
-        amount_cents=new_points//10
+        # Pedidos anteriores à nova taxa preservam sua conversão histórica.
+        conversion_version=int(row['conversion_version']) if 'conversion_version' in row.keys() else 1
+        divisor=10 if conversion_version>=2 else 1
+        amount_cents=new_points//divisor
         payout_update=db.execute("UPDATE payout_requests SET points=?,amount_cents=? WHERE id=? AND status='pending'",(new_points,amount_cents,rid))
         if payout_update.rowcount != 1:
             db.rollback(); return None
