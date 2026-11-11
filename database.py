@@ -828,8 +828,8 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update
     pix_key_type=(pix_key_type or "").strip().upper()
     if min_points<1:
         raise ValueError("O valor mínimo de saque configurado é inválido.")
-    if points<min_points or points%100!=0:
-        raise ValueError(f"O saque mínimo é de {min_points:,} pontos e o valor deve ser múltiplo de 100.")
+    if points<min_points or points%10!=0:
+        raise ValueError(f"O saque mínimo é de {min_points:,} pontos e o valor deve ser múltiplo de 10.")
     if not pix_key or len(pix_key)>200: raise ValueError("Chave Pix inválida.")
     if pix_key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): raise ValueError("Tipo de chave Pix inválido.")
     with connect() as db:
@@ -845,7 +845,7 @@ def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update
         if pending:
             db.rollback(); raise ValueError("Você já possui um saque aguardando análise.")
         db.execute("UPDATE users SET points=points-? WHERE user_id=?",(points,uid))
-        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points,_encrypt_payout_pix_key(pix_key),pix_key_type))
+        cur=db.execute("INSERT INTO payout_requests(user_id,points,amount_cents,pix_key,pix_key_type) VALUES(?,?,?,?,?)",(uid,points,points//10,_encrypt_payout_pix_key(pix_key),pix_key_type))
         rid=cur.lastrowid
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,-points,f"Reserva para saque #{rid}"))
         _idempotency_save(db,update_id,"payout.create",rid)
@@ -922,6 +922,27 @@ def cancel_payout_request(user_id,payout_id):
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,row["points"],f"Cancelamento do saque #{payout_id}"))
         db.commit()
         return dict(row)
+
+def reduce_pending_payout(rid,new_points,admin_id):
+    rid=int(rid); new_points=int(new_points); admin_id=int(admin_id)
+    if new_points<=0 or new_points%10!=0:
+        raise ValueError('O novo valor deve ser maior que zero e múltiplo de 10 pontos.')
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
+        if not row:
+            db.rollback(); return None
+        old_points=int(row['points'])
+        if new_points>=old_points:
+            db.rollback(); raise ValueError('O novo valor precisa ser menor que o valor atual do saque.')
+        refunded=old_points-new_points
+        amount_cents=new_points//10
+        db.execute('UPDATE payout_requests SET points=?,amount_cents=? WHERE id=? AND status=\'pending\'',(new_points,amount_cents,rid))
+        db.execute('UPDATE users SET points=points+? WHERE user_id=?',(refunded,row['user_id']))
+        db.execute('INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)',(row['user_id'],refunded,'Devolução após redução do saque #'+str(rid)))
+        db.execute('INSERT INTO admin_audit_log(admin_id,action,details) VALUES(?,?,?)',(admin_id,'payout_reduced',f'Saque #{rid}: {old_points} para {new_points}; devolvidos {refunded} pontos'))
+        result=dict(row); result.update({'points':new_points,'amount_cents':amount_cents,'refunded_points':refunded})
+        db.commit(); return result
 
 def review_payout(rid,admin_id,approve):
     with connect() as db:
