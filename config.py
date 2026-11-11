@@ -12,6 +12,7 @@ def parse_ids(raw):
 
 ADMIN_IDS=parse_ids(os.getenv("ADMIN_IDS",""))
 POINTS_PER_REFERRAL=1000  # Recompensa fixa por indicação válida: R$ 1,00.
+POINTS_WELCOME=1000  # Bônus único de boas-vindas para cada novo usuário real.
 def parse_daily_rewards(raw):
     values=raw.split(",")
     if not values or any(not value.strip() for value in values):
