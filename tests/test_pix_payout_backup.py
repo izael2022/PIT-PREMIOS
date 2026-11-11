@@ -19,7 +19,7 @@ from backup_utils import (
 )
 
 
-TEST_KEY = base64.urlsafe_b64encode(b"pit-premios-test-key-32-bytes!!").decode("ascii")
+TEST_KEY = base64.urlsafe_b64encode(b"pit-premios-test-key-32-bytes!!!").decode("ascii")
 
 
 class IsolatedDatabaseTest(unittest.TestCase):
