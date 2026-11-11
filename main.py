@@ -721,7 +721,7 @@ def command(m,update_id=None):
         pts=int(args[1]); profile=db.get_pix_profile(uid)
         if not profile or profile["status"]!="approved":
             send(chat,"🔐 Você precisa cadastrar uma chave Pix e aguardar a aprovação da equipe antes de solicitar um saque.",[[btn("Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]]); return
-        pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]
+        pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
         if not _valid_pix_key(key_type,pix_key):
             send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
         try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
@@ -729,7 +729,7 @@ def command(m,update_id=None):
         amount=pts/100
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
         for aid in ADMIN_IDS:
-            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\n\n⚠️ Faça a transferência Pix primeiro. Depois confirme abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
+            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
             except Exception: log.exception("Falha ao notificar admin sobre saque")
     elif cmd=="/resgatar":
         if len(p)<3 or not p[1].isdigit(): send(chat,"Use /resgatar PONTOS DESCRIÇÃO"); return
@@ -1041,7 +1041,7 @@ def callback(c,update_id=None):
         result=db.review_pix_profile(int(target),uid,decision=="yes")
         if not result: send(chat,"Esse cadastro Pix não está mais aguardando análise."); return
         status="aprovada" if decision=="yes" else "reprovada"
-        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\\n\\nStatus: {status}","parse_mode":"HTML"})
+        api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         notify_user(int(target),f"Sua chave Pix foi {status} pela equipe. "+("Você já pode solicitar saques." if decision=="yes" else "Acesse Minha chave Pix para cadastrar novamente."))
     elif data=="pixprofile":
         pix_profile_page(chat,uid)
@@ -1051,7 +1051,7 @@ def callback(c,update_id=None):
         key_type=data.split(":",2)[2]
         if key_type not in ("CPF","CNPJ","EMAIL","TELEFONE","ALEATORIA"): return
         db.set_pix_setup_step(uid,"key",key_type)
-        send(chat,f"Envie agora sua chave Pix do tipo <b>{escape(key_type)}</b> em uma única mensagem.\\n\\nNão envie senha, código ou token bancário.")
+        send(chat,f"Envie agora sua chave Pix do tipo <b>{escape(key_type)}</b> em uma única mensagem.\n\nNão envie senha, código ou token bancário.")
     elif data=="notifications":
         notifications_page(chat,uid)
     elif data=="notifications:on":
@@ -1267,7 +1267,7 @@ def process_update(update):
                             profile=db.get_pix_profile(uid)
                             for aid in ADMIN_IDS:
                                 try:
-                                    send(aid,f"🔐 <b>NOVA CHAVE PIX PARA CONFERÊNCIA</b>\\nUsuário: <code>{uid}</code>\\nTipo: {escape(profile['pix_key_type'])}\\nChave: <code>{escape(profile['pix_key'])}</code>\\nTitular informado: {escape(profile['owner_name'])}\\n\\nConfira manualmente e decida:",[[btn("✅ Aprovar chave","pixreview:"+str(uid)+":yes"),btn("❌ Reprovar","pixreview:"+str(uid)+":no")]])
+                                    send(aid,f"🔐 <b>NOVA CHAVE PIX PARA CONFERÊNCIA</b>\nUsuário: <code>{uid}</code>\nTipo: {escape(profile['pix_key_type'])}\nChave: <code>{escape(profile['pix_key'])}</code>\nTitular informado: {escape(profile['owner_name'])}\n\nConfira manualmente e decida:",[[btn("✅ Aprovar chave","pixreview:"+str(uid)+":yes"),btn("❌ Reprovar","pixreview:"+str(uid)+":no")]])
                                 except Exception: log.exception("Falha ao notificar admin sobre cadastro Pix")
                 else:
                     task_id=db.get_pending_task_proof(uid)
@@ -1277,12 +1277,12 @@ def process_update(update):
                             proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
                             submission_id=db.submit_task(task_id,uid,proof)
                             db.clear_pending_task_proof(uid)
-                            send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\\n\\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
+                            send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                             for aid in ADMIN_IDS:
                                 if proof.startswith("photo:"):
-                                    api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
+                                    api("sendPhoto",{"chat_id":aid,"photo":proof.split(":",1)[1],"caption":f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}","parse_mode":"HTML","reply_markup":{"inline_keyboard":[[btn("Revisar tarefas","admin:tasks")]]}})
                                 else:
-                                    send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\\nUsuário: <code>{uid}</code>\\nTarefa: #{task_id}\\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
+                                    send(aid,f"📋 <b>NOVA COMPROVAÇÃO #{submission_id}</b>\nUsuário: <code>{uid}</code>\nTarefa: #{task_id}\nComprovação: {escape(proof[:1000])}",[[btn("Revisar tarefas","admin:tasks")]])
                         except ValueError as e:
                             if str(e)!="Envie a comprovação solicitada.":
                                 db.clear_pending_task_proof(uid)
