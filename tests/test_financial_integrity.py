@@ -197,6 +197,18 @@ class FinancialIntegrityTests(unittest.TestCase):
             payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
         self.assertEqual((payout["points"], payout["amount_cents"]), (1500, 150))
 
+    def test_legacy_pending_payout_keeps_historical_conversion_when_reduced(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        with db.connect() as conn:
+            conn.execute("UPDATE payout_requests SET conversion_version=1,amount_cents=2000 WHERE id=?", (payout_id,))
+            conn.commit()
+        result = db.reduce_pending_payout(payout_id, 1000, 1)
+        self.assertEqual(result["amount_cents"], 1000)
+        with db.connect() as conn:
+            payout = conn.execute("SELECT points,amount_cents,conversion_version FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual((payout["points"], payout["amount_cents"], payout["conversion_version"]), (1000, 1000, 1))
+        self.assertEqual(self.balance(), 4000)
+
     def test_payout_reduction_cannot_go_below_configured_minimum(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         with self.assertRaisesRegex(ValueError, "inferior ao mínimo"):
