@@ -354,7 +354,7 @@ def balance(chat,uid):
     minimum=int(MIN_REDEEM_POINTS)
     remaining=max(0,minimum-points)
     status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
-    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/1000:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
     rows=db.ranking()
@@ -732,7 +732,7 @@ def command(m,update_id=None):
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
-            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result[chr(97)+chr(109)+chr(111)+chr(117)+chr(110)+chr(116)+chr(95)+chr(99)+chr(101)+chr(110)+chr(116)+chr(115)]/100:.2f}). {result[chr(114)+chr(101)+chr(102)+chr(117)+chr(110)+chr(100)+chr(101)+chr(100)+chr(95)+chr(112)+chr(111)+chr(105)+chr(110)+chr(116)+chr(115)]:,} pontos foram devolvidos à sua carteira.")
+            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result["amount_cents"]/100:.2f}). {result["refunded_points"]:,} pontos foram devolvidos à sua carteira.")
             send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result[chr(114)+chr(101)+chr(102)+chr(117)+chr(110)+chr(100)+chr(101)+chr(100)+chr(95)+chr(112)+chr(111)+chr(105)+chr(110)+chr(116)+chr(115)]:,} pontos.")
         except ValueError as e:
             send(chat,escape(str(e)))
@@ -747,7 +747,7 @@ def command(m,update_id=None):
             send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
         try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
-        amount=pts/100
+        amount=pts/1000
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
         for aid in ADMIN_IDS:
             try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
@@ -986,7 +986,7 @@ def callback(c,update_id=None):
         payout_id=int(data.rsplit(":",1)[1])
         payout=next((x for x in db.pending_payouts() if x["id"]==payout_id),None)
         if payout:
-            send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout[chr(112)+chr(111)+chr(105)+chr(110)+chr(116)+chr(115)]:,} pontos.")
+            send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout["points"]:,} pontos.")
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
