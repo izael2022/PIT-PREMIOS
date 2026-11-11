@@ -1223,6 +1223,8 @@ def set_pix_setup_step(user_id,step,key_type,pix_key=None):
                       ON CONFLICT(user_id) DO UPDATE SET step=excluded.step,pix_key_type=excluded.pix_key_type,
                       pix_key_encrypted=excluded.pix_key_encrypted,updated_at=CURRENT_TIMESTAMP""",
                    (int(user_id),str(step),str(key_type).upper(),encrypted))
+        if str(step)=="key":
+            db.execute("UPDATE pix_profiles SET status='pending',reviewed_by=NULL,reviewed_at=NULL WHERE user_id=?",(int(user_id),))
         db.commit()
 
 
