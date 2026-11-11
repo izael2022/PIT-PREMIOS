@@ -348,7 +348,8 @@ def start(m):
     pr=db.get_profile(u["id"])
     first=escape((u.get("first_name") or "participante")[:40])
     welcome_text=(f"🎁 Você recebeu <b>{POINTS_WELCOME:,} pontos</b> de boas-vindas!" if created and not u.get("is_bot") and POINTS_WELCOME>0 else "")
-    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n{welcome_text + chr(10) + chr(10) if welcome_text else ""}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
+    welcome_prefix=f"{welcome_text}\\n\\n" if welcome_text else ""
+    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\\n\\n{welcome_prefix}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
     u=db.get_user(uid); points=int(u["points"] if u else 0)
