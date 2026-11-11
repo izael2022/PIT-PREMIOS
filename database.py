@@ -943,8 +943,12 @@ def reduce_pending_payout(rid,new_points,admin_id,min_points=1000):
             db.rollback(); raise ValueError('O novo valor precisa ser menor que o valor atual do saque.')
         refunded=old_points-new_points
         amount_cents=new_points//10
-        db.execute('UPDATE payout_requests SET points=?,amount_cents=? WHERE id=? AND status=\'pending\'',(new_points,amount_cents,rid))
-        db.execute('UPDATE users SET points=points+? WHERE user_id=?',(refunded,row['user_id']))
+        payout_update=db.execute("UPDATE payout_requests SET points=?,amount_cents=? WHERE id=? AND status='pending'",(new_points,amount_cents,rid))
+        if payout_update.rowcount != 1:
+            db.rollback(); return None
+        wallet_update=db.execute('UPDATE users SET points=points+? WHERE user_id=?',(refunded,row['user_id']))
+        if wallet_update.rowcount != 1:
+            db.rollback(); raise ValueError('Não foi possível localizar a carteira do usuário; saque não foi alterado.')
         db.execute('INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)',(row['user_id'],refunded,'Devolução após redução do saque #'+str(rid)))
         db.execute('INSERT INTO admin_audit_log(admin_id,action,details) VALUES(?,?,?)',(admin_id,'payout_reduced',f'Saque #{rid}: {old_points} para {new_points}; devolvidos {refunded} pontos'))
         result=dict(row); result.update({'points':new_points,'amount_cents':amount_cents,'refunded_points':refunded})
