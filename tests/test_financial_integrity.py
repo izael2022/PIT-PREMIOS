@@ -191,6 +191,21 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual((audit["admin_id"], audit["action"]), (1, "payout_reduced"))
         self.assertIn(f"#{payout_id}", audit["details"])
 
+    def test_new_payout_uses_1000_points_per_real(self):
+        payout_id = db.create_payout_request(1001, 1500, "teste@example.com", "EMAIL", 1000)
+        with db.connect() as conn:
+            payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual((payout["points"], payout["amount_cents"]), (1500, 150))
+
+    def test_payout_reduction_cannot_go_below_configured_minimum(self):
+        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        with self.assertRaisesRegex(ValueError, "inferior ao mínimo"):
+            db.reduce_pending_payout(payout_id, 990, 1, 1000)
+        self.assertEqual(self.balance(), 3000)
+        with db.connect() as conn:
+            payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual((payout["points"], payout["amount_cents"]), (2000, 200))
+
     def test_payout_reduction_rejects_non_admin(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         with self.assertRaisesRegex(ValueError, "Apenas administradores"):
