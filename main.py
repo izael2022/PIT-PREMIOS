@@ -354,7 +354,7 @@ def balance(chat,uid):
     minimum=int(MIN_REDEEM_POINTS)
     remaining=max(0,minimum-points)
     status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
-    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/100:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n100 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/100:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/1000:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
     rows=db.ranking()
@@ -420,7 +420,7 @@ def profile(chat,uid):
         f"Olá, <b>{name}</b>! 🐾\n\n"
         f"💰 <b>SALDO E CONQUISTAS</b>\n"
         f"Saldo: <b>{points:,} pontos</b>\n"
-        f"Equivalente: <b>R$ {points/100:.2f}</b>\n"
+        f"Equivalente: <b>R$ {points/1000:.2f}</b>\n"
         f"👥 Indicações válidas: <b>{referrals}</b>\n"
         f"📈 {goal_line}\n\n"
         f"💎 <b>CLUBE VIP</b>\n"
@@ -620,7 +620,7 @@ def notifications_page(chat,uid):
     send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\n\n<b>Últimos avisos</b>\n{history}",[[btn(label,action)],[btn("🔄 Atualizar","notifications")],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
-    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 100 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 1.000 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
 def _valid_pix_key(key_type,key):
     value=str(key or "").strip()
@@ -718,6 +718,24 @@ def command(m,update_id=None):
             task_id=db.create_task(parts[1],parts[2],int(parts[0]),True)
             send(chat,f"✅ Tarefa #{task_id} cadastrada com {int(parts[0])} pontos.")
         except ValueError as e: send(chat,escape(str(e)))
+    elif cmd=="/diminuirsaque":
+        if not admin(uid):
+            send(chat,"Apenas administradores podem diminuir saques.")
+            return
+        args=t.split()
+        if len(args)!=3 or not args[1].isdigit() or not args[2].isdigit():
+            send(chat,"Use: /diminuirsaque ID_DO_SAQUE NOVO_TOTAL_DE_PONTOS")
+            return
+        try:
+            payout_id=int(args[1]); new_points=int(args[2])
+            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_REDEEM_POINTS)
+            if not result:
+                send(chat,"Saque não encontrado ou não está mais pendente.")
+                return
+            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result['amount_cents']/100:.2f}). {result['refunded_points']:,} pontos foram devolvidos à sua carteira.")
+            send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result['refunded_points']:,} pontos.")
+        except ValueError as e:
+            send(chat,escape(str(e)))
     elif cmd=="/sacar":
         args=t.split(maxsplit=1)
         if len(args)<2 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS"); return
@@ -729,7 +747,7 @@ def command(m,update_id=None):
             send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
         try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
-        amount=pts/100
+        amount=pts/1000
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
         for aid in ADMIN_IDS:
             try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
@@ -963,6 +981,15 @@ def callback(c,update_id=None):
     if _should_delete_callback_message(data,uid) and msg.get("message_id"):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
+    if data.startswith("admin:payoutreduce:"):
+        if not admin(uid): return
+        payout_id=int(data.rsplit(":",1)[1])
+        payout=next((x for x in db.pending_payouts() if x["id"]==payout_id),None)
+        if payout:
+            send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout['points']:,} pontos.")
+        else:
+            send(chat,"Esse saque não está mais pendente.")
+        return
     if data.startswith("admin:"):
         if not admin(uid): return
         action=data.split(":",1)[1]
@@ -1035,7 +1062,7 @@ def callback(c,update_id=None):
             if not rows: send(chat,"Nenhum saque pendente.",admin_menu())
             for r in rows:
                 amount=r["amount_cents"]/100
-                kb=[[btn("✅ Confirmar Pix pago","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar pedido","payout:"+str(r["id"])+":no")]]
+                kb=[[btn("➖ Diminuir saque","admin:payoutreduce:"+str(r["id"]))],[btn("✅ Confirmar Pix pago","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar pedido","payout:"+str(r["id"])+":no")]]
                 send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         return
     if data.startswith("pixreview:"):
