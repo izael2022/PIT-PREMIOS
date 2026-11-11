@@ -581,8 +581,7 @@ def my_payouts(chat,uid):
     labels={"pending":"⏳ Aguardando análise","approved":"✅ Pagamento confirmado","rejected":"❌ Rejeitado — pontos devolvidos","cancelled":"🚫 Cancelado — pontos devolvidos"}
     kb=[]
     for row in rows:
-        pix=row["pix_key"] or ""
-        masked=(pix[:2]+"••••"+pix[-2:]) if len(pix)>6 else ("••••" if pix else "não informada")
+        masked=row.get("pix_key_masked","não informada")
         lines.append(f"\n<b>Saque #{row['id']}</b> — R$ {row['amount_cents']/100:.2f}\n💰 {row['points']:,} pontos\nStatus: <b>{labels.get(row['status'],row['status'])}</b>\nChave {escape(row['pix_key_type'])}: <code>{escape(masked)}</code>\nSolicitado: {row['created_at']}")
         if row["status"]=="pending":
             kb.append([btn("🚫 Cancelar saque #"+str(row["id"]),"payoutcancel:"+str(row["id"]))])
@@ -592,12 +591,16 @@ def my_payouts(chat,uid):
 def history(chat,uid,page=0):
     page=max(0,int(page)); page_size=8
     rows=db.history(uid,page_size,page*page_size)
-    lines=["📜 <b>SEU EXTRATO</b>","━━━━━━━━━━━━━━━━━━",f"Página <b>{page+1}</b>"]
+    user=db.get_user(uid); current_balance=int(user["points"] if user else 0)
+    lines=["📜 <b>SEU EXTRATO FINANCEIRO</b>","━━━━━━━━━━━━━━━━━━",f"💰 Saldo disponível: <b>{current_balance:,} pontos</b>",f"Página <b>{page+1}</b>","<i>Entradas em verde, saídas em vermelho e confirmações de pagamento em azul.</i>"]
     if not rows:
         lines.append("Nenhuma movimentação registrada nesta página.")
     for r in rows:
-        sign="+" if r["amount"]>0 else ""; icon="🟢" if r["amount"]>0 else "🔴"
-        lines.append(f"{icon} <b>{sign}{r['amount']} pts</b> — {escape(r['reason'][:50])}\n<i>{r['created_at']}</i>")
+        amount=int(r["amount"])
+        sign="+" if amount>0 else ""
+        icon="🟢" if amount>0 else ("🔴" if amount<0 else "🔵")
+        value=(f"{sign}{amount:,} pontos" if amount else "Confirmação — sem alteração no saldo")
+        lines.append(f"{icon} <b>{value}</b>\n{escape(r['reason'][:100])}\n<i>{r['created_at']}</i>")
     kb=[]
     if page>0: kb.append(btn("⬅️ Anterior","history:"+str(page-1)))
     if len(rows)==page_size: kb.append(btn("Próxima ➡️","history:"+str(page+1)))
