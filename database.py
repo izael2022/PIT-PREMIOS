@@ -909,6 +909,7 @@ def user_payout_requests(user_id,limit=10):
 def cancel_payout_request(user_id,payout_id):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        _migrate_legacy_payout_pix_keys(db)
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND user_id=? AND status='pending'",(payout_id,user_id)).fetchone()
         if not row:
             db.rollback()
@@ -925,6 +926,7 @@ def cancel_payout_request(user_id,payout_id):
 def review_payout(rid,admin_id,approve):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        _migrate_legacy_payout_pix_keys(db)
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row:
             db.rollback(); return None
