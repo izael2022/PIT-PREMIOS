@@ -67,3 +67,13 @@ Esse benchmark cria um banco temporário, executa transações concorrentes e ve
 Configure `MONITOR_HEARTBEAT_URL` no painel da hospedagem com a URL HTTPS secreta fornecida por um monitor de heartbeat (por exemplo, Better Stack). O bot envia o ping após cada ciclo de saúde bem-sucedido. Mantenha a URL somente nas variáveis de ambiente, nunca no GitHub. O painel administrativo passa a indicar se o heartbeat está configurado e alerta quando não há backup bem-sucedido registrado ou quando o último registro passa de 30 horas.
 
 O registro de backup confirma que o arquivo foi criado, validado e enviado a pelo menos um administrador; o teste de restauração manual continua necessário para comprovar recuperação ponta a ponta.
+
+
+## Cadastro de chave Pix do usuário
+
+- O participante cadastra o tipo da chave (CPF, CNPJ, e-mail, telefone ou aleatória) e informa o nome do titular.
+- A chave fica criptografada em repouso com AES-GCM, usando a variável secreta `BACKUP_ENCRYPTION_KEY` já utilizada pelo sistema de backups. Mantenha essa chave estável: perdê-la impede a leitura dos cadastros Pix criptografados.
+- O cadastro fica pendente até a aprovação/reprovação manual por um administrador.
+- Somente cadastros aprovados podem ser usados em novas solicitações de saque.
+- Os pagamentos continuam manuais. O bot não consulta automaticamente o DICT nem confirma a titularidade via Mercado Pago.
+- A tabela `pix_profiles` e o estado temporário `pix_setup_state` são criados com `CREATE TABLE IF NOT EXISTS`; não removem nem redefinem dados existentes.
