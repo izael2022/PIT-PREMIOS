@@ -732,7 +732,7 @@ def command(m,update_id=None):
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
-            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result["amount_cents"]/100:.2f}). {result['refunded_points']:,} pontos foram devolvidos à sua carteira.")
+            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result['amount_cents']/100:.2f}). {result['refunded_points']:,} pontos foram devolvidos à sua carteira.")
             send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result['refunded_points']:,} pontos.")
         except ValueError as e:
             send(chat,escape(str(e)))
