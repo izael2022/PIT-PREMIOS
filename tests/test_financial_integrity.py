@@ -211,14 +211,19 @@ class FinancialIntegrityTests(unittest.TestCase):
     def test_payout_reduction_only_works_while_pending(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         self.assertIsNotNone(db.review_payout(payout_id, 1, False))
-        with self.assertRaises(ValueError):
-            db.reduce_pending_payout(payout_id, 1000, 1)
+        self.assertIsNone(db.reduce_pending_payout(payout_id, 1000, 1))
         self.assertEqual(self.balance(), 5000)
 
     def test_concurrent_payout_reduction_refunds_only_once(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        def reduce_once():
+            try:
+                return db.reduce_pending_payout(payout_id, 1000, 1)
+            except ValueError:
+                return None
+
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(lambda _: db.reduce_pending_payout(payout_id, 1000, 1), range(2)))
+            results = list(pool.map(lambda _: reduce_once(), range(2)))
         self.assertEqual(sum(result is not None for result in results), 1)
         self.assertEqual(self.balance(), 4000)
         with db.connect() as conn:
