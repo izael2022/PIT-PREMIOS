@@ -11,7 +11,7 @@ def parse_ids(raw):
     except ValueError as exc:raise ValueError("ADMIN_IDS deve conter IDs numéricos.") from exc
 
 ADMIN_IDS=parse_ids(os.getenv("ADMIN_IDS",""))
-POINTS_PER_REFERRAL=max(0,int(os.getenv("POINTS_PER_REFERRAL","100")))
+POINTS_PER_REFERRAL=max(0,int(os.getenv("POINTS_PER_REFERRAL","1000")))
 def parse_daily_rewards(raw):
     values=raw.split(",")
     if not values or any(not value.strip() for value in values):
