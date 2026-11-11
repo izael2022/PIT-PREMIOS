@@ -923,12 +923,16 @@ def cancel_payout_request(user_id,payout_id):
         db.commit()
         return dict(row)
 
-def reduce_pending_payout(rid,new_points,admin_id):
-    rid=int(rid); new_points=int(new_points); admin_id=int(admin_id)
+def reduce_pending_payout(rid,new_points,admin_id,min_points=1000):
+    rid=int(rid); new_points=int(new_points); admin_id=int(admin_id); min_points=int(min_points)
     if admin_id not in ADMIN_IDS:
         raise ValueError('Apenas administradores podem diminuir saques.')
-    if new_points<=0 or new_points%10!=0:
-        raise ValueError('O novo valor deve ser maior que zero e múltiplo de 10 pontos.')
+    if min_points<1:
+        raise ValueError('O valor mínimo de saque configurado é inválido.')
+    if new_points<min_points:
+        raise ValueError(f'O novo saque não pode ser inferior ao mínimo de {min_points:,} pontos.')
+    if new_points%10!=0:
+        raise ValueError('O novo valor deve ser múltiplo de 10 pontos.')
     with connect() as db:
         db.execute('BEGIN IMMEDIATE')
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
