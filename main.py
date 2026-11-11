@@ -1189,7 +1189,7 @@ def callback(c,update_id=None):
         status="aprovado" if approved else "rejeitado; os pontos foram devolvidos"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
         try:
-            if approved: notify_user(result["user_id"],f"🎉 <b>Parabéns! Seu saque foi aprovado!</b>\n\nO pagamento de <b>R$ {result['amount_cents']/100:.2f}</b> foi enviado para sua chave Pix. Obrigado por participar do PIT PRÊMIOS! 🐾")
+            if approved: notify_user(result["user_id"],f"✅ <b>Confirmação registrada pela equipe!</b>\n\nA administração marcou o saque #{rid} de <b>R$ {result['amount_cents']/100:.2f}</b> como pago. Se o valor ainda não apareceu na sua conta, entre em contato com o suporte para conferência. Obrigado por participar do PIT PRÊMIOS! 🐾")
             else: notify_user(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
         except Exception: log.exception("Falha ao avisar usuário sobre saque")
     elif data.startswith("rewarddisable:"):

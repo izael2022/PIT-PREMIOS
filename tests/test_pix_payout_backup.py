@@ -157,7 +157,8 @@ class IsolatedDatabaseTest(unittest.TestCase):
             decrypt_backup_archive(encrypted, base64.urlsafe_b64encode(b"wrong-key-32-bytes-for-test!!!").decode("ascii"))
         restored = Path(self.temp.name) / "recovery" / "restored.db"
         restore_backup_archive(encrypted, restored, TEST_KEY)
-        with sqlite3.connect(restored) as conn:
+        conn = sqlite3.connect(restored)
+        try:
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertEqual(
                 conn.execute("SELECT points FROM users WHERE user_id=101").fetchone()[0],
@@ -167,6 +168,8 @@ class IsolatedDatabaseTest(unittest.TestCase):
                 conn.execute("SELECT COUNT(*) FROM point_history WHERE reason='registro de teste'").fetchone()[0],
                 1,
             )
+        finally:
+            conn.close()
         with self.assertRaises(FileExistsError):
             restore_backup_archive(encrypted, restored, TEST_KEY)
         # Banco original segue presente e inalterado.
