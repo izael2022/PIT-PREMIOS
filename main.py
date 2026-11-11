@@ -732,8 +732,8 @@ def command(m,update_id=None):
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
-            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result["amount_cents"]/100:.2f}). {result["refunded_points"]:,} pontos foram devolvidos à sua carteira.")
-            send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result[chr(114)+chr(101)+chr(102)+chr(117)+chr(110)+chr(100)+chr(101)+chr(100)+chr(95)+chr(112)+chr(111)+chr(105)+chr(110)+chr(116)+chr(115)]:,} pontos.")
+            notify_user(result["user_id"],f"Seu saque #{payout_id} foi reduzido para {new_points:,} pontos (R$ {result["amount_cents"]/100:.2f}). {result['refunded_points']:,} pontos foram devolvidos à sua carteira.")
+            send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result['refunded_points']:,} pontos.")
         except ValueError as e:
             send(chat,escape(str(e)))
     elif cmd=="/sacar":
@@ -986,7 +986,7 @@ def callback(c,update_id=None):
         payout_id=int(data.rsplit(":",1)[1])
         payout=next((x for x in db.pending_payouts() if x["id"]==payout_id),None)
         if payout:
-            send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout["points"]:,} pontos.")
+            send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout['points']:,} pontos.")
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
