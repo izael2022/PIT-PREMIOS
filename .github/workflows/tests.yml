@@ -35,7 +35,7 @@ jobs:
         env:
           BOT_TOKEN: "123456:test-token"
           ADMIN_IDS: "1"
-          BACKUP_ENCRYPTION_KEY: "cGl0LXByZW1pb3MtdGVzdC1rZXktMzItYnl0ZXMhIQ=="
+          BACKUP_ENCRYPTION_KEY: "cGl0LXByZW1pb3MtdGVzdC1rZXktMzItYnl0ZXMhISE="
           DATABASE_PATH: "${{ runner.temp }}/pit-premios-ci.db"
         run: python -m unittest discover -s tests -v
       - name: Teste isolado de estabilidade SQLite
