@@ -1184,11 +1184,11 @@ def callback(c,update_id=None):
         }
         if game not in configs: return
         title,prizes,weights=configs[game]
-        if game in db.game_status(uid):
-            send(chat,f"⏳ Você já participou de {title.lower()} hoje. Volte amanhã!",back()); return
         prize=random.choices(prizes,weights=weights,k=1)[0]
         try:
-            db.play_daily_game(uid,game,prize,update_id=update_id)
+            # A função retorna o resultado original quando o mesmo update_id
+            # é reprocessado após uma falha de envio ou reinício.
+            prize=db.play_daily_game(uid,game,prize,update_id=update_id)
             send(chat,f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 Resultado: <b>+{prize} pontos</b>!\n\nCada jogo tem uma tentativa por dia. Seus pontos já foram adicionados à carteira.",[[btn("🎁 Baú surpresa","game:chest"),btn("🎡 Roleta","game:roulette")],[btn("🎟️ Raspadinha","game:scratch")],[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
         except ValueError as e:
             send(chat,escape(str(e)),back())
