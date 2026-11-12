@@ -1367,11 +1367,12 @@ def process_update(update):
                 if input_state:
                     value=(m.get("text") or "").strip()
                     if input_state=="redeem_code":
-                        db.clear_user_input_state(uid)
                         try:
                             result=db.redeem_code(value,uid,update_id=update_id)
+                            db.clear_user_input_state(uid)
                             send(m["chat"]["id"],f"🎉 <b>RESGATE CONCLUÍDO!</b>\n━━━━━━━━━━━━━━━━━━\n🎁 Pontos adicionados: <b>+{result['points']:,}</b> (R$ {result['points']/1000:.2f})\n💰 Novo saldo: <b>{result['balance']:,} pontos</b>\n\nOs pontos já estão disponíveis na sua carteira. Aproveite suas recompensas no PIT PRÊMIOS! 🐾",[[btn("💰 Ver minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
                         except ValueError as e:
+                            db.clear_user_input_state(uid)
                             send(m["chat"]["id"],"⚠️ <b>Não foi possível resgatar este código.</b>\n"+escape(str(e))+"\n\nConfira se digitou corretamente ou se o código ainda possui resgates disponíveis.",[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
                     elif input_state=="payout_points":
                         if not value.isdigit():
@@ -1466,15 +1467,17 @@ def pending_update_recovery_worker():
     while True:
         try:
             after_id=0
+            capacity_full=False
             while True:
                 batch=db.pending_updates(limit=200,after_update_id=after_id)
                 if not batch:
                     break
                 for pending_update in batch:
                     if not schedule_update(pending_update,wait_for_capacity=False):
+                        capacity_full=True
                         break
                     after_id=max(after_id,int(pending_update.get("update_id",0)))
-                if len(batch)<200:
+                if capacity_full or len(batch)<200:
                     break
         except Exception:
             log.exception("Falha ao recuperar atualizações pendentes do SQLite.")
