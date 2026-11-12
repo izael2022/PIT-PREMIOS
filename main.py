@@ -241,9 +241,10 @@ def menu():
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
-        [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR PONTOS","redeem_info")],
+        [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR CÓDIGO","user:redeem_code")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
         [btn("📦 MEUS PEDIDOS","myorders"),btn("💸 MEUS SAQUES","mypayouts")],
+        [btn("💸 SOLICITAR SAQUE","user:payout")],
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
@@ -357,7 +358,7 @@ def balance(chat,uid):
     minimum=int(MIN_PAYOUT_POINTS)
     remaining=max(0,minimum-points)
     status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
-    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/1000:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/1000:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, use o botão <b>Solicitar saque</b> no menu. Sua chave Pix precisa estar aprovada.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
 
 def ranking(chat):
     rows=db.ranking()
@@ -678,6 +679,29 @@ def pix_profile_page(chat,uid):
     send(chat,f"🔐 <b>MINHA CHAVE PIX</b>\n\nTipo: <b>{escape(profile['pix_key_type'])}</b>\nChave: <code>{escape(_masked_pix(profile['pix_key']))}</code>\nTitular informado: <b>{escape(profile['owner_name'])}</b>\nStatus: <b>{status}</b>\n\nA validação é administrativa; o bot não consulta automaticamente o DICT nem confirma a titularidade no Mercado Pago.",[[btn("🔄 Alterar chave Pix","pix:change")],[btn("⬅️ Menu principal","home")]])
 
 
+def submit_payout_request(chat,uid,pts,update_id=None):
+    profile=db.get_pix_profile(uid)
+    if not profile or profile["status"]!="approved":
+        send(chat,"🔐 Você precisa cadastrar uma chave Pix e aguardar a aprovação da equipe antes de solicitar um saque.",[[btn("Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]])
+        return False
+    pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
+    if not _valid_pix_key(key_type,pix_key):
+        send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix.")
+        return False
+    try:
+        rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_PAYOUT_POINTS,update_id=update_id)
+    except ValueError as e:
+        send(chat,escape(str(e)))
+        return False
+    amount=pts/1000
+    send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\\nValor: <b>R$ {amount:.2f}</b>\\nSeus pontos ficaram reservados até a análise da equipe.",[[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    for aid in ADMIN_IDS:
+        try:
+            send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\\nUsuário: <code>{uid}</code>\\nPontos: {pts}\\nValor: R$ {amount:.2f}\\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\\nTitular informado: {escape(pix_owner)}\\n\\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
+        except Exception: log.exception("Falha ao notificar admin sobre saque")
+    return True
+
+
 def command(m,update_id=None):
     t=m.get("text") or ""; p=t.split(maxsplit=2); cmd=p[0].split("@")[0].lower()
     chat=m["chat"]["id"]; uid=m.get("from",{}).get("id")
@@ -762,20 +786,10 @@ def command(m,update_id=None):
             send(chat,"❌ "+escape(str(e)))
     elif cmd=="/sacar":
         args=t.split(maxsplit=1)
-        if len(args)<2 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS"); return
-        pts=int(args[1]); profile=db.get_pix_profile(uid)
-        if not profile or profile["status"]!="approved":
-            send(chat,"🔐 Você precisa cadastrar uma chave Pix e aguardar a aprovação da equipe antes de solicitar um saque.",[[btn("Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]]); return
-        pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
-        if not _valid_pix_key(key_type,pix_key):
-            send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
-        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_PAYOUT_POINTS,update_id=update_id)
-        except ValueError as e: send(chat,escape(str(e))); return
-        amount=pts/1000
-        send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
-        for aid in ADMIN_IDS:
-            try: send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
-            except Exception: log.exception("Falha ao notificar admin sobre saque")
+        if len(args)<2 or not args[1].isdigit():
+            send(chat,"Use: /sacar PONTOS")
+            return
+        submit_payout_request(chat,uid,int(args[1]),update_id)
     elif cmd=="/resgatar":
         if len(p)<3 or not p[1].isdigit(): send(chat,"Use /resgatar PONTOS DESCRIÇÃO"); return
         pts=int(p[1]); reward=p[2].strip()
@@ -1099,6 +1113,30 @@ def callback(c,update_id=None):
         status="aprovada" if decision=="yes" else "reprovada"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         notify_user(int(target),f"Sua chave Pix foi {status} pela equipe. "+("Você já pode solicitar saques." if decision=="yes" else "Acesse Minha chave Pix para cadastrar novamente."))
+    elif data=="user:redeem_code":
+        db.set_user_input_state(uid,"redeem_code")
+        send(chat,"🎟️ <b>RESGATAR CÓDIGO</b>\\n\\nDigite ou cole o código que você recebeu:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
+    elif data=="user:payout":
+        profile=db.get_pix_profile(uid)
+        if not profile or profile["status"]!="approved":
+            send(chat,"🔐 Antes de solicitar um saque, você precisa cadastrar sua chave Pix e aguardar a aprovação da equipe.",[[btn("🔐 Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]])
+        else:
+            user=db.get_user(uid); points=int(user["points"] if user else 0)
+            if points<MIN_PAYOUT_POINTS:
+                send(chat,f"Você tem <b>{points:,} pontos</b>. O mínimo para saque é <b>{MIN_PAYOUT_POINTS:,} pontos (R$ {MIN_PAYOUT_POINTS/1000:.2f})</b>.")
+            else:
+                db.set_user_input_state(uid,"payout_points")
+                send(chat,f"💸 <b>SOLICITAR SAQUE</b>\\n\\nSaldo disponível: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\\nMínimo: <b>{MIN_PAYOUT_POINTS:,} pontos</b> (R$ {MIN_PAYOUT_POINTS/1000:.2f})\\n\\nDigite quantos pontos deseja sacar:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
+    elif data=="user:cancel_input":
+        db.clear_user_input_state(uid)
+        send(chat,"Operação cancelada.",menu())
+    elif data.startswith("user:payout_confirm:"):
+        try:
+            pts=int(data.rsplit(":",1)[1])
+            db.clear_user_input_state(uid)
+            submit_payout_request(chat,uid,pts,update_id)
+        except (ValueError,IndexError):
+            send(chat,"Não foi possível confirmar. Inicie a solicitação novamente.",menu())
     elif data=="pixprofile":
         pix_profile_page(chat,uid)
     elif data=="pix:change":
@@ -1302,8 +1340,33 @@ def process_update(update):
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
                     return True
-                pix_step=db.get_pix_setup_step(uid)
-                if pix_step:
+                input_state=db.get_user_input_state(uid)
+                if input_state:
+                    value=(m.get("text") or "").strip()
+                    if input_state=="redeem_code":
+                        db.clear_user_input_state(uid)
+                        try:
+                            result=db.redeem_code(value,uid)
+                            send(m["chat"]["id"],f"🎉 <b>CÓDIGO RESGATADO COM SUCESSO!</b>\\n\\nVocê recebeu <b>{result['points']:,} pontos</b> (R$ {result['points']/1000:.2f}).\\nSeu novo saldo é de <b>{result['balance']:,} pontos</b>.",[[btn("💰 Minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
+                        except ValueError as e:
+                            send(m["chat"]["id"],"❌ "+escape(str(e)),[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
+                    elif input_state=="payout_points":
+                        if not value.isdigit():
+                            send(m["chat"]["id"],"Informe somente a quantidade de pontos em números. Exemplo: 10000.")
+                        else:
+                            pts=int(value); user=db.get_user(uid); balance=int(user["points"] if user else 0)
+                            if pts<MIN_PAYOUT_POINTS:
+                                send(m["chat"]["id"],f"❌ O mínimo para saque é {MIN_PAYOUT_POINTS:,} pontos (R$ {MIN_PAYOUT_POINTS/1000:.2f}). Digite outro valor ou cancele.")
+                            elif pts>balance:
+                                send(m["chat"]["id"],f"❌ Saldo insuficiente. Seu saldo atual é {balance:,} pontos. Digite outro valor ou cancele.")
+                            else:
+                                db.clear_user_input_state(uid)
+                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\\n\\nPontos: <b>{pts:,}</b>\\nValor: <b>R$ {pts/1000:.2f}</b>\\n\\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque",f"user:payout_confirm:{pts}")],[btn("❌ Cancelar","user:cancel_input")]])
+                else:
+                    pix_step=db.get_pix_setup_step(uid)
+                if input_state:
+                    pass
+                elif pix_step:
                     value=(m.get("text") or "").strip()
                     if not value:
                         send(m["chat"]["id"],"Envie os dados em texto para continuar.")
