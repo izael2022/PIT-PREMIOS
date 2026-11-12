@@ -1,4 +1,4 @@
-import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
+import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform, hmac, hashlib
 from html import escape
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, MIN_PAYOUT_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
@@ -1788,9 +1788,137 @@ def telegram_get_me_with_retry():
             time.sleep(delay)
 
 
+
+# API HTTPS das Mini Apps. O proxy HTTPS da hospedagem termina TLS; o processo
+# escuta apenas a porta interna informada pelo ambiente (PORT/MINIAPP_API_PORT).
+import http.server
+import datetime
+
+MINIAPP_ALLOWED_ORIGINS={x.strip().rstrip("/") for x in os.getenv("MINIAPP_ALLOWED_ORIGINS","https://izael2022.github.io").split(",") if x.strip()}
+MINIAPP_API_PORT=max(1,min(65535,int(os.getenv("PORT",os.getenv("MINIAPP_API_PORT","8080")))))
+
+def validate_telegram_init_data(init_data):
+    if not init_data or len(init_data)>8192:
+        raise ValueError("Autenticação do Telegram ausente.")
+    values=urllib.parse.parse_qs(init_data,keep_blank_values=True,strict_parsing=True)
+    received_hash=values.pop("hash",[""])[0]
+    if not received_hash or len(received_hash)!=64:
+        raise ValueError("Assinatura do Telegram inválida.")
+    pairs=[]
+    for key,items in values.items():
+        if len(items)!=1: raise ValueError("Dados de autenticação inválidos.")
+        pairs.append((key,items[0]))
+    data_check="\\n".join(f"{k}={v}" for k,v in sorted(pairs))
+    secret=hmac.new(b"WebAppData",BOT_TOKEN.encode(),hashlib.sha256).digest()
+    expected=hmac.new(secret,data_check.encode(),hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected,received_hash):
+        raise ValueError("Não foi possível validar sua conta do Telegram.")
+    try:
+        auth_date=int(values.get("auth_date",["0"])[0])
+        user=json.loads(values.get("user",["{}"])[0])
+        uid=int(user["id"])
+    except (ValueError,KeyError,TypeError,json.JSONDecodeError):
+        raise ValueError("Dados da conta do Telegram inválidos.")
+    now=int(time.time())
+    if auth_date>now+60 or now-auth_date>86400:
+        raise ValueError("Sessão expirada. Feche e abra a Mini App novamente pelo bot.")
+    if uid<=0: raise ValueError("Conta do Telegram inválida.")
+    return uid
+
+class MiniAppHandler(http.server.BaseHTTPRequestHandler):
+    server_version="PITMiniApps/1.0"
+    def log_message(self,fmt,*args):
+        log.info("MiniApp API %s - %s",self.address_string(),fmt%args)
+    def _headers(self,status=200,origin=""):
+        self.send_response(status)
+        if origin in MINIAPP_ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin",origin)
+            self.send_header("Vary","Origin")
+        self.send_header("Access-Control-Allow-Headers","Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods","POST, OPTIONS")
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Cache-Control","no-store")
+        self.end_headers()
+    def _json(self,status,payload,origin=""):
+        raw=json.dumps(payload,ensure_ascii=False).encode("utf-8")
+        self._headers(status,origin)
+        self.wfile.write(raw)
+    def do_OPTIONS(self):
+        origin=self.headers.get("Origin","").rstrip("/")
+        if origin not in MINIAPP_ALLOWED_ORIGINS:
+            self._json(403,{"ok":False,"error":"Origem não autorizada."})
+            return
+        self._headers(204,origin)
+    def do_GET(self):
+        self._json(405,{"ok":False,"error":"Método não permitido."},self.headers.get("Origin","").rstrip("/"))
+    def do_POST(self):
+        origin=self.headers.get("Origin","").rstrip("/")
+        if origin not in MINIAPP_ALLOWED_ORIGINS:
+            self._json(403,{"ok":False,"error":"Origem não autorizada."})
+            return
+        if self.path not in ("/api/miniapps/me","/api/miniapps/calendar/claim","/api/miniapps/surprise/open","/api/miniapps/wheel/spin"):
+            self._json(404,{"ok":False,"error":"Operação não encontrada."},origin)
+            return
+        try:
+            length=int(self.headers.get("Content-Length","0"))
+            if length<0 or length>4096: raise ValueError("Requisição inválida.")
+            raw=self.rfile.read(length) if length else b"{}"
+            body=json.loads(raw.decode("utf-8"))
+            if not isinstance(body,dict): raise ValueError("Dados inválidos.")
+            auth=self.headers.get("Authorization","")
+            if not auth.startswith("tma "): raise ValueError("Abra a Mini App pelo botão oficial do bot.")
+            uid=validate_telegram_init_data(auth[4:])
+            if db.get_maintenance_mode() and not admin(uid):
+                self._json(503,{"ok":False,"error":"PIT PRÊMIOS em manutenção. Tente novamente mais tarde."},origin)
+                return
+            user=db.get_user(uid)
+            if not user: raise ValueError("Não encontramos seu cadastro. Envie /start ao bot e tente novamente.")
+            if db.get_account_block(uid) and not admin(uid):
+                self._json(403,{"ok":False,"error":"Sua conta está temporariamente bloqueada."},origin)
+                return
+            if self.path=="/api/miniapps/me":
+                self._json(200,{"ok":True,"balance":int(user["points"])},origin)
+                return
+            if self.path=="/api/miniapps/calendar/claim":
+                claimed,streak,points=db.daily_claim(uid,DAILY_REWARDS)
+                fresh=db.get_user(uid)
+                if not claimed:
+                    self._json(409,{"ok":False,"error":"Você já coletou sua recompensa diária. Volte amanhã.","balance":int(fresh["points"])},origin)
+                else:
+                    self._json(200,{"ok":True,"message":f"Recompensa do dia {((streak-1)%len(DAILY_REWARDS))+1} coletada!", "points":points,"balance":int(fresh["points"]),"streak":streak},origin)
+                return
+            if self.path=="/api/miniapps/surprise/open":
+                chest=body.get("chest")
+                if isinstance(chest,bool) or not isinstance(chest,int) or chest not in range(1,7):
+                    raise ValueError("Escolha um dos baús disponíveis.")
+                prize=random.choices([0,5,10,15,20,30],[20,20,20,18,15,7])[0]
+                points=db.play_daily_game(uid,"chest",prize)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":"Baú aberto! "+("Hoje não saiu prêmio em pontos. Tente novamente amanhã." if points==0 else "Você encontrou uma recompensa!"),"points":points,"balance":int(fresh["points"])},origin)
+                return
+            if self.path=="/api/miniapps/wheel/spin":
+                prize=random.choices([0,5,10,15,20,25,50,100],[15,20,20,15,12,8,8,2])[0]
+                points=db.play_daily_game(uid,"roulette",prize)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":"A roleta parou! "+("Não foi desta vez. Volte amanhã!" if points==0 else "Parabéns, você ganhou pontos!"),"points":points,"balance":int(fresh["points"]),"segment":random.randrange(8)},origin)
+                return
+        except ValueError as exc:
+            self._json(400,{"ok":False,"error":str(exc)},origin)
+        except Exception:
+            log.exception("Erro interno na API Mini Apps")
+            self._json(500,{"ok":False,"error":"Erro interno. Tente novamente mais tarde."},origin)
+
+def start_miniapp_api():
+    server=http.server.ThreadingHTTPServer(("0.0.0.0",MINIAPP_API_PORT),MiniAppHandler)
+    server.daemon_threads=True
+    threading.Thread(target=server.serve_forever,name="pit-miniapp-api",daemon=True).start()
+    log.warning("API das Mini Apps aguardando conexões na porta interna %s",MINIAPP_API_PORT)
+
+
 def main():
     global BOT_USERNAME
     db.init_db()
+    start_miniapp_api()
     start_outbound_worker()
     # Recupera todos os lotes pendentes antes de buscar novas atualizações.
     last_pending_id=0
