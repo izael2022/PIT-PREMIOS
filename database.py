@@ -831,7 +831,7 @@ def claim_referral_milestone(uid,milestone):
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,bonuses[milestone],"referral_milestone"))
         db.commit(); return bonuses[milestone]
 
-def create_payout_request(uid,points,pix_key,pix_key_type,min_points=1000,update_id=None):
+def create_payout_request(uid,points,pix_key,pix_key_type,min_points=10000,update_id=None):
     points=int(points)
     min_points=int(min_points)
     pix_key=(pix_key or "").strip()
@@ -933,7 +933,7 @@ def cancel_payout_request(user_id,payout_id):
         db.commit()
         return dict(row)
 
-def reduce_pending_payout(rid,new_points,admin_id,min_points=1000):
+def reduce_pending_payout(rid,new_points,admin_id,min_points=10000):
     rid=int(rid); new_points=int(new_points); admin_id=int(admin_id); min_points=int(min_points)
     if admin_id not in ADMIN_IDS:
         raise ValueError('Apenas administradores podem diminuir saques.')

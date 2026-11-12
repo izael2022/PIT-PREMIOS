@@ -1,7 +1,7 @@
 import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, MIN_PAYOUT_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
 from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
@@ -353,7 +353,7 @@ def start(m):
 
 def balance(chat,uid):
     u=db.get_user(uid); points=int(u["points"] if u else 0)
-    minimum=int(MIN_REDEEM_POINTS)
+    minimum=int(MIN_PAYOUT_POINTS)
     remaining=max(0,minimum-points)
     status="✅ Você já atingiu o mínimo para solicitar." if remaining==0 else f"Faltam <b>{remaining:,} pontos</b> para atingir o mínimo."
     send(chat,f"💰 <b>MINHA CARTEIRA</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Saldo disponível: <b>{points:,} pontos</b>\n💵 Valor equivalente: <b>R$ {points/1000:.2f}</b>\n\n📌 <b>CONVERSÃO</b>\n1.000 pontos = R$ 1,00\n💸 Mínimo para saque: <b>{minimum:,} pontos (R$ {minimum/1000:.2f})</b>\n{status}\n\n🔐 Ao solicitar um saque, os pontos ficam reservados enquanto a equipe analisa. Se o pedido for rejeitado ou cancelado, eles retornam à carteira.\n\nPara solicitar, cadastre e tenha sua chave Pix aprovada em <b>Minha chave Pix</b>. Depois use <code>/sacar PONTOS</code>.\n\nAcompanhe entradas e saídas no seu <b>Extrato</b>.",[[btn("📜 Ver meu extrato","history")],[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
@@ -730,7 +730,7 @@ def command(m,update_id=None):
             return
         try:
             payout_id=int(args[1]); new_points=int(args[2])
-            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_REDEEM_POINTS)
+            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_PAYOUT_POINTS)
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
@@ -747,7 +747,7 @@ def command(m,update_id=None):
         pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
         if not _valid_pix_key(key_type,pix_key):
             send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
-        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
+        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_PAYOUT_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/1000
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
