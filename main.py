@@ -8,6 +8,7 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(m
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
+MINIAPP_HOME_URL="https://izael2022.github.io/PIT-PREMIOS/"
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
 LAST_BACKUP_OK=None
 LAST_BACKUP_ERROR=""
@@ -250,10 +251,13 @@ def send_photo(chat,photo,caption,keyboard=None):
 
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
+def webapp_btn(label,path): return {"text":label,"web_app":{"url":MINIAPP_HOME_URL+path}}
 def menu():
     return [
         [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
+        [webapp_btn("🗓️ CALENDÁRIO","calendario.html"),webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
+        [webapp_btn("🎡 ROLETA ESPECIAL","roleta.html")],
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
