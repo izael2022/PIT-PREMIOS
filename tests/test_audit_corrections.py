@@ -29,7 +29,8 @@ class AuditCorrectionTests(unittest.TestCase):
 
     def add_valid_referrals(self, count):
         with db.connect() as conn:
-            for uid in range(100, 100 + count):
+            start = int(conn.execute("SELECT COALESCE(MAX(user_id),99)+1 FROM users").fetchone()[0])
+            for uid in range(start, start + count):
                 conn.execute("INSERT INTO users(user_id,first_name,referred_by) VALUES(?,?,?)", (uid, f"User {uid}", 1))
             conn.commit()
 
