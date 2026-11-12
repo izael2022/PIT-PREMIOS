@@ -19,7 +19,7 @@ Cadastre as variáveis no painel da hospedagem (nunca no GitHub):
 | `BOT_TOKEN` | Sim | Token privado obtido no BotFather |
 | `ADMIN_IDS` | Sim | IDs numéricos separados por vírgula |
 | `DATABASE_PATH` | Não | `data/pit_premios.db` |
-| `POINTS_PER_REFERRAL` | Não | `100` |
+| Recompensa por indicação | Fixa no código | `1000` pontos (R$ 1,00); não é variável de ambiente |
 | `DAILY_REWARDS` | Não | `3,4,5,6,7,8,10` |
 | `MIN_REDEEM_POINTS` | Não | `1000` pontos |
 | `BACKUP_ENCRYPTION_KEY` | Sim para Pix/backups | Base64 URL-safe de exatamente 32 bytes |
