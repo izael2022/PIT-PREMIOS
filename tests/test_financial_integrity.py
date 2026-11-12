@@ -196,7 +196,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual(status, "pending")
         self.assertEqual(self.balance(), 5000)
 
-    def test_payout_validates_configured_minimum_and_pix_type(self):
+    def test_default_payout_minimum_is_ten_thousand_points(self):\n        from config import MIN_PAYOUT_POINTS\n\n        self.assertEqual(MIN_PAYOUT_POINTS, 10000)\n        db.add_points(1001, 10000, "Saldo adicional para teste de saque")\n        with self.assertRaisesRegex(ValueError, "10,000 pontos"):\n            db.create_payout_request(1001, 9999, "user@example.com", "EMAIL")\n        payout_id = db.create_payout_request(1001, 10000, "user@example.com", "EMAIL")\n        with db.connect() as conn:\n            payout = conn.execute(\n                "SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)\n            ).fetchone()\n        self.assertEqual((payout["points"], payout["amount_cents"]), (10000, 1000))\n        self.assertEqual(self.balance(), 5000)\n\n    def test_payout_validates_configured_minimum_and_pix_type(self):
         with self.assertRaises(ValueError):
             db.create_payout_request(1001, 900, "user@example.com", "EMAIL", 1000)
         with self.assertRaises(ValueError):
