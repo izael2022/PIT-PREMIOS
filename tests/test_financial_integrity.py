@@ -225,17 +225,18 @@ class FinancialIntegrityTests(unittest.TestCase):
 
 
     def test_payout_reduction_refunds_difference_and_records_history_and_audit(self):
-        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
-        result = db.reduce_pending_payout(payout_id, 1000, 1)
-        self.assertEqual(result["refunded_points"], 1000)
-        self.assertEqual(result["amount_cents"], 100)
-        self.assertEqual(self.balance(), 4000)
+        db.add_points(1001, 30000, "Saldo adicional para teste de redução")
+        payout_id = db.create_payout_request(1001, 20000, "teste@example.com", "EMAIL", 10000)
+        result = db.reduce_pending_payout(payout_id, 10000, 1)
+        self.assertEqual(result["refunded_points"], 10000)
+        self.assertEqual(result["amount_cents"], 1000)
+        self.assertEqual(self.balance(), 25000)
         with db.connect() as conn:
             payout = conn.execute("SELECT points,amount_cents,status FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
             history = conn.execute("SELECT amount,reason FROM point_history WHERE user_id=1001 ORDER BY id DESC LIMIT 1").fetchone()
             audit = conn.execute("SELECT admin_id,action,details FROM admin_audit_log ORDER BY id DESC LIMIT 1").fetchone()
-        self.assertEqual((payout["points"], payout["amount_cents"], payout["status"]), (1000, 100, "pending"))
-        self.assertEqual(history["amount"], 1000)
+        self.assertEqual((payout["points"], payout["amount_cents"], payout["status"]), (10000, 1000, "pending"))
+        self.assertEqual(history["amount"], 10000)
         self.assertIn(f"#{payout_id}", history["reason"])
         self.assertEqual((audit["admin_id"], audit["action"]), (1, "payout_reduced"))
         self.assertIn(f"#{payout_id}", audit["details"])
@@ -247,16 +248,17 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual((payout["points"], payout["amount_cents"]), (1500, 150))
 
     def test_legacy_pending_payout_keeps_historical_conversion_when_reduced(self):
-        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        db.add_points(1001, 30000, "Saldo adicional para teste legado")
+        payout_id = db.create_payout_request(1001, 20000, "teste@example.com", "EMAIL", 10000)
         with db.connect() as conn:
-            conn.execute("UPDATE payout_requests SET conversion_version=1,amount_cents=2000 WHERE id=?", (payout_id,))
+            conn.execute("UPDATE payout_requests SET conversion_version=1,amount_cents=20000 WHERE id=?", (payout_id,))
             conn.commit()
-        result = db.reduce_pending_payout(payout_id, 1000, 1)
-        self.assertEqual(result["amount_cents"], 1000)
+        result = db.reduce_pending_payout(payout_id, 10000, 1)
+        self.assertEqual(result["amount_cents"], 10000)
         with db.connect() as conn:
             payout = conn.execute("SELECT points,amount_cents,conversion_version FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
-        self.assertEqual((payout["points"], payout["amount_cents"], payout["conversion_version"]), (1000, 1000, 1))
-        self.assertEqual(self.balance(), 4000)
+        self.assertEqual((payout["points"], payout["amount_cents"], payout["conversion_version"]), (10000, 10000, 1))
+        self.assertEqual(self.balance(), 25000)
 
     def test_payout_reduction_cannot_go_below_configured_minimum(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
@@ -291,17 +293,18 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual(self.balance(), 5000)
 
     def test_concurrent_payout_reduction_refunds_only_once(self):
-        payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
+        db.add_points(1001, 30000, "Saldo adicional para teste concorrente")
+        payout_id = db.create_payout_request(1001, 20000, "teste@example.com", "EMAIL", 10000)
         def reduce_once():
             try:
-                return db.reduce_pending_payout(payout_id, 1000, 1)
+                return db.reduce_pending_payout(payout_id, 10000, 1)
             except ValueError:
                 return None
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: reduce_once(), range(2)))
         self.assertEqual(sum(result is not None for result in results), 1)
-        self.assertEqual(self.balance(), 4000)
+        self.assertEqual(self.balance(), 25000)
         with db.connect() as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM point_history WHERE user_id=1001 AND reason=?",

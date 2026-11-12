@@ -969,17 +969,20 @@ def reduce_pending_payout(rid,new_points,admin_id,min_points=10000):
     rid=int(rid); new_points=int(new_points); admin_id=int(admin_id); min_points=int(min_points)
     if admin_id not in ADMIN_IDS:
         raise ValueError('Apenas administradores podem diminuir saques.')
-    if min_points<1:
-        raise ValueError('O valor mínimo de saque configurado é inválido.')
-    if new_points<min_points:
-        raise ValueError(f'O novo saque não pode ser inferior ao mínimo de {min_points:,} pontos.')
-    if new_points%10!=0:
-        raise ValueError('O novo valor deve ser múltiplo de 10 pontos.')
     with connect() as db:
         db.execute('BEGIN IMMEDIATE')
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row:
             db.rollback(); return None
+        if min_points<1:
+            db.rollback()
+            raise ValueError('O valor mínimo de saque configurado é inválido.')
+        if new_points<min_points:
+            db.rollback()
+            raise ValueError(f'O novo saque não pode ser inferior ao mínimo de {min_points:,} pontos.')
+        if new_points%10!=0:
+            db.rollback()
+            raise ValueError('O novo valor deve ser múltiplo de 10 pontos.')
         old_points=int(row['points'])
         if new_points>=old_points:
             db.rollback(); raise ValueError('O novo valor precisa ser menor que o valor atual do saque.')
