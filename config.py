@@ -29,7 +29,7 @@ def parse_daily_rewards(raw):
 DAILY_REWARDS=parse_daily_rewards(os.getenv("DAILY_REWARDS","3,4,5,6,7,8,10"))
 # Mantido para compatibilidade com configurações antigas; o check-in usa DAILY_REWARDS.
 DAILY_REWARD=max(0,int(os.getenv("DAILY_REWARD","2")))
-MIN_REDEEM_POINTS=max(1,int(os.getenv("MIN_REDEEM_POINTS","1000")))
+MIN_REDEEM_POINTS=max(1,int(os.getenv("MIN_REDEEM_POINTS","1000")))\n# Saque Pix: regra fixa e independente do mínimo de resgate da loja.\nMIN_PAYOUT_POINTS=10000  # 10.000 pontos = R$ 10,00; não pode ser reduzido por variável de ambiente.
 if not BOT_TOKEN:raise RuntimeError("Configure BOT_TOKEN nas variáveis de ambiente.")
 if not ADMIN_IDS:raise RuntimeError("Configure ADMIN_IDS nas variáveis de ambiente.")
 
