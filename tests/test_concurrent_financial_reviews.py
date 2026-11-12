@@ -64,7 +64,7 @@ class ConcurrentFinancialReviewTests(unittest.TestCase):
             ).fetchone()
         results = self.run_twice(lambda: db.review_referral(review["id"], 1, True, 100))
         self.assertEqual(sum(result is not None for result in results), 1)
-        self.assertEqual(self.balance(), 10100)
+        self.assertEqual(self.balance(), 10000)
 
 
 if __name__ == "__main__":

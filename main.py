@@ -322,7 +322,7 @@ def admin_health_report(chat):
             f"📨 Atualizações aguardando: <b>{runtime['queued']}</b>",
             f"👤 Usuários com fila ativa: <b>{runtime['active_users']}</b>",
             f"📊 Processadas desde o início: <b>{runtime['completed']:,}</b> | falhas: <b>{runtime['failed']:,}</b>",
-            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/3</b>",
+            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/4</b>",
             f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
             f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
             f"📥 Atualizações pendentes: <b>{snapshot['pending_updates']}</b>",
@@ -351,23 +351,23 @@ def admin_health_report(chat):
 def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
     ref=int(p[1]) if len(p)>1 and p[1].isdigit() else None
-    created,refid,review_id=db.register_user(u["id"],u.get("username"),u.get("first_name") or "",ref,POINTS_PER_REFERRAL,bool(u.get("is_bot")),welcome_reward=POINTS_WELCOME)
-    if created and refid and POINTS_PER_REFERRAL:
+    created,refid,review_id=db.register_user(u["id"],u.get("username"),u.get("first_name") or "",ref,0,bool(u.get("is_bot")),welcome_reward=POINTS_WELCOME)
+    if created and refid:
         if review_id:
             try:
-                notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Os pontos serão liberados após a revisão.")
+                notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Se aprovada, ela contará para suas metas de recompensa.")
                 for aid in ADMIN_IDS:
                     send(aid,f"🛡️ <b>INDICAÇÃO EM ANÁLISE #{review_id}</b>\nIndicador: <code>{refid}</code>\nNovo usuário: <code>{u['id']}</code>\nMotivo: conta de bot ou volume elevado de cadastros.",[[btn("Ver análise","admin:fraud")]])
             except Exception: log.exception("Falha ao notificar análise antifraude")
         else:
-            try: notify_user(refid,f"🎉 Você ganhou {POINTS_PER_REFERRAL} pontos por uma indicação!")
+            try: notify_user(refid,"🎉 Uma nova indicação foi registrada! Continue convidando amigos para desbloquear as metas de 1, 5 e 10 indicações. Os pontos são liberados conforme a recompensa total de cada meta.")
             except Exception: log.exception("Falha ao notificar indicador")
     global BOT_USERNAME
     pr=db.get_profile(u["id"])
     first=escape((u.get("first_name") or "participante")[:40])
     welcome_text=(f"🎁 Você recebeu <b>{POINTS_WELCOME:,} pontos</b> de boas-vindas!" if created and not u.get("is_bot") and POINTS_WELCOME>0 else "")
-    welcome_prefix=f"{welcome_text}\\n\\n" if welcome_text else ""
-    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\\n\\n{welcome_prefix}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
+    welcome_prefix=f"{welcome_text}\n\n" if welcome_text else ""
+    send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n{welcome_prefix}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
 
 def balance(chat,uid):
     u=db.get_user(uid); points=int(u["points"] if u else 0)
@@ -496,7 +496,7 @@ def missions(chat,uid):
     for item in milestones:
         target=int(item["milestone"]); progress=min(100,int(referrals*100/target)) if target else 0
         status="🎉 Bônus disponível para resgate" if item["reached"] and not item["claimed"] else ("✅ Bônus já recebido" if item["claimed"] else f"🔒 Progresso: {min(referrals,target)}/{target} ({progress}%)")
-        lines.append(f"\n<b>{target} indicações</b> — prêmio: <b>{item['bonus']:,} pontos</b>\n{status}")
+        lines.append(f"\n<b>{target} indicações</b> — recompensa total da meta: <b>{item['bonus']:,} pontos</b>\n{status}")
         if item["reached"] and not item["claimed"]: kb.append([btn(f"🎉 Resgatar bônus de {target}","milestone:"+str(target))])
     lines.extend(["","💎 <b>METAS DO CLUBE VIP</b>"])
     if not vip_goals: lines.append("Consulte a equipe para conhecer as metas VIP.")
@@ -747,7 +747,7 @@ def command(m,update_id=None):
         if len(parts)<4 or not parts[0].isdigit() or not parts[1].lstrip("-").isdigit():
             send(chat,"Use: /novopremio PONTOS | ESTOQUE | TITULO | DESCRICAO"); return
         try:
-            rid=db.create_reward(parts[2],parts[3],int(parts[0]),int(parts[1]))
+            rid=db.create_reward(parts[2],parts[3],int(parts[0]),int(parts[1]),update_id=update_id)
             send(chat,f"✅ Prêmio #{rid} cadastrado na loja!")
         except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/novatarefa" and admin(uid):
@@ -758,7 +758,7 @@ def command(m,update_id=None):
         if len(parts)<3 or not parts[0].isdigit():
             send(chat,"Use: /novatarefa PONTOS | TITULO | DESCRICAO"); return
         try:
-            task_id=db.create_task(parts[1],parts[2],int(parts[0]),True)
+            task_id=db.create_task(parts[1],parts[2],int(parts[0]),True,update_id=update_id)
             send(chat,f"✅ Tarefa #{task_id} cadastrada com {int(parts[0])} pontos.")
         except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/diminuirsaque":
@@ -786,7 +786,7 @@ def command(m,update_id=None):
             return
         points=int(args[1]); max_uses=int(args[2]) if len(args)==3 else 1
         try:
-            code=db.create_redeem_code(points,max_uses,uid)
+            code=db.create_redeem_code(points,max_uses,uid,update_id=update_id)
             send(chat,f"🎉 <b>CÓDIGO PROMOCIONAL CRIADO!</b>\n━━━━━━━━━━━━━━━━━━\n🔑 Código: <code>{escape(code)}</code>\n🎁 Recompensa por resgate: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\n👥 Limite de resgates: <b>{max_uses}</b>\n\n<b>Como compartilhar</b>\nCopie o código acima e envie aos participantes. Cada pessoa poderá utilizá-lo uma única vez, enquanto houver resgates disponíveis.\n\n<b>Como resgatar</b>\n1. Abrir o PIT PRÊMIOS no privado.\n2. Tocar em <b>🎟️ RESGATAR CÓDIGO</b>.\n3. Enviar o código recebido.\n\nOs pontos serão creditados automaticamente. O código será encerrado ao atingir o limite de usos.",[[btn("🎟️ Gerar outro código","admin:codes")],[btn("⬅️ Voltar ao painel","admin:back")]])
         except ValueError as e:
             send(chat,escape(str(e)))
@@ -1238,7 +1238,7 @@ def callback(c,update_id=None):
     elif data.startswith("milestone:"):
         try:
             milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
-            send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
+            send(chat,f"🎉 Meta registrada! Complemento creditado: <b>{bonus:,} pontos</b>. As recompensas são acumuladas até o total de R$ 1,00, R$ 6,50 e R$ 14,00 nas metas de 1, 5 e 10 indicações.")
         except (ValueError,IndexError) as e: send(chat,escape(str(e)))
     elif data.startswith("vipmilestone:"):
         try:
@@ -1281,7 +1281,7 @@ def callback(c,update_id=None):
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
         try:
             if decision=="yes":
-                message=("🎉 Sua indicação foi aprovada na análise de segurança! Os pontos foram creditados na sua carteira." if POINTS_PER_REFERRAL>0 else "✅ Sua indicação foi aprovada na análise de segurança. No momento, a recompensa em pontos está desativada.")
+                message="🎉 Sua indicação foi aprovada na análise de segurança e agora conta para suas metas de recompensa. Os pontos serão liberados ao atingir as metas de 1, 5 ou 10 indicações."
                 notify_user(result["referrer_id"],message)
             else: notify_user(result["referrer_id"],"⚠️ Uma indicação não foi aprovada na análise de segurança e não gerou pontos.")
         except Exception: log.exception("Falha ao notificar resultado da análise")
@@ -1650,7 +1650,7 @@ def backup_scheduler():
             LAST_BACKUP_OK=time.time()
             LAST_BACKUP_ERROR=""
             consecutive_failures=0
-            try: db.set_health_metric("last_backup_ok",time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(LAST_BACKUP_OK)))
+            try: db.set_health_metric("last_backup_ok",time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime(LAST_BACKUP_OK)))
             except Exception: log.exception("Não foi possível persistir a data do último backup")
             resolve_health_issue("backup","Um backup criptografado foi criado, validado e enviado.")
             time.sleep(24*60*60)
