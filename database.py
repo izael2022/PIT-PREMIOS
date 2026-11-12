@@ -318,12 +318,18 @@ def set_auto_delete_settings(enabled=None,seconds=None):
             if seconds not in (30,60,120,300): raise ValueError("Tempo inválido.")
             db.execute("INSERT INTO bot_settings(key,value) VALUES('auto_delete_seconds',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(seconds),))
         db.commit()
-def create_task(title,description,reward_points,requires_proof=True):
+def create_task(title,description,reward_points,requires_proof=True,update_id=None):
     title=title.strip(); description=description.strip(); reward_points=int(reward_points)
     if not title or len(title)>100 or reward_points<1 or reward_points>1000000:
         raise ValueError("Título ou quantidade de pontos inválida.")
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"admin.task.create")
+        if found:
+            db.rollback()
+            return int(result)
         cur=db.execute("INSERT INTO tasks(title,description,reward_points,requires_proof) VALUES(?,?,?,?)",(title,description,reward_points,int(bool(requires_proof))))
+        _idempotency_save(db,update_id,"admin.task.create",cur.lastrowid)
         db.commit(); return cur.lastrowid
 
 def active_tasks():
@@ -413,12 +419,18 @@ def weekly_ranking(limit=10):
     with connect() as db:
         return db.execute("SELECT u.user_id,u.first_name,u.username,COALESCE(SUM(w.points),0) points FROM weekly_earnings w JOIN users u ON u.user_id=w.user_id WHERE w.created_at>=datetime('now','-7 days') GROUP BY u.user_id ORDER BY points DESC LIMIT ?",(limit,)).fetchall()
 
-def create_reward(title,description,points_cost,stock=-1):
+def create_reward(title,description,points_cost,stock=-1,update_id=None):
     title=title.strip(); points_cost=int(points_cost); stock=int(stock)
     if not title or len(title)>100 or points_cost<1 or stock < -1:
         raise ValueError("Dados do prêmio inválidos.")
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"admin.reward.create")
+        if found:
+            db.rollback()
+            return int(result)
         cur=db.execute("INSERT INTO rewards(title,description,points_cost,stock) VALUES(?,?,?,?)",(title,description.strip(),points_cost,stock))
+        _idempotency_save(db,update_id,"admin.reward.create",cur.lastrowid)
         db.commit(); return cur.lastrowid
 
 def active_rewards():
@@ -624,10 +636,8 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             if reasons:
                 cur=db.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,risk_reason,status) VALUES(?,?,?,?, 'pending')",(referrer,uid,"high" if len(reasons)>=2 else "review","; ".join(reasons)))
                 review_id=cur.lastrowid
-            elif referral_reward>0:
-                db.execute("UPDATE users SET points=points+? WHERE user_id=?",(referral_reward,referrer))
-                db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(referrer,referral_reward,f"Indicação do usuário {uid}"))
-                db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(referrer,referral_reward,"referral"))
+            # A recompensa de indicação é paga exclusivamente pelas metas acumuladas
+        # (1, 5 e 10 indicações), nunca por cadastro individual.
         db.commit(); return True,referrer,review_id
 def get_user(uid):
     with connect() as db:
@@ -863,29 +873,43 @@ def stats():
         return dict(row)
 
 def referral_milestone_status(uid):
-    milestones={1:100,5:650,10:1400}
+    # Valores totais acumulados por meta: R$ 1,00 / R$ 6,50 / R$ 14,00.
+    targets={1:1000,5:6500,10:14000}
     with connect() as db:
         row=db.execute("SELECT COUNT(*) total FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()
         claimed={r["milestone"] for r in db.execute("SELECT milestone FROM referral_milestones WHERE user_id=?",(uid,))}
         total=row["total"]
-        return [{"milestone":m,"bonus":bonus,"reached":total>=m,"claimed":m in claimed} for m,bonus in milestones.items()]
+        return [{"milestone":m,"bonus":target,"reached":total>=m,"claimed":m in claimed} for m,target in targets.items()]
 
 def claim_referral_milestone(uid,milestone):
-    bonuses={1:100,5:650,10:1400}
-    if milestone not in bonuses: raise ValueError("Meta inválida.")
+    targets={1:1000,5:6500,10:14000}
+    if milestone not in targets: raise ValueError("Meta inválida.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         total=db.execute("SELECT COUNT(*) total FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()["total"]
         if total<milestone:
             db.rollback(); raise ValueError("Meta ainda não foi concluída.")
+        # Considera pagamentos antigos por indicação e metas já resgatadas.
+        # Assim, usuários existentes recebem somente a diferença até o total devido.
+        paid=db.execute("""
+            SELECT COALESCE(SUM(amount),0) total
+            FROM point_history
+            WHERE user_id=? AND amount>0 AND (
+                reason LIKE 'Indicação do usuário %'
+                OR reason LIKE 'Indicação aprovada #%'
+                OR reason LIKE 'Bônus da meta de % indicações'
+            )
+        """,(uid,)).fetchone()["total"]
+        incremental=max(0,int(targets[milestone])-int(paid))
         try:
-            db.execute("INSERT INTO referral_milestones(user_id,milestone,bonus_points) VALUES(?,?,?)",(uid,milestone,bonuses[milestone]))
+            db.execute("INSERT INTO referral_milestones(user_id,milestone,bonus_points) VALUES(?,?,?)",(uid,milestone,incremental))
         except sqlite3.IntegrityError:
             db.rollback(); raise ValueError("Essa recompensa já foi recebida.")
-        db.execute("UPDATE users SET points=points+? WHERE user_id=?",(bonuses[milestone],uid))
-        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,bonuses[milestone],f"Bônus da meta de {milestone} indicações"))
-        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,bonuses[milestone],"referral_milestone"))
-        db.commit(); return bonuses[milestone]
+        if incremental:
+            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(incremental,uid))
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,incremental,f"Bônus da meta de {milestone} indicações"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,incremental,"referral_milestone"))
+        db.commit(); return incremental
 
 def create_payout_request(uid,points,pix_key,pix_key_type,min_points=10000,update_id=None):
     points=int(points)
@@ -1149,10 +1173,8 @@ def review_referral(rid,admin_id,approve,reward_points,update_id=None):
             return {"blocked_referred":True,"referred_user_id":row["referred_user_id"]}
         status="approved" if approve else "rejected"
         db.execute("UPDATE referral_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",(status,admin_id,rid))
-        if approve and reward_points>0:
-            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(reward_points,row["referrer_id"]))
-            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],reward_points,f"Indicação aprovada #{rid}"))
-            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],reward_points,"referral_approved"))
+        # A aprovação valida a indicação; a recompensa é liberada apenas ao
+        # atingir as metas acumuladas, evitando pagamento por amigo + meta.
         result=dict(row)
         _idempotency_save(db,update_id,"referral.review",result)
         db.commit(); return result
@@ -1216,9 +1238,24 @@ def unblock_account(user_id,admin_id):
         return True
 
 
+def _encrypt_durable_payload(payload):
+    key=_load_key()
+    nonce=os.urandom(12)
+    encrypted=AESGCM(key).encrypt(nonce,str(payload).encode("utf-8"),b"PITQUEUE1")
+    return "enc:v1:"+base64.urlsafe_b64encode(nonce+encrypted).decode("ascii")
+
+def _decrypt_durable_payload(payload):
+    value=str(payload)
+    if not value.startswith("enc:v1:"):
+        return value  # legado: será criptografado na próxima leitura
+    raw=base64.urlsafe_b64decode(value[7:].encode("ascii"))
+    if len(raw)<29:
+        raise ValueError("Atualização durável criptografada inválida.")
+    return AESGCM(_load_key()).decrypt(raw[:12],raw[12:],b"PITQUEUE1").decode("utf-8")
+
 def enqueue_update(update):
     update_id=int(update["update_id"])
-    payload=json.dumps(update,ensure_ascii=False,separators=(",",":"))
+    payload=_encrypt_durable_payload(json.dumps(update,ensure_ascii=False,separators=(",",":")))
     with connect() as db:
         cur=db.execute("INSERT OR IGNORE INTO durable_updates(update_id,payload) VALUES(?,?)",(update_id,payload))
         db.commit()
@@ -1226,8 +1263,16 @@ def enqueue_update(update):
 
 def pending_updates(limit=500,after_update_id=0):
     with connect() as db:
-        rows=db.execute("SELECT payload FROM durable_updates WHERE status='pending' AND update_id>? ORDER BY update_id LIMIT ?",(int(after_update_id),max(1,min(int(limit),2000)))).fetchall()
-        return [json.loads(row["payload"]) for row in rows]
+        rows=db.execute("SELECT update_id,payload FROM durable_updates WHERE status='pending' AND update_id>? ORDER BY update_id LIMIT ?",(int(after_update_id),max(1,min(int(limit),2000)))).fetchall()
+        updates=[]
+        for row in rows:
+            raw=_decrypt_durable_payload(row["payload"])
+            if not str(row["payload"]).startswith("enc:v1:"):
+                db.execute("UPDATE durable_updates SET payload=? WHERE update_id=? AND status='pending'",
+                           (_encrypt_durable_payload(raw),int(row["update_id"])))
+            updates.append(json.loads(raw))
+        db.commit()
+        return updates
 
 def set_pending_task_proof(user_id,task_id):
     with connect() as db:
@@ -1459,7 +1504,7 @@ def review_pix_profile(user_id,admin_id,approve):
     return {"user_id":int(user_id),"status":status}
 
 
-def create_redeem_code(points,max_uses,admin_id):
+def create_redeem_code(points,max_uses,admin_id,update_id=None):
     import secrets
     points=int(points); max_uses=int(max_uses)
     if points<1 or points>10000000:
@@ -1467,11 +1512,17 @@ def create_redeem_code(points,max_uses,admin_id):
     if max_uses<1 or max_uses>10000:
         raise ValueError("A quantidade de usos deve ser de 1 a 10.000.")
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"admin.redeem_code.create")
+        if found:
+            db.rollback()
+            return str(result)
         for _ in range(5):
             code="PIT-"+secrets.token_hex(4).upper()
             try:
                 db.execute("INSERT INTO redeem_codes(code,points,max_uses,created_by) VALUES(?,?,?,?)",(code,points,max_uses,int(admin_id)))
                 db.execute("INSERT INTO admin_audit_log(admin_id,action,details) VALUES(?,?,?)",(int(admin_id),"redeem_code_created",f"{code}: {points} pontos; {max_uses} usos"))
+                _idempotency_save(db,update_id,"admin.redeem_code.create",code)
                 db.commit()
                 return code
             except sqlite3.IntegrityError:
