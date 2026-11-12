@@ -80,6 +80,21 @@ def api(method, data=None):
             raise
     raise RuntimeError("Não foi possível consultar atualizações do Telegram após várias tentativas.")
 
+
+def acknowledge_callback(update):
+    """Confirma o clique antes de qualquer espera na fila de processamento."""
+    callback_query=update.get("callback_query")
+    if not callback_query or callback_query.get("_answered_immediately"):
+        return
+    callback_id=callback_query.get("id")
+    if not callback_id:
+        return
+    try:
+        api("answerCallbackQuery", {"callback_query_id": callback_id})
+        callback_query["_answered_immediately"]=True
+    except Exception as exc:
+        log.info("Não foi possível confirmar imediatamente o callback %s: %s", callback_id, exc)
+
 OUTBOUND_QUEUE=queue.Queue(maxsize=500)
 OUTBOUND_READY=False
 OUTBOUND_STOP=threading.Event()
@@ -117,6 +132,7 @@ def ensure_background_workers():
         ("pit-outbound",_outbound_worker),
         ("pit-backup",backup_scheduler),
         ("pit-health",health_monitor),
+        ("pit-update-recovery",pending_update_recovery_worker),
     )
     for name,target in workers:
         ensure_background_worker(name,target)
@@ -766,22 +782,22 @@ def command(m,update_id=None):
     elif cmd=="/gerarcodigo" and admin(uid):
         args=t.split()
         if len(args) not in (2,3) or not args[1].isdigit() or (len(args)==3 and not args[2].isdigit()):
-            send(chat,"Use: /gerarcodigo PONTOS [QUANTIDADE_DE_USOS]\\nExemplo: /gerarcodigo 1000 1")
+            send(chat,"🎟️ <b>GERAR CÓDIGO PROMOCIONAL</b>\n\nInforme a quantidade de pontos e, opcionalmente, o número máximo de resgates.\n\nFormato: <code>/gerarcodigo PONTOS [USOS]</code>\nExemplo: <code>/gerarcodigo 5000 10</code>\n\nSe não informar a quantidade de usos, o código será válido para uma pessoa.")
             return
         points=int(args[1]); max_uses=int(args[2]) if len(args)==3 else 1
         try:
             code=db.create_redeem_code(points,max_uses,uid)
-            send(chat,f"🎟️ <b>CÓDIGO GERADO</b>\\n\\nCódigo: <code>{escape(code)}</code>\\nValor: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\\nUsos permitidos: <b>{max_uses}</b>\\n\\nEnvie o código aos participantes. Cada pessoa deve usar <code>/codigo {escape(code)}</code>. O código fica salvo até atingir o limite de usos.")
+            send(chat,f"🎉 <b>CÓDIGO PROMOCIONAL CRIADO!</b>\n━━━━━━━━━━━━━━━━━━\n🔑 Código: <code>{escape(code)}</code>\n🎁 Recompensa por resgate: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\n👥 Limite de resgates: <b>{max_uses}</b>\n\n<b>Como compartilhar</b>\nCopie o código acima e envie aos participantes. Cada pessoa poderá utilizá-lo uma única vez, enquanto houver resgates disponíveis.\n\n<b>Como resgatar</b>\n1. Abrir o PIT PRÊMIOS no privado.\n2. Tocar em <b>🎟️ RESGATAR CÓDIGO</b>.\n3. Enviar o código recebido.\n\nOs pontos serão creditados automaticamente. O código será encerrado ao atingir o limite de usos.",[[btn("🎟️ Gerar outro código","admin:codes")],[btn("⬅️ Voltar ao painel","admin:back")]])
         except ValueError as e:
             send(chat,escape(str(e)))
     elif cmd=="/codigo":
         args=t.split(maxsplit=1)
         if len(args)!=2:
-            send(chat,"Use: /codigo SEU_CODIGO")
+            send(chat,"🎟️ <b>RESGATAR SEU CÓDIGO</b>\n\nEnvie o código promocional que você recebeu.\nFormato: <code>/codigo SEU_CODIGO</code>\n\nVocê também pode tocar em <b>🎟️ RESGATAR CÓDIGO</b> no menu principal.")
             return
         try:
             result=db.redeem_code(args[1],uid)
-            send(chat,f"🎉 <b>CÓDIGO RESGATADO COM SUCESSO!</b>\\n\\nVocê recebeu <b>{result['points']:,} pontos</b> (R$ {result['points']/1000:.2f}).\\nSeu novo saldo é de <b>{result['balance']:,} pontos</b>.")
+            send(chat,f"🎉 <b>RESGATE CONCLUÍDO!</b>\n━━━━━━━━━━━━━━━━━━\n🎁 Pontos adicionados: <b>+{result['points']:,}</b> (R$ {result['points']/1000:.2f})\n💰 Novo saldo: <b>{result['balance']:,} pontos</b>\n\nOs pontos já estão disponíveis na sua carteira. Obrigado por participar do PIT PRÊMIOS! 🐾",[[btn("💰 Ver minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
         except ValueError as e:
             send(chat,"❌ "+escape(str(e)))
     elif cmd=="/sacar":
@@ -998,21 +1014,24 @@ def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
     if msg.get("chat",{}).get("type")!="private":
-        try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Por segurança, abra o bot no privado.","show_alert":True})
-        except Exception: log.warning("Falha ao bloquear callback em grupo",exc_info=True)
+        if not c.get("_answered_immediately"):
+            try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Por segurança, abra o bot no privado.","show_alert":True})
+            except Exception: log.info("Callback em grupo expirou antes da confirmação.")
         return
     if uid and not admin(uid):
         block=db.get_account_block(uid)
         if block:
-            try:
-                api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Sua conta está bloqueada. Procure a equipe de atendimento.","show_alert":True})
-            except Exception:
-                log.warning("Não foi possível exibir o aviso de bloqueio ao usuário %s",uid,exc_info=True)
+            if not c.get("_answered_immediately"):
+                try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Sua conta está bloqueada. Procure a equipe de atendimento.","show_alert":True})
+                except Exception: log.info("Callback de conta bloqueada expirou antes da confirmação.")
+            else:
+                send(chat,"🚫 <b>CONTA BLOQUEADA</b>\nSeu acesso está temporariamente bloqueado. Motivo: "+escape(block["reason"]))
             return
-    try:
-        api("answerCallbackQuery",{"callback_query_id":c["id"]})
-    except Exception:
-        log.warning("Não foi possível confirmar o clique do usuário %s",uid,exc_info=True)
+    if not c.get("_answered_immediately"):
+        try:
+            api("answerCallbackQuery",{"callback_query_id":c["id"]})
+        except Exception:
+            log.info("Callback do usuário %s expirou antes da confirmação.",uid)
     if admin(uid) and any(data.startswith(prefix) for prefix in ("taskreview:","refreview:","payout:","rewardreview:","review:","rewarddisable:")):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
@@ -1046,7 +1065,7 @@ def callback(c,update_id=None):
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
         elif action=="codes":
-            send(chat,"🎟️ <b>GERAR CÓDIGO DE RESGATE</b>\\n\\nEnvie o comando:\\n<code>/gerarcodigo PONTOS [QUANTIDADE_DE_USOS]</code>\\n\\nExemplos:\\n• <code>/gerarcodigo 1000</code> — código válido para 1 pessoa.\\n• <code>/gerarcodigo 5000 10</code> — código válido para até 10 resgates.\\n\\nCada participante resgata no privado com <code>/codigo CODIGO</code>. Cada resgate credita os pontos uma única vez por uso.",admin_menu())
+            send(chat,"🎟️ <b>GERADOR DE CÓDIGOS PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\nCrie códigos promocionais para distribuir pontos aos participantes.\n\n<b>Formato</b>\n<code>/gerarcodigo PONTOS [QUANTIDADE_DE_USOS]</code>\n\n<b>Exemplos</b>\n• <code>/gerarcodigo 1000</code> — 1 pessoa recebe 1.000 pontos.\n• <code>/gerarcodigo 5000 10</code> — até 10 pessoas recebem 5.000 pontos cada.\n\n<b>Regras</b>\n• Cada participante pode usar o mesmo código uma única vez.\n• O código é encerrado automaticamente ao atingir o limite.\n• Compartilhe o código somente com o público desejado.\n\nO participante deve abrir o bot no privado, tocar em <b>🎟️ RESGATAR CÓDIGO</b> e informar o código.",admin_menu())
         elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu())
         elif action=="managerewards":
             rows=db.all_rewards()
@@ -1115,7 +1134,7 @@ def callback(c,update_id=None):
         notify_user(int(target),f"Sua chave Pix foi {status} pela equipe. "+("Você já pode solicitar saques." if decision=="yes" else "Acesse Minha chave Pix para cadastrar novamente."))
     elif data=="user:redeem_code":
         db.set_user_input_state(uid,"redeem_code")
-        send(chat,"🎟️ <b>RESGATAR CÓDIGO</b>\\n\\nDigite ou cole o código que você recebeu:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
+        send(chat,"🎟️ <b>RESGATAR CÓDIGO PROMOCIONAL</b>\n━━━━━━━━━━━━━━━━━━\nDigite ou cole abaixo o código que você recebeu.\n\n✅ Se estiver válido e ainda tiver resgates disponíveis, os pontos serão adicionados imediatamente à sua carteira.\n🔒 Cada código só pode ser utilizado uma vez por participante.\n\n<i>Exemplo: PIT-AB12CD34</i>",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
     elif data=="user:payout":
         pix_profile_data=db.get_pix_profile(uid)
         if not pix_profile_data or pix_profile_data["status"]!="approved":
@@ -1440,6 +1459,25 @@ UPDATE_METRICS_LOCK=threading.Lock()
 UPDATE_IN_FLIGHT=0
 UPDATE_COMPLETED_TOTAL=0
 UPDATE_FAILED_TOTAL=0
+SCHEDULED_UPDATE_IDS=set()
+
+def pending_update_recovery_worker():
+    """Recoloca na fila as atualizações duráveis que falharam em memória."""
+    while True:
+        try:
+            after_id=0
+            while True:
+                batch=db.pending_updates(limit=200,after_update_id=after_id)
+                if not batch:
+                    break
+                for pending_update in batch:
+                    schedule_update(pending_update)
+                    after_id=max(after_id,int(pending_update.get("update_id",0)))
+                if len(batch)<200:
+                    break
+        except Exception:
+            log.exception("Falha ao recuperar atualizações pendentes do SQLite.")
+        time.sleep(30)
 
 def update_runtime_snapshot():
     with USER_QUEUE_LOCK:
@@ -1492,6 +1530,9 @@ def drain_user_queue(uid):
                     UPDATE_COMPLETED_TOTAL+=1
                 else:
                     UPDATE_FAILED_TOTAL+=1
+            if update.get("update_id") is not None:
+                with USER_QUEUE_LOCK:
+                    SCHEDULED_UPDATE_IDS.discard(update["update_id"])
             UPDATE_CAPACITY.release()
 
 def schedule_update(update):
@@ -1499,11 +1540,17 @@ def schedule_update(update):
     if uid is None:
         process_update(update)
         return
-    # Aplicar backpressure em vez de processar fora da fila por usuário.
-    # Isso preserva a ordem das atualizações quando a fila está cheia.
+    update_id=update.get("update_id")
+    if "callback_query" in update:
+        acknowledge_callback(update)
     UPDATE_CAPACITY.acquire()
     submit_worker=False
     with USER_QUEUE_LOCK:
+        if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
+            UPDATE_CAPACITY.release()
+            return
+        if update_id is not None:
+            SCHEDULED_UPDATE_IDS.add(update_id)
         pending=USER_QUEUES.setdefault(uid,deque())
         pending.append(update)
         if uid not in ACTIVE_USERS:
