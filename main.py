@@ -1885,7 +1885,7 @@ class MiniAppHandler(http.server.BaseHTTPRequestHandler):
                 streak=int(user["daily_streak"] or 0)
                 next_streak=streak+1 if user["last_daily"]==(datetime.date.fromisoformat(today_local)-datetime.timedelta(days=1)).isoformat() else 1
                 next_reward=int(DAILY_REWARDS[(next_streak-1)%len(DAILY_REWARDS)])
-                self._json(200,{"ok":True,"balance":int(user["points"]),"daily_streak":streak,"last_daily":user["last_daily"],"next_daily_reward":next_reward,"already_claimed_today":user["last_daily"]==today_local},origin)
+                self._json(200,{"ok":True,"balance":int(user["points"]),"daily_streak":streak,"last_daily":user["last_daily"],"next_daily_reward":next_reward,"already_claimed_today":user["last_daily"]==today_local,"today":today_local},origin)
                 return
             if self.path=="/api/miniapps/calendar/claim":
                 claimed,streak,points=db.daily_claim(uid,DAILY_REWARDS)
