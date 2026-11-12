@@ -29,6 +29,8 @@ class MiniAppApiIntegrationTests(unittest.TestCase):
     """Testa a API HTTP real com SQLite temporário e initData assinado de teste."""
 
     def setUp(self):
+        self.previous_miniapps_enabled = app.MINIAPPS_ENABLED
+        app.MINIAPPS_ENABLED = True  # Os testes abaixo exercitam os fluxos normais da API.
         self.temp = tempfile.TemporaryDirectory()
         self.db_path_patch = patch.object(db, "DATABASE_PATH", Path(self.temp.name) / "api-test.db")
         self.db_path_patch.start()
@@ -48,6 +50,7 @@ class MiniAppApiIntegrationTests(unittest.TestCase):
         self.server_thread.join(timeout=2)
         self.db_path_patch.stop()
         self.temp.cleanup()
+        app.MINIAPPS_ENABLED = self.previous_miniapps_enabled
 
     def signed_init_data(self, user_id=7001, auth_date=None, token=None):
         fields = {
@@ -76,6 +79,15 @@ class MiniAppApiIntegrationTests(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             response = exc
         return response.code, json.loads(response.read().decode("utf-8"))
+
+    def test_temporarily_disabled_miniapps_return_service_unavailable(self):
+        app.MINIAPPS_ENABLED = False
+        status, result = self.post(
+            "/api/miniapps/me", init_data=self.signed_init_data()
+        )
+        self.assertEqual(status, 503)
+        self.assertFalse(result["ok"])
+        self.assertIn("temporariamente indisponíveis", result["error"].lower())
 
     def test_rejects_unapproved_origin(self):
         status, result = self.post(
