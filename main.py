@@ -1370,9 +1370,9 @@ def process_update(update):
                         db.clear_user_input_state(uid)
                         try:
                             result=db.redeem_code(value,uid)
-                            send(m["chat"]["id"],f"🎉 <b>CÓDIGO RESGATADO COM SUCESSO!</b>\\n\\nVocê recebeu <b>{result['points']:,} pontos</b> (R$ {result['points']/1000:.2f}).\\nSeu novo saldo é de <b>{result['balance']:,} pontos</b>.",[[btn("💰 Minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
+                            send(m["chat"]["id"],f"🎉 <b>RESGATE CONCLUÍDO!</b>\n━━━━━━━━━━━━━━━━━━\n🎁 Pontos adicionados: <b>+{result['points']:,}</b> (R$ {result['points']/1000:.2f})\n💰 Novo saldo: <b>{result['balance']:,} pontos</b>\n\nOs pontos já estão disponíveis na sua carteira. Aproveite suas recompensas no PIT PRÊMIOS! 🐾",[[btn("💰 Ver minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
                         except ValueError as e:
-                            send(m["chat"]["id"],"❌ "+escape(str(e)),[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
+                            send(m["chat"]["id"],"⚠️ <b>Não foi possível resgatar este código.</b>\n"+escape(str(e))+"\n\nConfira se digitou corretamente ou se o código ainda possui resgates disponíveis.",[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
                     elif input_state=="payout_points":
                         if not value.isdigit():
                             send(m["chat"]["id"],"Informe somente a quantidade de pontos em números. Exemplo: 10000.")
