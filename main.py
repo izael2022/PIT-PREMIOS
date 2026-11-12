@@ -1,7 +1,7 @@
 import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
 from html import escape
 import database as db
-from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
+from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, MIN_PAYOUT_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
 from backup_utils import create_backup_archive
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
@@ -730,7 +730,7 @@ def command(m,update_id=None):
             return
         try:
             payout_id=int(args[1]); new_points=int(args[2])
-            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_REDEEM_POINTS)
+            result=db.reduce_pending_payout(payout_id,new_points,uid,MIN_PAYOUT_POINTS)
             if not result:
                 send(chat,"Saque não encontrado ou não está mais pendente.")
                 return
@@ -747,7 +747,7 @@ def command(m,update_id=None):
         pix_key=profile["pix_key"]; key_type=profile["pix_key_type"]; pix_owner=profile["owner_name"]
         if not _valid_pix_key(key_type,pix_key):
             send(chat,"❌ Sua chave cadastrada não passou na validação de formato. Atualize o cadastro em Minha chave Pix."); return
-        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_REDEEM_POINTS,update_id=update_id)
+        try: rid=db.create_payout_request(uid,pts,pix_key,key_type,MIN_PAYOUT_POINTS,update_id=update_id)
         except ValueError as e: send(chat,escape(str(e))); return
         amount=pts/1000
         send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.")
