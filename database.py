@@ -1032,6 +1032,8 @@ def review_payout(rid,admin_id,approve,update_id=None):
         found,result=_idempotency_lookup(db,update_id,"payout.review")
         if found:
             db.rollback()
+            if result and result.get("pix_key"):
+                result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
             return result
         _migrate_legacy_payout_pix_keys(db)
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
@@ -1044,9 +1046,11 @@ def review_payout(rid,admin_id,approve,update_id=None):
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points"],f"Estorno do saque #{rid}"))
         else:
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],0,f"Pagamento Pix confirmado — saque #{rid} (R$ {row['amount_cents']/100:.2f})"))
+        # O resultado idempotente guarda somente a chave ainda criptografada.
+        # A descriptografia ocorre apenas na resposta em memória, nunca no ledger.
         result=dict(row)
-        result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
         _idempotency_save(db,update_id,"payout.review",result)
+        result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
         db.commit(); return result
 
 def pending_referral_reviews():
