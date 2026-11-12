@@ -36,6 +36,20 @@ class DurableUpdateQueueTests(unittest.TestCase):
         self.assertTrue(db.update_was_processed(update["update_id"]))
         self.assertEqual(db.pending_updates(), [])
 
+    def test_cleanup_keeps_idempotency_for_old_pending_updates(self):
+        update = {"update_id": 88005, "message": {"from": {"id": 9}, "chat": {"id": 9}, "text": "/saldo"}}
+        db.enqueue_update(update)
+        with db.connect() as conn:
+            conn.execute(
+                "INSERT INTO idempotency_keys(update_id,action,result,created_at) VALUES(?,?,?,datetime('now','-31 days'))",
+                (88005, "payout.create", "123"),
+            )
+            conn.commit()
+        db.cleanup_processed_updates()
+        with db.connect() as conn:
+            row = conn.execute("SELECT update_id FROM idempotency_keys WHERE update_id=88005").fetchone()
+        self.assertIsNotNone(row)
+
     def test_failed_or_unfinished_update_remains_pending(self):
         update = {"update_id": 88004, "message": {"message_id": 6, "text": "/saque"}}
         db.enqueue_update(update)

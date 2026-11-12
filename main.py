@@ -796,7 +796,7 @@ def command(m,update_id=None):
             send(chat,"🎟️ <b>RESGATAR SEU CÓDIGO</b>\n\nEnvie o código promocional que você recebeu.\nFormato: <code>/codigo SEU_CODIGO</code>\n\nVocê também pode tocar em <b>🎟️ RESGATAR CÓDIGO</b> no menu principal.")
             return
         try:
-            result=db.redeem_code(args[1],uid)
+            result=db.redeem_code(args[1],uid,update_id=update_id)
             send(chat,f"🎉 <b>RESGATE CONCLUÍDO!</b>\n━━━━━━━━━━━━━━━━━━\n🎁 Pontos adicionados: <b>+{result['points']:,}</b> (R$ {result['points']/1000:.2f})\n💰 Novo saldo: <b>{result['balance']:,} pontos</b>\n\nOs pontos já estão disponíveis na sua carteira. Obrigado por participar do PIT PRÊMIOS! 🐾",[[btn("💰 Ver minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
         except ValueError as e:
             send(chat,"❌ "+escape(str(e)))
@@ -1184,11 +1184,11 @@ def callback(c,update_id=None):
         }
         if game not in configs: return
         title,prizes,weights=configs[game]
-        if game in db.game_status(uid):
-            send(chat,f"⏳ Você já participou de {title.lower()} hoje. Volte amanhã!",back()); return
         prize=random.choices(prizes,weights=weights,k=1)[0]
         try:
-            db.play_daily_game(uid,game,prize)
+            # A função retorna o resultado original quando o mesmo update_id
+            # é reprocessado após uma falha de envio ou reinício.
+            prize=db.play_daily_game(uid,game,prize,update_id=update_id)
             send(chat,f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 Resultado: <b>+{prize} pontos</b>!\n\nCada jogo tem uma tentativa por dia. Seus pontos já foram adicionados à carteira.",[[btn("🎁 Baú surpresa","game:chest"),btn("🎡 Roleta","game:roulette")],[btn("🎟️ Raspadinha","game:scratch")],[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
         except ValueError as e:
             send(chat,escape(str(e)),back())
@@ -1258,7 +1258,7 @@ def callback(c,update_id=None):
     elif data.startswith("taskreview:"):
         if not admin(uid): return
         _,sid,decision=data.split(":")
-        result=db.review_task_submission(int(sid),uid,decision=="yes")
+        result=db.review_task_submission(int(sid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Essa tarefa já foi analisada."); return
         status="aprovada; pontos creditados" if decision=="yes" else "rejeitada"
         if msg.get("photo"):
@@ -1269,7 +1269,7 @@ def callback(c,update_id=None):
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
+        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL,update_id=update_id)
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
@@ -1297,7 +1297,7 @@ def callback(c,update_id=None):
             send(chat,"Não foi possível cancelar este saque.")
     elif data.startswith("payout:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes")
+        _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Este pedido já foi analisado."); return
         approved=decision=="yes"
         status="aprovado" if approved else "rejeitado; os pontos foram devolvidos"
@@ -1331,7 +1331,7 @@ def callback(c,update_id=None):
     elif data.startswith("rewardreview:"):
         if not admin(uid): return
         _,rid,decision=data.split(":")
-        result=db.review_reward_order(int(rid),uid,decision=="yes")
+        result=db.review_reward_order(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Este pedido já foi analisado."); return
         status="aprovado" if decision=="yes" else "rejeitado; os pontos foram devolvidos e o estoque restaurado"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\n\nStatus: {status}","parse_mode":"HTML"})
@@ -1339,7 +1339,7 @@ def callback(c,update_id=None):
         except Exception: log.exception("Falha ao avisar usuário sobre pedido da loja")
     elif data.startswith("review:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes")
+        _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: return
         status="aprovado" if decision=="yes" else "rejeitado; pontos devolvidos"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
@@ -1367,11 +1367,12 @@ def process_update(update):
                 if input_state:
                     value=(m.get("text") or "").strip()
                     if input_state=="redeem_code":
-                        db.clear_user_input_state(uid)
                         try:
-                            result=db.redeem_code(value,uid)
+                            result=db.redeem_code(value,uid,update_id=update_id)
+                            db.clear_user_input_state(uid)
                             send(m["chat"]["id"],f"🎉 <b>RESGATE CONCLUÍDO!</b>\n━━━━━━━━━━━━━━━━━━\n🎁 Pontos adicionados: <b>+{result['points']:,}</b> (R$ {result['points']/1000:.2f})\n💰 Novo saldo: <b>{result['balance']:,} pontos</b>\n\nOs pontos já estão disponíveis na sua carteira. Aproveite suas recompensas no PIT PRÊMIOS! 🐾",[[btn("💰 Ver minha carteira","wallet")],[btn("🏠 Menu principal","home")]])
                         except ValueError as e:
+                            db.clear_user_input_state(uid)
                             send(m["chat"]["id"],"⚠️ <b>Não foi possível resgatar este código.</b>\n"+escape(str(e))+"\n\nConfira se digitou corretamente ou se o código ainda possui resgates disponíveis.",[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
                     elif input_state=="payout_points":
                         if not value.isdigit():
@@ -1466,14 +1467,17 @@ def pending_update_recovery_worker():
     while True:
         try:
             after_id=0
+            capacity_full=False
             while True:
                 batch=db.pending_updates(limit=200,after_update_id=after_id)
                 if not batch:
                     break
                 for pending_update in batch:
-                    schedule_update(pending_update)
+                    if not schedule_update(pending_update,wait_for_capacity=False):
+                        capacity_full=True
+                        break
                     after_id=max(after_id,int(pending_update.get("update_id",0)))
-                if len(batch)<200:
+                if capacity_full or len(batch)<200:
                     break
         except Exception:
             log.exception("Falha ao recuperar atualizações pendentes do SQLite.")
@@ -1543,16 +1547,26 @@ def drain_user_queue(uid):
                     ACTIVE_USERS.discard(uid)
                 return
 
-def schedule_update(update):
+def schedule_update(update,wait_for_capacity=True):
     uid=update_user_id(update)
     if uid is None:
         process_update(update)
-        return
+        return True
     update_id=update.get("update_id")
     if "callback_query" in update:
         acknowledge_callback(update)
-    UPDATE_CAPACITY.acquire()
     submit_worker=False
+    # Verifica duplicatas antes de aguardar espaço; a recuperação não pode
+    # bloquear ao reencontrar uma atualização que já ocupa uma vaga.
+    with USER_QUEUE_LOCK:
+        if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
+            if uid not in ACTIVE_USERS and USER_QUEUES.get(uid):
+                ACTIVE_USERS.add(uid)
+                submit_worker=True
+            else:
+                return True
+    if not UPDATE_CAPACITY.acquire(blocking=wait_for_capacity):
+        return False
     with USER_QUEUE_LOCK:
         if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
             UPDATE_CAPACITY.release()
@@ -1560,12 +1574,11 @@ def schedule_update(update):
                 ACTIVE_USERS.add(uid)
                 submit_worker=True
             else:
-                return
+                return True
         else:
             if update_id is not None:
                 SCHEDULED_UPDATE_IDS.add(update_id)
-            pending=USER_QUEUES.setdefault(uid,deque())
-            pending.append(update)
+            USER_QUEUES.setdefault(uid,deque()).append(update)
             if uid not in ACTIVE_USERS:
                 ACTIVE_USERS.add(uid)
                 submit_worker=True
@@ -1582,7 +1595,7 @@ def schedule_update(update):
             for _ in queued:
                 UPDATE_CAPACITY.release()
             raise
-
+    return True
 
 
 def _send_backup_document(chat_id, filename, file_bytes):

@@ -59,6 +59,43 @@ class UpdateIdempotencyTests(unittest.TestCase):
                 1,
             )
 
+    def test_replayed_payout_review_does_not_refund_twice(self):
+        payout_id = db.create_payout_request(8101, 1000, "user@example.com", "EMAIL", 1000)
+        first = db.review_payout(payout_id, 1, False, update_id=90006)
+        replay = db.review_payout(payout_id, 1, False, update_id=90006)
+        self.assertEqual(first["id"], replay["id"])
+        self.assertEqual(db.get_user(8101)["points"], 5000)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE reason=?", (f"Estorno do saque #{payout_id}",)).fetchone()[0], 1)
+
+    def test_payout_review_idempotency_record_never_stores_plaintext_pix_key(self):
+        payout_id = db.create_payout_request(8101, 1000, "private@example.com", "EMAIL", 1000)
+        first = db.review_payout(payout_id, 1, True, update_id=90009)
+        replay = db.review_payout(payout_id, 1, True, update_id=90009)
+        self.assertEqual(first["pix_key"], "private@example.com")
+        self.assertEqual(replay["pix_key"], "private@example.com")
+        with db.connect() as conn:
+            stored = conn.execute("SELECT result FROM idempotency_keys WHERE update_id=90009").fetchone()["result"]
+        self.assertNotIn("private@example.com", stored)
+        self.assertIn("enc:v1:", stored)
+
+    def test_replayed_game_update_credits_only_once(self):
+        first = db.play_daily_game(8101, "chest", 10, update_id=90007)
+        replay = db.play_daily_game(8101, "chest", 10, update_id=90007)
+        self.assertEqual(first, replay)
+        self.assertEqual(db.get_user(8101)["points"], 5010)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM daily_games WHERE user_id=8101").fetchone()[0], 1)
+
+    def test_replayed_code_redemption_credits_only_once(self):
+        code = db.create_redeem_code(500, 1, 1)
+        first = db.redeem_code(code, 8101, update_id=90008)
+        replay = db.redeem_code(code, 8101, update_id=90008)
+        self.assertEqual(first, replay)
+        self.assertEqual(db.get_user(8101)["points"], 5500)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM redeem_code_uses WHERE code=? AND user_id=8101", (code,)).fetchone()[0], 1)
+
     def test_update_id_cannot_be_reused_for_a_different_financial_action(self):
         db.create_redemption(8101, 100, "Prize", update_id=90005)
         with self.assertRaises(ValueError):

@@ -375,9 +375,13 @@ def pending_task_submissions():
     with connect() as db:
         return db.execute("SELECT s.*,t.title,t.reward_points,u.first_name,u.username FROM task_submissions s JOIN tasks t ON t.id=s.task_id JOIN users u ON u.user_id=s.user_id WHERE s.status='pending' ORDER BY s.id").fetchall()
 
-def review_task_submission(submission_id,admin_id,approve):
+def review_task_submission(submission_id,admin_id,approve,update_id=None):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"task.review")
+        if found:
+            db.rollback()
+            return result
         row=db.execute("SELECT s.*,t.title,t.reward_points FROM task_submissions s JOIN tasks t ON t.id=s.task_id WHERE s.id=? AND s.status='pending'",(submission_id,)).fetchone()
         if not row: db.rollback(); return None
         status='approved' if approve else 'rejected'
@@ -388,7 +392,9 @@ def review_task_submission(submission_id,admin_id,approve):
             db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,row["user_id"]))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],points,f"Tarefa: {row['title']}"))
             db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["user_id"],points,"task"))
-        db.commit(); return dict(row)
+        result=dict(row)
+        _idempotency_save(db,update_id,"task.review",result)
+        db.commit(); return result
 
 
 def user_task_submissions(user_id,limit=20):
@@ -465,9 +471,13 @@ def pending_reward_orders():
     with connect() as db:
         return db.execute("SELECT o.*,r.title,u.first_name,u.username FROM reward_orders o JOIN rewards r ON r.id=o.reward_id JOIN users u ON u.user_id=o.user_id WHERE o.status='pending' ORDER BY o.id").fetchall()
 
-def review_reward_order(order_id,admin_id,approve):
+def review_reward_order(order_id,admin_id,approve,update_id=None):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"shop.review")
+        if found:
+            db.rollback()
+            return result
         row=db.execute("SELECT * FROM reward_orders WHERE id=? AND status='pending'",(order_id,)).fetchone()
         if not row: db.rollback(); return None
         status='approved' if approve else 'rejected'
@@ -476,7 +486,9 @@ def review_reward_order(order_id,admin_id,approve):
             db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],row["user_id"]))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points_spent"],f"Estorno recompensa #{order_id}"))
             db.execute("UPDATE rewards SET stock=stock+1 WHERE id=? AND stock>=0",(row["reward_id"],))
-        db.commit(); return dict(row)
+        result=dict(row)
+        _idempotency_save(db,update_id,"shop.review",result)
+        db.commit(); return result
 
 def cancel_reward_order(user_id,order_id):
     with connect() as db:
@@ -726,16 +738,23 @@ def create_redemption(uid,points,reward,update_id=None):
 def pending_redemptions():
     with connect() as db: return db.execute("SELECT * FROM redemptions WHERE status='pending' ORDER BY id").fetchall()
 
-def review_redemption(rid,admin_id,approve):
+def review_redemption(rid,admin_id,approve,update_id=None):
     with connect() as db:
-        db.execute("BEGIN IMMEDIATE"); row=db.execute("SELECT * FROM redemptions WHERE id=? AND status='pending'",(rid,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"redemption.review")
+        if found:
+            db.rollback()
+            return result
+        row=db.execute("SELECT * FROM redemptions WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row: db.rollback(); return None
         status="approved" if approve else "rejected"
         db.execute("UPDATE redemptions SET status=?,reviewed_by=? WHERE id=?",(status,admin_id,rid))
         if not approve:
             db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points"],row["user_id"]))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points"],f"Estorno resgate #{rid}"))
-        db.commit(); return dict(row)
+        result=dict(row)
+        _idempotency_save(db,update_id,"redemption.review",result)
+        db.commit(); return result
 
 def set_vip(uid,enabled):
     with connect() as db:
@@ -767,12 +786,16 @@ def claim_referral_vip(uid,milestone):
         db.commit(); return days,expiry
 
 
-def play_daily_game(uid,game,points):
+def play_daily_game(uid,game,points,update_id=None):
     if game not in ("chest","roulette","scratch"): raise ValueError("Jogo inválido.")
     points=max(0,min(int(points),100))
     current=today()
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"game.play")
+        if found:
+            db.rollback()
+            return int(result)
         try:
             db.execute("INSERT INTO daily_games(user_id,game,points,played_on) VALUES(?,?,?,?)",(uid,game,points,current))
         except sqlite3.IntegrityError:
@@ -783,6 +806,7 @@ def play_daily_game(uid,game,points):
             reason={"chest":"Baú surpresa diário","roulette":"Roleta de pontos","scratch":"Raspadinha virtual"}[game]
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(uid,points,reason))
             db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(uid,points,"game_"+game))
+        _idempotency_save(db,update_id,"game.play",points)
         db.commit()
         return points
 
@@ -1002,9 +1026,15 @@ def reduce_pending_payout(rid,new_points,admin_id,min_points=10000):
         result=dict(row); result.update({'points':new_points,'amount_cents':amount_cents,'refunded_points':refunded})
         db.commit(); return result
 
-def review_payout(rid,admin_id,approve):
+def review_payout(rid,admin_id,approve,update_id=None):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"payout.review")
+        if found:
+            db.rollback()
+            if result and result.get("pix_key"):
+                result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
+            return result
         _migrate_legacy_payout_pix_keys(db)
         row=db.execute("SELECT * FROM payout_requests WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row:
@@ -1016,7 +1046,10 @@ def review_payout(rid,admin_id,approve):
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points"],f"Estorno do saque #{rid}"))
         else:
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],0,f"Pagamento Pix confirmado — saque #{rid} (R$ {row['amount_cents']/100:.2f})"))
+        # O resultado idempotente guarda somente a chave ainda criptografada.
+        # A descriptografia ocorre apenas na resposta em memória, nunca no ledger.
         result=dict(row)
+        _idempotency_save(db,update_id,"payout.review",result)
         result["pix_key"]=_decrypt_payout_pix_key(result["pix_key"])
         db.commit(); return result
 
@@ -1095,12 +1128,16 @@ def fraud_profile(referrer_id,limit=10):
         level="alto" if score>=60 else "moderado" if score>=30 else "baixo"
         return {"user":dict(user),"stats":st,"recent":[dict(x) for x in recent],"risk_score":score,"risk_level":level,"risk_reasons":reasons}
 
-def review_referral(rid,admin_id,approve,reward_points):
+def review_referral(rid,admin_id,approve,reward_points,update_id=None):
     reward_points=int(reward_points)
     if reward_points<0:
         raise ValueError("A recompensa da indicação não pode ser negativa.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"referral.review")
+        if found:
+            db.rollback()
+            return result
         row=db.execute("SELECT * FROM referral_reviews WHERE id=? AND status='pending'",(rid,)).fetchone()
         if not row:
             db.rollback(); return None
@@ -1116,7 +1153,9 @@ def review_referral(rid,admin_id,approve,reward_points):
             db.execute("UPDATE users SET points=points+? WHERE user_id=?",(reward_points,row["referrer_id"]))
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["referrer_id"],reward_points,f"Indicação aprovada #{rid}"))
             db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(row["referrer_id"],reward_points,"referral_approved"))
-        db.commit(); return dict(row)
+        result=dict(row)
+        _idempotency_save(db,update_id,"referral.review",result)
+        db.commit(); return result
 
 def set_referral_manual_hold(referrer_id,enabled,admin_id,reason="Monitoramento manual da equipe"):
     with connect() as db:
@@ -1220,7 +1259,15 @@ def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
         db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
-        db.execute("DELETE FROM idempotency_keys WHERE created_at<datetime('now','-30 days')")
+        # Nunca apaga a chave de uma atualização ainda pendente: ela pode
+        # precisar ser reexecutada após uma falha muito longa do processo.
+        db.execute("""DELETE FROM idempotency_keys
+                      WHERE created_at<datetime('now','-30 days')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM durable_updates
+                          WHERE durable_updates.update_id=idempotency_keys.update_id
+                            AND durable_updates.status='pending'
+                      )""")
         db.commit()
         return cur.rowcount
 
@@ -1431,13 +1478,17 @@ def create_redeem_code(points,max_uses,admin_id):
                 db.rollback()
         raise RuntimeError("Não foi possível gerar um código exclusivo. Tente novamente.")
 
-def redeem_code(code,user_id):
+def redeem_code(code,user_id,update_id=None):
     code=str(code or "").strip().upper()
     if len(code)>40 or not code:
         raise ValueError("Código inválido.")
     user_id=int(user_id)
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        found,result=_idempotency_lookup(db,update_id,"code.redeem")
+        if found:
+            db.rollback()
+            return result
         row=db.execute("SELECT * FROM redeem_codes WHERE code=? AND active=1",(code,)).fetchone()
         if not row:
             db.rollback()
@@ -1458,8 +1509,10 @@ def redeem_code(code,user_id):
         db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,points,f"Código de resgate {code}"))
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(user_id,points,"redeem_code"))
+        result={"code":code,"points":points,"balance":int(user["points"])+points}
+        _idempotency_save(db,update_id,"code.redeem",result)
         db.commit()
-        return {"code":code,"points":points,"balance":int(user["points"])+points}
+        return result
 
 
 def set_user_input_state(user_id,state):
