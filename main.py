@@ -352,7 +352,7 @@ def start(m):
     u=m.get("from",{}); chat=m["chat"]["id"]; p=(m.get("text") or "").split(maxsplit=1)
     ref=int(p[1]) if len(p)>1 and p[1].isdigit() else None
     created,refid,review_id=db.register_user(u["id"],u.get("username"),u.get("first_name") or "",ref,0,bool(u.get("is_bot")),welcome_reward=POINTS_WELCOME)
-    if created and refid and POINTS_PER_REFERRAL:
+    if created and refid:
         if review_id:
             try:
                 notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Se aprovada, ela contará para suas metas de recompensa.")
