@@ -1460,7 +1460,7 @@ def redeem_code(code,user_id):
 
 
 def set_user_input_state(user_id,state):
-    if state not in ("redeem_code","payout_points"):
+    if state not in ("redeem_code","payout_points") and not (state.startswith("payout_confirm:") and state.split(":",1)[1].isdigit()):
         raise ValueError("Estado de entrada inválido.")
     with connect() as db:
         db.execute("INSERT INTO user_input_states(user_id,state) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET state=excluded.state,updated_at=CURRENT_TIMESTAMP",(int(user_id),state))
