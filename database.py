@@ -285,6 +285,14 @@ def init_db():
             )
         """)
         db.execute("CREATE INDEX IF NOT EXISTS idx_redeem_code_uses_user ON redeem_code_uses(user_id,redeemed_at)")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS user_input_states(
+                user_id INTEGER PRIMARY KEY,
+                state TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+        """)
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
@@ -1449,3 +1457,21 @@ def redeem_code(code,user_id):
         db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(user_id,points,"redeem_code"))
         db.commit()
         return {"code":code,"points":points,"balance":int(user["points"])+points}
+
+
+def set_user_input_state(user_id,state):
+    if state not in ("redeem_code","payout_points"):
+        raise ValueError("Estado de entrada inválido.")
+    with connect() as db:
+        db.execute("INSERT INTO user_input_states(user_id,state) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET state=excluded.state,updated_at=CURRENT_TIMESTAMP",(int(user_id),state))
+        db.commit()
+
+def get_user_input_state(user_id):
+    with connect() as db:
+        row=db.execute("SELECT state FROM user_input_states WHERE user_id=?",(int(user_id),)).fetchone()
+        return row["state"] if row else None
+
+def clear_user_input_state(user_id):
+    with connect() as db:
+        db.execute("DELETE FROM user_input_states WHERE user_id=?",(int(user_id),))
+        db.commit()
