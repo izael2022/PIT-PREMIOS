@@ -1583,3 +1583,16 @@ def clear_user_input_state(user_id):
     with connect() as db:
         db.execute("DELETE FROM user_input_states WHERE user_id=?",(int(user_id),))
         db.commit()
+
+
+# Configuração persistente do modo de manutenção (usa bot_settings já existente).
+def get_maintenance_mode():
+    with connect() as db:
+        row=db.execute("SELECT value FROM bot_settings WHERE key='maintenance_mode'").fetchone()
+        return bool(row and row["value"]=="1")
+
+def set_maintenance_mode(enabled):
+    with connect() as db:
+        db.execute("INSERT INTO bot_settings(key,value) VALUES('maintenance_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("1" if enabled else "0",))
+        db.commit()
+    return bool(enabled)

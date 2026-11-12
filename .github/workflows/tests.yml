@@ -2,7 +2,7 @@ name: Testes de integridade do PIT PRÊMIOS
 
 on:
   push:
-    branches: ["main", "audit/**", "improvement/**", "fix/**"]
+    branches: ["main", "audit/**", "improvement/**", "fix/**", "miniapps-pages-maintenance"]
   pull_request:
   workflow_dispatch:
 

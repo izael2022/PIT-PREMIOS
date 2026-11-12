@@ -66,7 +66,8 @@ class PrivacyAndResilienceTests(unittest.TestCase):
                 "from": {"id": 42},
             },
         }
-        with patch.object(bot.db, "update_was_processed", return_value=False), \
+        with patch.object(bot.db, "get_maintenance_mode", return_value=False), \
+             patch.object(bot.db, "update_was_processed", return_value=False), \
              patch.object(bot, "command", side_effect=RuntimeError("temporary failure")), \
              patch.object(bot.db, "mark_update_processed") as mark:
             with self.assertRaises(RuntimeError):

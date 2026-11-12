@@ -1,4 +1,4 @@
-import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform
+import json, logging, time, threading, random, urllib.parse, urllib.request, urllib.error, os, queue, platform, hmac, hashlib
 from html import escape
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, POINTS_PER_REFERRAL, POINTS_WELCOME, DAILY_REWARDS, MIN_REDEEM_POINTS, MIN_PAYOUT_POINTS, DATABASE_PATH, MONITOR_HEARTBEAT_URL
@@ -8,6 +8,7 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(m
 log=logging.getLogger("pit_premios")
 API=f"https://api.telegram.org/bot{BOT_TOKEN}/"
 BOT_USERNAME=""
+MINIAPP_HOME_URL="https://izael2022.github.io/PIT-PREMIOS/"
 BANNER_URL="https://raw.githubusercontent.com/izael2022/PIT-PREMIOS/main/assets/pit_premios_banner.jpg"
 LAST_BACKUP_OK=None
 LAST_BACKUP_ERROR=""
@@ -250,10 +251,13 @@ def send_photo(chat,photo,caption,keyboard=None):
 
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
+def webapp_btn(label,path): return {"text":label,"web_app":{"url":MINIAPP_HOME_URL+path}}
 def menu():
     return [
         [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
+        [webapp_btn("🗓️ CALENDÁRIO","calendario.html"),webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
+        [webapp_btn("🎡 ROLETA ESPECIAL","roleta.html")],
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
@@ -281,6 +285,7 @@ def admin_menu():
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
+            [btn("🛠️ Modo de manutenção","admin:maintenance")],
             [btn("⬅️ Fechar painel","home")]]
 
 def admin_health_report(chat):
@@ -710,10 +715,10 @@ def submit_payout_request(chat,uid,pts,update_id=None):
         send(chat,escape(str(e)))
         return False
     amount=pts/1000
-    send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\\nValor: <b>R$ {amount:.2f}</b>\\nSeus pontos ficaram reservados até a análise da equipe.",[[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.",[[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
     for aid in ADMIN_IDS:
         try:
-            send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\\nUsuário: <code>{uid}</code>\\nPontos: {pts}\\nValor: R$ {amount:.2f}\\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\\nTitular informado: {escape(pix_owner)}\\n\\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
+            send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
         except Exception: log.exception("Falha ao notificar admin sobre saque")
     return True
 
@@ -1027,6 +1032,12 @@ def callback(c,update_id=None):
             else:
                 send(chat,"🚫 <b>CONTA BLOQUEADA</b>\nSeu acesso está temporariamente bloqueado. Motivo: "+escape(block["reason"]))
             return
+    if uid and not admin(uid) and db.get_maintenance_mode():
+        send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias para oferecer uma experiência melhor. Tente novamente mais tarde. 💙")
+        if not c.get("_answered_immediately"):
+            try: api("answerCallbackQuery",{"callback_query_id":c["id"]})
+            except Exception: pass
+        return
     if not c.get("_answered_immediately"):
         try:
             api("answerCallbackQuery",{"callback_query_id":c["id"]})
@@ -1053,6 +1064,14 @@ def callback(c,update_id=None):
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+        elif action=="maintenance":
+            enabled=db.get_maintenance_mode()
+            if enabled:
+                db.set_maintenance_mode(False)
+                send(chat,"✅ <b>MODO DE MANUTENÇÃO DESATIVADO</b>\n\nO acesso dos usuários foi liberado novamente.",[[btn("🛠️ Abrir manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
+            else:
+                db.set_maintenance_mode(True)
+                send(chat,"🛠️ <b>MODO DE MANUTENÇÃO ATIVADO</b>\n\nOs usuários não administradores receberão um aviso temporário. Administradores continuam com acesso.",[[btn("🔓 Desativar manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
         elif action=="health":
             admin_health_report(chat)
         elif action=="finance":
@@ -1145,7 +1164,7 @@ def callback(c,update_id=None):
                 send(chat,f"Você tem <b>{points:,} pontos</b>. O mínimo para saque é <b>{MIN_PAYOUT_POINTS:,} pontos (R$ {MIN_PAYOUT_POINTS/1000:.2f})</b>.")
             else:
                 db.set_user_input_state(uid,"payout_points")
-                send(chat,f"💸 <b>SOLICITAR SAQUE</b>\\n\\nSaldo disponível: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\\nMínimo: <b>{MIN_PAYOUT_POINTS:,} pontos</b> (R$ {MIN_PAYOUT_POINTS/1000:.2f})\\n\\nDigite quantos pontos deseja sacar:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
+                send(chat,f"💸 <b>SOLICITAR SAQUE</b>\n\nSaldo disponível: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\nMínimo: <b>{MIN_PAYOUT_POINTS:,} pontos</b> (R$ {MIN_PAYOUT_POINTS/1000:.2f})\n\nDigite quantos pontos deseja sacar:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
     elif data=="user:cancel_input":
         db.clear_user_input_state(uid)
         send(chat,"Operação cancelada.",menu())
@@ -1354,6 +1373,12 @@ def process_update(update):
             return True
         if "message" in update:
             m=update["message"]
+            sender=m.get("from",{}).get("id")
+            if sender and not admin(sender) and db.get_maintenance_mode():
+                if (m.get("text") or "").startswith("/start"):
+                    send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
+                if update_id is not None: db.mark_update_processed(update_id)
+                return True
             if (m.get("text") or "").startswith("/"):
                 command(m,update_id=update_id)
             elif m.get("chat",{}).get("type")=="private":
@@ -1385,7 +1410,7 @@ def process_update(update):
                                 send(m["chat"]["id"],f"❌ Saldo insuficiente. Seu saldo atual é {balance:,} pontos. Digite outro valor ou cancele.")
                             else:
                                 db.set_user_input_state(uid,f"payout_confirm:{pts}")
-                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\\n\\nPontos: <b>{pts:,}</b>\\nValor: <b>R$ {pts/1000:.2f}</b>\\n\\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque","user:payout_confirm")],[btn("❌ Cancelar","user:cancel_input")]])
+                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\n\nPontos: <b>{pts:,}</b>\nValor: <b>R$ {pts/1000:.2f}</b>\n\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque","user:payout_confirm")],[btn("❌ Cancelar","user:cancel_input")]])
                 else:
                     pix_step=db.get_pix_setup_step(uid)
                 if input_state:
@@ -1767,9 +1792,144 @@ def telegram_get_me_with_retry():
             time.sleep(delay)
 
 
+
+# API HTTPS das Mini Apps. O proxy HTTPS da hospedagem termina TLS; o processo
+# escuta apenas a porta interna informada pelo ambiente (PORT/MINIAPP_API_PORT).
+import http.server
+import datetime
+
+MINIAPP_ALLOWED_ORIGINS={x.strip().rstrip("/") for x in os.getenv("MINIAPP_ALLOWED_ORIGINS","https://izael2022.github.io").split(",") if x.strip()}
+MINIAPP_API_PORT=max(1,min(65535,int(os.getenv("PORT",os.getenv("MINIAPP_API_PORT","8080")))))
+
+def validate_telegram_init_data(init_data):
+    if not init_data or len(init_data)>8192:
+        raise ValueError("Autenticação do Telegram ausente.")
+    values=urllib.parse.parse_qs(init_data,keep_blank_values=True,strict_parsing=True)
+    hash_values=values.pop("hash",[])
+    if len(hash_values)!=1:
+        raise ValueError("Assinatura do Telegram inválida.")
+    received_hash=hash_values[0]
+    if not received_hash or len(received_hash)!=64:
+        raise ValueError("Assinatura do Telegram inválida.")
+    pairs=[]
+    for key,items in values.items():
+        if len(items)!=1: raise ValueError("Dados de autenticação inválidos.")
+        pairs.append((key,items[0]))
+    data_check="\n".join(f"{k}={v}" for k,v in sorted(pairs))
+    secret=hmac.new(b"WebAppData",BOT_TOKEN.encode(),hashlib.sha256).digest()
+    expected=hmac.new(secret,data_check.encode(),hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected,received_hash):
+        raise ValueError("Não foi possível validar sua conta do Telegram.")
+    try:
+        auth_date=int(values.get("auth_date",["0"])[0])
+        user=json.loads(values.get("user",["{}"])[0])
+        uid=int(user["id"])
+    except (ValueError,KeyError,TypeError,json.JSONDecodeError):
+        raise ValueError("Dados da conta do Telegram inválidos.")
+    now=int(time.time())
+    if auth_date>now+60 or now-auth_date>86400:
+        raise ValueError("Sessão expirada. Feche e abra a Mini App novamente pelo bot.")
+    if uid<=0: raise ValueError("Conta do Telegram inválida.")
+    return uid
+
+class MiniAppHandler(http.server.BaseHTTPRequestHandler):
+    server_version="PITMiniApps/1.0"
+    def log_message(self,fmt,*args):
+        log.info("MiniApp API %s - %s",self.address_string(),fmt%args)
+    def _headers(self,status=200,origin=""):
+        self.send_response(status)
+        if origin in MINIAPP_ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin",origin)
+            self.send_header("Vary","Origin")
+        self.send_header("Access-Control-Allow-Headers","Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods","POST, OPTIONS")
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Cache-Control","no-store")
+        self.end_headers()
+    def _json(self,status,payload,origin=""):
+        raw=json.dumps(payload,ensure_ascii=False).encode("utf-8")
+        self._headers(status,origin)
+        self.wfile.write(raw)
+    def do_OPTIONS(self):
+        origin=self.headers.get("Origin","").rstrip("/")
+        if origin not in MINIAPP_ALLOWED_ORIGINS:
+            self._json(403,{"ok":False,"error":"Origem não autorizada."})
+            return
+        self._headers(204,origin)
+    def do_GET(self):
+        self._json(405,{"ok":False,"error":"Método não permitido."},self.headers.get("Origin","").rstrip("/"))
+    def do_POST(self):
+        origin=self.headers.get("Origin","").rstrip("/")
+        if origin not in MINIAPP_ALLOWED_ORIGINS:
+            self._json(403,{"ok":False,"error":"Origem não autorizada."})
+            return
+        if self.path not in ("/api/miniapps/me","/api/miniapps/calendar/claim","/api/miniapps/surprise/open","/api/miniapps/wheel/spin"):
+            self._json(404,{"ok":False,"error":"Operação não encontrada."},origin)
+            return
+        try:
+            length=int(self.headers.get("Content-Length","0"))
+            if length<0 or length>4096: raise ValueError("Requisição inválida.")
+            raw=self.rfile.read(length) if length else b"{}"
+            body=json.loads(raw.decode("utf-8"))
+            if not isinstance(body,dict): raise ValueError("Dados inválidos.")
+            auth=self.headers.get("Authorization","")
+            if not auth.startswith("tma "): raise ValueError("Abra a Mini App pelo botão oficial do bot.")
+            uid=validate_telegram_init_data(auth[4:])
+            if db.get_maintenance_mode() and not admin(uid):
+                self._json(503,{"ok":False,"error":"PIT PRÊMIOS em manutenção. Tente novamente mais tarde."},origin)
+                return
+            user=db.get_user(uid)
+            if not user: raise ValueError("Não encontramos seu cadastro. Envie /start ao bot e tente novamente.")
+            if db.get_account_block(uid) and not admin(uid):
+                self._json(403,{"ok":False,"error":"Sua conta está temporariamente bloqueada."},origin)
+                return
+            if self.path=="/api/miniapps/me":
+                today_local=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).date().isoformat()
+                streak=int(user["daily_streak"] or 0)
+                next_streak=streak+1 if user["last_daily"]==(datetime.date.fromisoformat(today_local)-datetime.timedelta(days=1)).isoformat() else 1
+                next_reward=int(DAILY_REWARDS[(next_streak-1)%len(DAILY_REWARDS)])
+                self._json(200,{"ok":True,"balance":int(user["points"]),"daily_streak":streak,"last_daily":user["last_daily"],"next_daily_reward":next_reward,"already_claimed_today":user["last_daily"]==today_local,"today":today_local},origin)
+                return
+            if self.path=="/api/miniapps/calendar/claim":
+                claimed,streak,points=db.daily_claim(uid,DAILY_REWARDS)
+                fresh=db.get_user(uid)
+                if not claimed:
+                    self._json(409,{"ok":False,"error":"Você já coletou sua recompensa diária. Volte amanhã.","balance":int(fresh["points"])},origin)
+                else:
+                    self._json(200,{"ok":True,"message":f"Recompensa do dia {((streak-1)%len(DAILY_REWARDS))+1} coletada!", "points":points,"balance":int(fresh["points"]),"streak":streak},origin)
+                return
+            if self.path=="/api/miniapps/surprise/open":
+                chest=body.get("chest")
+                if isinstance(chest,bool) or not isinstance(chest,int) or chest not in range(1,7):
+                    raise ValueError("Escolha um dos baús disponíveis.")
+                prize=random.choices([0,5,10,15,20,30],[20,20,20,18,15,7])[0]
+                points=db.play_daily_game(uid,"chest",prize)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":"Baú aberto! "+("Hoje não saiu prêmio em pontos. Tente novamente amanhã." if points==0 else "Você encontrou uma recompensa!"),"points":points,"balance":int(fresh["points"])},origin)
+                return
+            if self.path=="/api/miniapps/wheel/spin":
+                prize=random.choices([0,5,10,15,20,25,50,100],[15,20,20,15,12,8,8,2])[0]
+                points=db.play_daily_game(uid,"roulette",prize)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":"A roleta parou! "+("Não foi desta vez. Volte amanhã!" if points==0 else "Parabéns, você ganhou pontos!"),"points":points,"balance":int(fresh["points"]),"segment":random.randrange(8)},origin)
+                return
+        except ValueError as exc:
+            self._json(400,{"ok":False,"error":str(exc)},origin)
+        except Exception:
+            log.exception("Erro interno na API Mini Apps")
+            self._json(500,{"ok":False,"error":"Erro interno. Tente novamente mais tarde."},origin)
+
+def start_miniapp_api():
+    server=http.server.ThreadingHTTPServer(("0.0.0.0",MINIAPP_API_PORT),MiniAppHandler)
+    server.daemon_threads=True
+    threading.Thread(target=server.serve_forever,name="pit-miniapp-api",daemon=True).start()
+    log.warning("API das Mini Apps aguardando conexões na porta interna %s",MINIAPP_API_PORT)
+
+
 def main():
     global BOT_USERNAME
     db.init_db()
+    start_miniapp_api()
     start_outbound_worker()
     # Recupera todos os lotes pendentes antes de buscar novas atualizações.
     last_pending_id=0
