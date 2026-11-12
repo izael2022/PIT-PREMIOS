@@ -62,6 +62,15 @@ class AuditCorrectionTests(unittest.TestCase):
         self.assertNotIn("private@example.com", stored)
         self.assertEqual(db.pending_updates(limit=10), [update])
 
+    def test_completed_update_payload_is_purged(self):
+        update = {"update_id": 993, "message": {"text": "private@example.com"}}
+        db.enqueue_update(update)
+        db.mark_update_processed(993)
+        with db.connect() as conn:
+            stored = conn.execute("SELECT payload,status FROM durable_updates WHERE update_id=993").fetchone()
+        self.assertEqual(stored["status"], "completed")
+        self.assertEqual(stored["payload"], "")
+
     def test_legacy_plaintext_pending_update_is_migrated_on_read(self):
         update = {"update_id": 992, "message": {"text": "legacy private@example.com"}}
         import json
