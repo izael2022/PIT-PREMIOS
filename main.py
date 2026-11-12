@@ -355,7 +355,7 @@ def start(m):
     if created and refid and POINTS_PER_REFERRAL:
         if review_id:
             try:
-                notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Os pontos serão liberados após a revisão.")
+                notify_user(refid,"🛡️ Sua nova indicação entrou em análise de segurança. Se aprovada, ela contará para suas metas de recompensa.")
                 for aid in ADMIN_IDS:
                     send(aid,f"🛡️ <b>INDICAÇÃO EM ANÁLISE #{review_id}</b>\nIndicador: <code>{refid}</code>\nNovo usuário: <code>{u['id']}</code>\nMotivo: conta de bot ou volume elevado de cadastros.",[[btn("Ver análise","admin:fraud")]])
             except Exception: log.exception("Falha ao notificar análise antifraude")
@@ -1238,7 +1238,7 @@ def callback(c,update_id=None):
     elif data.startswith("milestone:"):
         try:
             milestone=int(data.split(":")[1]); bonus=db.claim_referral_milestone(uid,milestone)
-            send(chat,f"🎉 Meta concluída! Você recebeu <b>{bonus} pontos</b> de bônus.")
+            send(chat,f"🎉 Meta registrada! Complemento creditado: <b>{bonus:,} pontos</b>. As recompensas são acumuladas até o total de R$ 1,00, R$ 6,50 e R$ 14,00 nas metas de 1, 5 e 10 indicações.")
         except (ValueError,IndexError) as e: send(chat,escape(str(e)))
     elif data.startswith("vipmilestone:"):
         try:
