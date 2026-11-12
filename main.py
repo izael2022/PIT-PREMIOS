@@ -1117,8 +1117,8 @@ def callback(c,update_id=None):
         db.set_user_input_state(uid,"redeem_code")
         send(chat,"🎟️ <b>RESGATAR CÓDIGO</b>\\n\\nDigite ou cole o código que você recebeu:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
     elif data=="user:payout":
-        profile=db.get_pix_profile(uid)
-        if not profile or profile["status"]!="approved":
+        pix_profile_data=db.get_pix_profile(uid)
+        if not pix_profile_data or pix_profile_data["status"]!="approved":
             send(chat,"🔐 Antes de solicitar um saque, você precisa cadastrar sua chave Pix e aguardar a aprovação da equipe.",[[btn("🔐 Cadastrar chave Pix","pixprofile")],[btn("⬅️ Menu principal","home")]])
         else:
             user=db.get_user(uid); points=int(user["points"] if user else 0)
