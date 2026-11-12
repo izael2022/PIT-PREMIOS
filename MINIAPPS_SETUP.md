@@ -9,7 +9,7 @@
 ## Ainda não publicar para usuários
 O Pages não fornece a API. A API precisa de um endereço HTTPS público, encaminhado para a porta interna configurada por `PORT` (padrão 8080). O arquivo `miniapps/assets/config.js` deve receber a URL HTTPS pública em `window.PIT_API_BASE`. O domínio da API deve ser adicionado a `MINIAPP_ALLOWED_ORIGINS`? Não: essa variável aceita as origens do front-end, atualmente `https://izael2022.github.io`.
 
-Antes de produção, confirmar que a modalidade de hospedagem do bot expõe uma porta HTTP pública e que o proxy fornece HTTPS. A configuração atual `discloud.config` é `TYPE=bot`; não presumir que a porta 8080 esteja acessível externamente. Não alterar o tipo da aplicação nem fazer deploy sem validação e autorização.
+Arquitetura escolhida: manter o bot Telegram e a API no MESMO processo/aplicação Discloud. Isso garante que ambos usem o mesmo arquivo SQLite e evita sincronização ou cópia de saldos. A configuração preparada nesta branch muda o app existente para `TYPE=site`, `ID=pitpremios-central`, `MAIN=main.py` e `RAM=512`. O processo Python continua executando o polling do Telegram e também escuta HTTP em `0.0.0.0:8080`, atrás do proxy HTTPS da Discloud. A mudança só terá efeito depois de integrar a branch e fazer deploy autorizado. O arquivo de produção e o app atual não foram alterados.
 
 ## Segurança
 - A API exige Authorization `tma <initData>`, valida HMAC usando BOT_TOKEN no servidor e rejeita dados expirados (mais de 24 horas).
@@ -20,4 +20,4 @@ Antes de produção, confirmar que a modalidade de hospedagem do bot expõe uma 
 - As recompensas atuais são simples valores de pontos. Ainda não existe painel para configurar campanhas, períodos, probabilidades ou conteúdo dos eventos.
 
 ## Limitações de produto
-O calendário desenha o mês, mas o backend atual só tem o estado de check-in atual/sequência, não um histórico mensal completo por data. Para mostrar corretamente todos os dias já coletados será necessária uma tabela histórica aditiva. O evento surpresa ainda funciona como baú diário, não como campanha agendada. A roleta especial reaproveita a tentativa diária da roleta existente.
+O calendário desenha o mês, mas o backend atual só tem o estado de check-in atual/sequência, não um histórico mensal completo por data. A ação de coletar reutiliza o check-in diário existente (não cria uma segunda recompensa diária). Para mostrar corretamente todos os dias já coletados será necessária uma tabela histórica aditiva. O evento surpresa ainda funciona como baú diário, não como campanha agendada. A roleta especial reaproveita a tentativa diária da roleta existente.
