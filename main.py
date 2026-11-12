@@ -260,6 +260,7 @@ def admin_menu():
             [btn("🗂️ Gerenciar prêmios","admin:managerewards")],
             [btn("🛡️ Análise antifraude","admin:fraud")],
             [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
+            [btn("🎟️ Gerar códigos de pontos","admin:codes")],
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
@@ -738,6 +739,27 @@ def command(m,update_id=None):
             send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result['refunded_points']:,} pontos.")
         except ValueError as e:
             send(chat,escape(str(e)))
+    elif cmd=="/gerarcodigo" and admin(uid):
+        args=t.split()
+        if len(args) not in (2,3) or not args[1].isdigit() or (len(args)==3 and not args[2].isdigit()):
+            send(chat,"Use: /gerarcodigo PONTOS [QUANTIDADE_DE_USOS]\\nExemplo: /gerarcodigo 1000 1")
+            return
+        points=int(args[1]); max_uses=int(args[2]) if len(args)==3 else 1
+        try:
+            code=db.create_redeem_code(points,max_uses,uid)
+            send(chat,f"🎟️ <b>CÓDIGO GERADO</b>\\n\\nCódigo: <code>{escape(code)}</code>\\nValor: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\\nUsos permitidos: <b>{max_uses}</b>\\n\\nEnvie o código aos participantes. Cada pessoa deve usar <code>/codigo {escape(code)}</code>. O código fica salvo até atingir o limite de usos.")
+        except ValueError as e:
+            send(chat,escape(str(e)))
+    elif cmd=="/codigo":
+        args=t.split(maxsplit=1)
+        if len(args)!=2:
+            send(chat,"Use: /codigo SEU_CODIGO")
+            return
+        try:
+            result=db.redeem_code(args[1],uid)
+            send(chat,f"🎉 <b>CÓDIGO RESGATADO COM SUCESSO!</b>\\n\\nVocê recebeu <b>{result['points']:,} pontos</b> (R$ {result['points']/1000:.2f}).\\nSeu novo saldo é de <b>{result['balance']:,} pontos</b>.")
+        except ValueError as e:
+            send(chat,"❌ "+escape(str(e)))
     elif cmd=="/sacar":
         args=t.split(maxsplit=1)
         if len(args)<2 or not args[1].isdigit(): send(chat,"Use: /sacar PONTOS"); return
@@ -1009,6 +1031,8 @@ def callback(c,update_id=None):
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
+        elif action=="codes":
+            send(chat,"🎟️ <b>GERAR CÓDIGO DE RESGATE</b>\\n\\nEnvie o comando:\\n<code>/gerarcodigo PONTOS [QUANTIDADE_DE_USOS]</code>\\n\\nExemplos:\\n• <code>/gerarcodigo 1000</code> — código válido para 1 pessoa.\\n• <code>/gerarcodigo 5000 10</code> — código válido para até 10 resgates.\\n\\nCada participante resgata no privado com <code>/codigo CODIGO</code>. Cada resgate credita os pontos uma única vez por uso.",admin_menu())
         elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu())
         elif action=="managerewards":
             rows=db.all_rewards()
