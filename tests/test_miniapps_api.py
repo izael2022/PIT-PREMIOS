@@ -95,6 +95,12 @@ class MiniAppApiIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(result["ok"])
 
+        signed = self.signed_init_data()
+        duplicate_hash = signed + "&hash=" + urllib.parse.parse_qs(signed)["hash"][0]
+        status, result = self.post("/api/miniapps/me", init_data=duplicate_hash)
+        self.assertEqual(status, 400)
+        self.assertFalse(result["ok"])
+
     def test_rejects_expired_telegram_session(self):
         expired = self.signed_init_data(auth_date=int(time.time()) - 86401)
         status, result = self.post("/api/miniapps/me", init_data=expired)
