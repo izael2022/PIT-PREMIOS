@@ -711,10 +711,10 @@ def submit_payout_request(chat,uid,pts,update_id=None):
         send(chat,escape(str(e)))
         return False
     amount=pts/1000
-    send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\\nValor: <b>R$ {amount:.2f}</b>\\nSeus pontos ficaram reservados até a análise da equipe.",[[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"✅ Solicitação de saque <b>#{rid}</b> enviada!\nValor: <b>R$ {amount:.2f}</b>\nSeus pontos ficaram reservados até a análise da equipe.",[[btn("💸 Meus saques","mypayouts")],[btn("⬅️ Menu principal","home")]])
     for aid in ADMIN_IDS:
         try:
-            send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\\nUsuário: <code>{uid}</code>\\nPontos: {pts}\\nValor: R$ {amount:.2f}\\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\\nTitular informado: {escape(pix_owner)}\\n\\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
+            send(aid,f"💸 <b>NOVO PEDIDO DE SAQUE #{rid}</b>\nUsuário: <code>{uid}</code>\nPontos: {pts}\nValor: R$ {amount:.2f}\nChave ({escape(key_type)}): <code>{escape(pix_key)}</code>\nTitular informado: {escape(pix_owner)}\n\n⚠️ Confira os dados e faça a transferência manualmente antes de confirmar abaixo.",[[btn("✅ Confirmar Pix pago","payout:"+str(rid)+":yes"),btn("❌ Rejeitar pedido","payout:"+str(rid)+":no")]])
         except Exception: log.exception("Falha ao notificar admin sobre saque")
     return True
 
@@ -1029,7 +1029,7 @@ def callback(c,update_id=None):
                 send(chat,"🚫 <b>CONTA BLOQUEADA</b>\nSeu acesso está temporariamente bloqueado. Motivo: "+escape(block["reason"]))
             return
     if uid and not admin(uid) and db.get_maintenance_mode():
-        send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\\n\\nEstamos realizando melhorias para oferecer uma experiência melhor. Tente novamente mais tarde. 💙")
+        send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias para oferecer uma experiência melhor. Tente novamente mais tarde. 💙")
         if not c.get("_answered_immediately"):
             try: api("answerCallbackQuery",{"callback_query_id":c["id"]})
             except Exception: pass
@@ -1064,10 +1064,10 @@ def callback(c,update_id=None):
             enabled=db.get_maintenance_mode()
             if enabled:
                 db.set_maintenance_mode(False)
-                send(chat,"✅ <b>MODO DE MANUTENÇÃO DESATIVADO</b>\\n\\nO acesso dos usuários foi liberado novamente.",[[btn("🛠️ Abrir manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
+                send(chat,"✅ <b>MODO DE MANUTENÇÃO DESATIVADO</b>\n\nO acesso dos usuários foi liberado novamente.",[[btn("🛠️ Abrir manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
             else:
                 db.set_maintenance_mode(True)
-                send(chat,"🛠️ <b>MODO DE MANUTENÇÃO ATIVADO</b>\\n\\nOs usuários não administradores receberão um aviso temporário. Administradores continuam com acesso.",[[btn("🔓 Desativar manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
+                send(chat,"🛠️ <b>MODO DE MANUTENÇÃO ATIVADO</b>\n\nOs usuários não administradores receberão um aviso temporário. Administradores continuam com acesso.",[[btn("🔓 Desativar manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
         elif action=="health":
             admin_health_report(chat)
         elif action=="finance":
@@ -1160,7 +1160,7 @@ def callback(c,update_id=None):
                 send(chat,f"Você tem <b>{points:,} pontos</b>. O mínimo para saque é <b>{MIN_PAYOUT_POINTS:,} pontos (R$ {MIN_PAYOUT_POINTS/1000:.2f})</b>.")
             else:
                 db.set_user_input_state(uid,"payout_points")
-                send(chat,f"💸 <b>SOLICITAR SAQUE</b>\\n\\nSaldo disponível: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\\nMínimo: <b>{MIN_PAYOUT_POINTS:,} pontos</b> (R$ {MIN_PAYOUT_POINTS/1000:.2f})\\n\\nDigite quantos pontos deseja sacar:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
+                send(chat,f"💸 <b>SOLICITAR SAQUE</b>\n\nSaldo disponível: <b>{points:,} pontos</b> (R$ {points/1000:.2f})\nMínimo: <b>{MIN_PAYOUT_POINTS:,} pontos</b> (R$ {MIN_PAYOUT_POINTS/1000:.2f})\n\nDigite quantos pontos deseja sacar:",[[btn("❌ Cancelar","user:cancel_input")],[btn("⬅️ Menu principal","home")]])
     elif data=="user:cancel_input":
         db.clear_user_input_state(uid)
         send(chat,"Operação cancelada.",menu())
@@ -1372,7 +1372,7 @@ def process_update(update):
             sender=m.get("from",{}).get("id")
             if sender and not admin(sender) and db.get_maintenance_mode():
                 if (m.get("text") or "").startswith("/start"):
-                    send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\\n\\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
+                    send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
                 if update_id is not None: db.mark_update_processed(update_id)
                 return True
             if (m.get("text") or "").startswith("/"):
@@ -1406,7 +1406,7 @@ def process_update(update):
                                 send(m["chat"]["id"],f"❌ Saldo insuficiente. Seu saldo atual é {balance:,} pontos. Digite outro valor ou cancele.")
                             else:
                                 db.set_user_input_state(uid,f"payout_confirm:{pts}")
-                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\\n\\nPontos: <b>{pts:,}</b>\\nValor: <b>R$ {pts/1000:.2f}</b>\\n\\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque","user:payout_confirm")],[btn("❌ Cancelar","user:cancel_input")]])
+                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\n\nPontos: <b>{pts:,}</b>\nValor: <b>R$ {pts/1000:.2f}</b>\n\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque","user:payout_confirm")],[btn("❌ Cancelar","user:cancel_input")]])
                 else:
                     pix_step=db.get_pix_setup_step(uid)
                 if input_state:
@@ -1808,7 +1808,7 @@ def validate_telegram_init_data(init_data):
     for key,items in values.items():
         if len(items)!=1: raise ValueError("Dados de autenticação inválidos.")
         pairs.append((key,items[0]))
-    data_check="\\n".join(f"{k}={v}" for k,v in sorted(pairs))
+    data_check="\n".join(f"{k}={v}" for k,v in sorted(pairs))
     secret=hmac.new(b"WebAppData",BOT_TOKEN.encode(),hashlib.sha256).digest()
     expected=hmac.new(secret,data_check.encode(),hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected,received_hash):
