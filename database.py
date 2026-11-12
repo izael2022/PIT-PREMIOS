@@ -1297,12 +1297,13 @@ def update_was_processed(update_id):
 def mark_update_processed(update_id):
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO processed_updates(update_id) VALUES(?)",(int(update_id),))
-        db.execute("UPDATE durable_updates SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE update_id=?",(int(update_id),))
+        db.execute("UPDATE durable_updates SET status='completed',completed_at=CURRENT_TIMESTAMP,payload='' WHERE update_id=?",(int(update_id),))
         db.commit()
 
 def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
+        db.execute("UPDATE durable_updates SET payload='' WHERE status='completed' AND payload<>''")
         db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
         # Nunca apaga a chave de uma atualização ainda pendente: ela pode
         # precisar ser reexecutada após uma falha muito longa do processo.
