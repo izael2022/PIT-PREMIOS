@@ -116,7 +116,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual(referrer, 1001)
         self.assertIsNone(review_id)
         self.assertEqual(db.get_user(3002)["points"], 1000)
-        self.assertEqual(db.get_user(1001)["points"], 6000)
+        self.assertEqual(db.get_user(1001)["points"], 5000)
 
     def test_referral_approval_credits_only_once(self):
         db.register_user(2002, "indicado", "Indicado", referrer=1001, is_bot=True)
@@ -128,7 +128,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertIsNotNone(review)
         self.assertIsNotNone(db.review_referral(review["id"], 1, True, 100))
         self.assertIsNone(db.review_referral(review["id"], 1, True, 100))
-        self.assertEqual(self.balance(), 5100)
+        self.assertEqual(self.balance(), 5000)
 
     def test_zero_daily_reward_advances_streak_without_invalid_weekly_row(self):
         claimed, streak, earned = db.daily_claim(1001, [0, 5])
@@ -172,7 +172,7 @@ class FinancialIntegrityTests(unittest.TestCase):
                     parse_daily_rewards(invalid)
 
 
-    def test_referral_approval_uses_configured_reward_and_zero_disables_credit(self):
+    def test_referral_approval_only_counts_toward_cumulative_milestone(self):
         db.register_user(2003, "indicado_zero", "Indicado Zero", referrer=1001, is_bot=True)
         with db.connect() as conn:
             review = conn.execute(
