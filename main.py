@@ -1130,13 +1130,17 @@ def callback(c,update_id=None):
     elif data=="user:cancel_input":
         db.clear_user_input_state(uid)
         send(chat,"Operação cancelada.",menu())
-    elif data.startswith("user:payout_confirm:"):
-        try:
-            pts=int(data.rsplit(":",1)[1])
+    elif data=="user:payout_confirm":
+        pending=db.get_user_input_state(uid)
+        if not pending or not pending.startswith("payout_confirm:"):
+            send(chat,"Esta confirmação já foi utilizada ou expirou. Inicie uma nova solicitação.",menu())
+        else:
             db.clear_user_input_state(uid)
-            submit_payout_request(chat,uid,pts,update_id)
-        except (ValueError,IndexError):
-            send(chat,"Não foi possível confirmar. Inicie a solicitação novamente.",menu())
+            try:
+                pts=int(pending.split(":",1)[1])
+                submit_payout_request(chat,uid,pts,update_id)
+            except (ValueError,IndexError):
+                send(chat,"Não foi possível confirmar. Inicie a solicitação novamente.",menu())
     elif data=="pixprofile":
         pix_profile_page(chat,uid)
     elif data=="pix:change":
@@ -1360,8 +1364,8 @@ def process_update(update):
                             elif pts>balance:
                                 send(m["chat"]["id"],f"❌ Saldo insuficiente. Seu saldo atual é {balance:,} pontos. Digite outro valor ou cancele.")
                             else:
-                                db.clear_user_input_state(uid)
-                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\\n\\nPontos: <b>{pts:,}</b>\\nValor: <b>R$ {pts/1000:.2f}</b>\\n\\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque",f"user:payout_confirm:{pts}")],[btn("❌ Cancelar","user:cancel_input")]])
+                                db.set_user_input_state(uid,f"payout_confirm:{pts}")
+                                send(m["chat"]["id"],f"💸 <b>CONFIRMAR SOLICITAÇÃO</b>\\n\\nPontos: <b>{pts:,}</b>\\nValor: <b>R$ {pts/1000:.2f}</b>\\n\\nDeseja enviar este saque para análise da equipe?",[[btn("✅ Confirmar saque","user:payout_confirm")],[btn("❌ Cancelar","user:cancel_input")]])
                 else:
                     pix_step=db.get_pix_setup_step(uid)
                 if input_state:
