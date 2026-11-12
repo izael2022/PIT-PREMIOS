@@ -1259,7 +1259,15 @@ def cleanup_processed_updates(keep_days=14):
     with connect() as db:
         cur=db.execute("DELETE FROM processed_updates WHERE processed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
         db.execute("DELETE FROM durable_updates WHERE status='completed' AND completed_at<datetime('now',?)",(f"-{int(keep_days)} days",))
-        db.execute("DELETE FROM idempotency_keys WHERE created_at<datetime('now','-30 days')")
+        # Nunca apaga a chave de uma atualização ainda pendente: ela pode
+        # precisar ser reexecutada após uma falha muito longa do processo.
+        db.execute("""DELETE FROM idempotency_keys
+                      WHERE created_at<datetime('now','-30 days')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM durable_updates
+                          WHERE durable_updates.update_id=idempotency_keys.update_id
+                            AND durable_updates.status='pending'
+                      )""")
         db.commit()
         return cur.rowcount
 
