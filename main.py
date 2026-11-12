@@ -1805,7 +1805,10 @@ def validate_telegram_init_data(init_data):
     if not init_data or len(init_data)>8192:
         raise ValueError("Autenticação do Telegram ausente.")
     values=urllib.parse.parse_qs(init_data,keep_blank_values=True,strict_parsing=True)
-    received_hash=values.pop("hash",[""])[0]
+    hash_values=values.pop("hash",[])
+    if len(hash_values)!=1:
+        raise ValueError("Assinatura do Telegram inválida.")
+    received_hash=hash_values[0]
     if not received_hash or len(received_hash)!=64:
         raise ValueError("Assinatura do Telegram inválida.")
     pairs=[]
