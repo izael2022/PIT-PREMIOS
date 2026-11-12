@@ -261,6 +261,30 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS redeem_codes(
+                code TEXT PRIMARY KEY,
+                points INTEGER NOT NULL CHECK(points>0),
+                max_uses INTEGER NOT NULL CHECK(max_uses>0),
+                uses INTEGER NOT NULL DEFAULT 0 CHECK(uses>=0),
+                active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS redeem_code_uses(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                points INTEGER NOT NULL CHECK(points>0),
+                redeemed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(code,user_id),
+                FOREIGN KEY(code) REFERENCES redeem_codes(code),
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_redeem_code_uses_user ON redeem_code_uses(user_id,redeemed_at)")
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
@@ -1375,3 +1399,53 @@ def review_pix_profile(user_id,admin_id,approve):
                    (status,int(admin_id),int(user_id)))
         db.commit()
     return {"user_id":int(user_id),"status":status}
+
+
+def create_redeem_code(points,max_uses,admin_id):
+    import secrets
+    points=int(points); max_uses=int(max_uses)
+    if points<1 or points>10000000:
+        raise ValueError("A quantidade deve ser de 1 a 10.000.000 pontos.")
+    if max_uses<1 or max_uses>10000:
+        raise ValueError("A quantidade de usos deve ser de 1 a 10.000.")
+    with connect() as db:
+        for _ in range(5):
+            code="PIT-"+secrets.token_hex(4).upper()
+            try:
+                db.execute("INSERT INTO redeem_codes(code,points,max_uses,created_by) VALUES(?,?,?,?)",(code,points,max_uses,int(admin_id)))
+                db.execute("INSERT INTO admin_audit_log(admin_id,action,details) VALUES(?,?,?)",(int(admin_id),"redeem_code_created",f"{code}: {points} pontos; {max_uses} usos"))
+                db.commit()
+                return code
+            except sqlite3.IntegrityError:
+                db.rollback()
+        raise RuntimeError("Não foi possível gerar um código exclusivo. Tente novamente.")
+
+def redeem_code(code,user_id):
+    code=str(code or "").strip().upper()
+    if len(code)>40 or not code:
+        raise ValueError("Código inválido.")
+    user_id=int(user_id)
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM redeem_codes WHERE code=? AND active=1",(code,)).fetchone()
+        if not row:
+            db.rollback()
+            raise ValueError("Código inválido, inexistente ou desativado.")
+        if int(row["uses"])>=int(row["max_uses"]):
+            db.rollback()
+            raise ValueError("Esse código já atingiu o limite de resgates.")
+        if db.execute("SELECT 1 FROM redeem_code_uses WHERE code=? AND user_id=?",(code,user_id)).fetchone():
+            db.rollback()
+            raise ValueError("Você já resgatou esse código.")
+        user=db.execute("SELECT points FROM users WHERE user_id=?",(user_id,)).fetchone()
+        if not user:
+            db.rollback()
+            raise ValueError("Abra o bot com /start antes de resgatar um código.")
+        points=int(row["points"])
+        db.execute("INSERT INTO redeem_code_uses(code,user_id,points) VALUES(?,?,?)",(code,user_id,points))
+        db.execute("UPDATE redeem_codes SET uses=uses+1,active=CASE WHEN uses+1>=max_uses THEN 0 ELSE active END WHERE code=?",(code,))
+        db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,points,f"Código de resgate {code}"))
+        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(user_id,points,"redeem_code"))
+        db.commit()
+        return {"code":code,"points":points,"balance":int(user["points"])+points}
