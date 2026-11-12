@@ -1530,10 +1530,18 @@ def drain_user_queue(uid):
                     UPDATE_COMPLETED_TOTAL+=1
                 else:
                     UPDATE_FAILED_TOTAL+=1
-            if update.get("update_id") is not None:
+            if succeeded:
+                if update.get("update_id") is not None:
+                    with USER_QUEUE_LOCK:
+                        SCHEDULED_UPDATE_IDS.discard(update["update_id"])
+                UPDATE_CAPACITY.release()
+            else:
+                # Mantém a atualização na frente da fila do usuário e libera o worker.
+                # A rotina de recuperação tentará novamente sem inverter a ordem.
                 with USER_QUEUE_LOCK:
-                    SCHEDULED_UPDATE_IDS.discard(update["update_id"])
-            UPDATE_CAPACITY.release()
+                    USER_QUEUES.setdefault(uid,deque()).appendleft(update)
+                    ACTIVE_USERS.discard(uid)
+                return
 
 def schedule_update(update):
     uid=update_user_id(update)
@@ -1548,14 +1556,19 @@ def schedule_update(update):
     with USER_QUEUE_LOCK:
         if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
             UPDATE_CAPACITY.release()
-            return
-        if update_id is not None:
-            SCHEDULED_UPDATE_IDS.add(update_id)
-        pending=USER_QUEUES.setdefault(uid,deque())
-        pending.append(update)
-        if uid not in ACTIVE_USERS:
-            ACTIVE_USERS.add(uid)
-            submit_worker=True
+            if uid not in ACTIVE_USERS and USER_QUEUES.get(uid):
+                ACTIVE_USERS.add(uid)
+                submit_worker=True
+            else:
+                return
+        else:
+            if update_id is not None:
+                SCHEDULED_UPDATE_IDS.add(update_id)
+            pending=USER_QUEUES.setdefault(uid,deque())
+            pending.append(update)
+            if uid not in ACTIVE_USERS:
+                ACTIVE_USERS.add(uid)
+                submit_worker=True
     if submit_worker:
         try:
             UPDATE_POOL.submit(drain_user_queue,uid)
