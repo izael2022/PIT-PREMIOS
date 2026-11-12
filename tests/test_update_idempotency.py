@@ -68,6 +68,17 @@ class UpdateIdempotencyTests(unittest.TestCase):
         with db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE reason=?", (f"Estorno do saque #{payout_id}",)).fetchone()[0], 1)
 
+    def test_payout_review_idempotency_record_never_stores_plaintext_pix_key(self):
+        payout_id = db.create_payout_request(8101, 1000, "private@example.com", "EMAIL", 1000)
+        first = db.review_payout(payout_id, 1, True, update_id=90009)
+        replay = db.review_payout(payout_id, 1, True, update_id=90009)
+        self.assertEqual(first["pix_key"], "private@example.com")
+        self.assertEqual(replay["pix_key"], "private@example.com")
+        with db.connect() as conn:
+            stored = conn.execute("SELECT result FROM idempotency_keys WHERE update_id=90009").fetchone()["result"]
+        self.assertNotIn("private@example.com", stored)
+        self.assertIn("enc:v1:", stored)
+
     def test_replayed_game_update_credits_only_once(self):
         first = db.play_daily_game(8101, "chest", 10, update_id=90007)
         replay = db.play_daily_game(8101, "chest", 10, update_id=90007)
