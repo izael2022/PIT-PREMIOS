@@ -281,6 +281,7 @@ def admin_menu():
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
+            [btn("🛠️ Modo de manutenção","admin:maintenance")],
             [btn("⬅️ Fechar painel","home")]]
 
 def admin_health_report(chat):
@@ -1027,6 +1028,12 @@ def callback(c,update_id=None):
             else:
                 send(chat,"🚫 <b>CONTA BLOQUEADA</b>\nSeu acesso está temporariamente bloqueado. Motivo: "+escape(block["reason"]))
             return
+    if uid and not admin(uid) and db.get_maintenance_mode():
+        send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\\n\\nEstamos realizando melhorias para oferecer uma experiência melhor. Tente novamente mais tarde. 💙")
+        if not c.get("_answered_immediately"):
+            try: api("answerCallbackQuery",{"callback_query_id":c["id"]})
+            except Exception: pass
+        return
     if not c.get("_answered_immediately"):
         try:
             api("answerCallbackQuery",{"callback_query_id":c["id"]})
@@ -1053,6 +1060,14 @@ def callback(c,update_id=None):
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+        elif action=="maintenance":
+            enabled=db.get_maintenance_mode()
+            if enabled:
+                db.set_maintenance_mode(False)
+                send(chat,"✅ <b>MODO DE MANUTENÇÃO DESATIVADO</b>\\n\\nO acesso dos usuários foi liberado novamente.",[[btn("🛠️ Abrir manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
+            else:
+                db.set_maintenance_mode(True)
+                send(chat,"🛠️ <b>MODO DE MANUTENÇÃO ATIVADO</b>\\n\\nOs usuários não administradores receberão um aviso temporário. Administradores continuam com acesso.",[[btn("🔓 Desativar manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
         elif action=="health":
             admin_health_report(chat)
         elif action=="finance":
@@ -1354,6 +1369,12 @@ def process_update(update):
             return True
         if "message" in update:
             m=update["message"]
+            sender=m.get("from",{}).get("id")
+            if sender and not admin(sender) and db.get_maintenance_mode():
+                if (m.get("text") or "").startswith("/start"):
+                    send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\\n\\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
+                if update_id is not None: db.mark_update_processed(update_id)
+                return True
             if (m.get("text") or "").startswith("/"):
                 command(m,update_id=update_id)
             elif m.get("chat",{}).get("type")=="private":
