@@ -1563,6 +1563,9 @@ def schedule_update(update):
             with USER_QUEUE_LOCK:
                 ACTIVE_USERS.discard(uid)
                 queued=USER_QUEUES.pop(uid,deque())
+                for queued_update in queued:
+                    if queued_update.get("update_id") is not None:
+                        SCHEDULED_UPDATE_IDS.discard(queued_update["update_id"])
             for _ in queued:
                 UPDATE_CAPACITY.release()
             raise
