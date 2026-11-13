@@ -250,6 +250,9 @@ def send_photo(chat,photo,caption,keyboard=None):
 
 def admin(uid): return uid in ADMIN_IDS
 def btn(label,data): return {"text":label,"callback_data":data}
+def webapp_btn(label,path):
+    base="https://izael2022.github.io/PIT-PREMIOS/"
+    return {"text":label,"web_app":{"url":base+path}}
 def menu():
     return [
         [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
@@ -264,7 +267,10 @@ def menu():
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
-        [btn("❓ CENTRAL DE AJUDA","help")]
+        [btn("❓ CENTRAL DE AJUDA","help")],
+        [webapp_btn("🗓️ CALENDÁRIO DE RECOMPENSAS","calendario.html")],
+        [webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
+        [webapp_btn("🎡 ROLETA ESPECIAL","roleta.html")]
     ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
@@ -1796,7 +1802,7 @@ import datetime
 
 MINIAPP_ALLOWED_ORIGINS={x.strip().rstrip("/") for x in os.getenv("MINIAPP_ALLOWED_ORIGINS","https://izael2022.github.io").split(",") if x.strip()}
 # Desativação temporária: botões ocultos e operações bloqueadas até corrigir a publicação HTTPS.
-MINIAPPS_ENABLED=False
+MINIAPPS_ENABLED=True
 MINIAPP_API_PORT=max(1,min(65535,int(os.getenv("PORT",os.getenv("MINIAPP_API_PORT","8080")))))
 
 def validate_telegram_init_data(init_data):
