@@ -257,6 +257,9 @@ def menu():
     return [
         [btn("👤 MEU PERFIL","profile"),btn("💰 MINHA CARTEIRA","wallet")],
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
+        [webapp_btn("🗓️ CALENDÁRIO DE RECOMPENSAS","calendario.html")],
+        [webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
+        [webapp_btn("🎡 ROLETA ESPECIAL","roleta.html")],
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
@@ -267,10 +270,7 @@ def menu():
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
-        [btn("❓ CENTRAL DE AJUDA","help")],
-        [webapp_btn("🗓️ CALENDÁRIO DE RECOMPENSAS","calendario.html")],
-        [webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
-        [webapp_btn("🎡 ROLETA ESPECIAL","roleta.html")]
+        [btn("❓ CENTRAL DE AJUDA","help")]
     ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
