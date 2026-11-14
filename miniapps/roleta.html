@@ -1,1 +1,151 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#24003d"><title>Roleta Especial • PIT PRÊMIOS</title><link rel="stylesheet" href="assets/style.css"></head><body class="wheel-page"><main class="shell"><header class="top"><a class="back" href="index.html">×</a><span class="brand">👑 PIT <b>PRÊMIOS</b></span><span class="pill">💎 PONTOS</span></header><section class="subhero"><div class="eyebrow">✦ A SORTE ESTÁ NO AR ✦</div><h1>Roleta<br><em>especial</em></h1><p>Gire a roleta e concorra a pontos e prêmios incríveis!</p><div class="balance">💎 <strong id="balance">---</strong> <small>PONTOS</small></div></section><section class="wheel-panel"><div class="wheel-wrap"><div class="pointer"></div><div class="wheel" id="wheel"><div class="wheel-center">PIT<br><small>GIRAR</small></div></div></div><div class="prize-strip"><span>🎁 Bônus</span><span>💎 Pontos</span><span>✨ Surpresa</span></div><button class="primary" id="spin">🎯 GIRAR AGORA</button><p class="hint" id="wheel-status">Sua chance diária está esperando!</p></section><footer>Resultado validado e registrado pelo servidor.</footer></main><script src="https://telegram.org/js/telegram-web-app.js"></script><script src="assets/config.js"></script><script src="assets/app.js"></script><script src="assets/wheel.js"></script></body></html>
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#24003d">
+<title>Roleta Especial • PIT PRÊMIOS</title>
+<link rel="stylesheet" href="assets/style.css?v=5">
+
+<style>
+.wheel-page .wheel-wrap {
+  position: relative;
+  width: min(88vw, 350px);
+  aspect-ratio: 1;
+  margin: 18px auto;
+}
+.wheel-page .wheel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.wheel-page .wheel-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.wheel-page .wheel-labels span {
+  position: absolute;
+  transform: translate(-50%,-50%);
+  width: 23%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-align: center;
+  font-weight: 900;
+  text-shadow: 0 2px 4px #260039, 0 0 5px #260039;
+  line-height: 1.05;
+}
+.wheel-page .wheel-labels i {
+  font-style: normal;
+  font-size: clamp(16px,4vw,23px);
+}
+.wheel-page .wheel-labels b {
+  font-size: clamp(13px,3.5vw,19px);
+}
+.wheel-page .wheel-labels small {
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.wheel-page .wheel-center {
+  position: absolute;
+  z-index: 6;
+}
+.wheel-page .prize-label-0 {left:50%;top:19%}
+.wheel-page .prize-label-5 {left:72%;top:32%}
+.wheel-page .prize-label-10 {left:80%;top:50%}
+.wheel-page .prize-label-15 {left:72%;top:68%}
+.wheel-page .prize-label-20 {left:50%;top:81%}
+.wheel-page .prize-label-25 {left:28%;top:68%}
+.wheel-page .prize-label-50 {left:20%;top:50%}
+.wheel-page .prize-label-100 {left:28%;top:32%}
+
+.wheel-page .wheel-panel {
+  padding-bottom: 18px;
+}
+.wheel-page .primary {
+  width: min(94%, 430px);
+  margin: 12px auto;
+  display: block;
+  background: linear-gradient(#35ff16,#00b900);
+  color: white;
+  border: 2px solid #aaff72;
+  border-radius: 40px;
+  font-weight: 900;
+  font-size: 19px;
+  padding: 17px;
+  box-shadow: 0 0 15px #32ff20;
+}
+.wheel-page .bottom-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+</style>
+</head>
+
+<body class="wheel-page">
+<main class="shell">
+
+<header class="top">
+<a class="back" href="index.html">×</a>
+<span class="brand">👑 PIT <b>PRÊMIOS</b></span>
+<span class="pill">💎 PONTOS</span>
+</header>
+
+<section class="subhero">
+<div class="eyebrow">✦ A SORTE ESTÁ NO AR ✦</div>
+<h1>ROLETA<br><em>ESPECIAL</em></h1>
+<p>Gire a roleta e concorra a pontos e prêmios incríveis!</p>
+<div class="balance">
+💎 <strong id="balance">---</strong>
+<small>PONTOS</small>
+</div>
+</section>
+
+<section class="wheel-panel">
+<div class="wheel-wrap">
+
+<div class="pointer"></div>
+
+<div class="wheel" id="wheel">
+<div class="wheel-labels">
+<span class="prize-label-0"><i>🎁</i><b>0</b><small>PONTOS</small></span>
+<span class="prize-label-5"><i>💎</i><b>5</b><small>PONTOS</small></span>
+<span class="prize-label-10"><i>🎁</i><b>10</b><small>PONTOS</small></span>
+<span class="prize-label-15"><i>🎟️</i><b>15</b><small>PONTOS</small></span>
+<span class="prize-label-20"><i>💎</i><b>20</b><small>PONTOS</small></span>
+<span class="prize-label-25"><i>🎁</i><b>25</b><small>PONTOS</small></span>
+<span class="prize-label-50"><i>💎</i><b>50</b><small>PONTOS</small></span>
+<span class="prize-label-100"><i>💎</i><b>100</b><small>PONTOS</small></span>
+</div>
+
+<div class="wheel-center">
+PIT<br><small>GIRAR</small>
+</div>
+</div>
+</div>
+
+<div class="prize-strip">
+<span>🎁 Bônus</span>
+<span>💎 Pontos</span>
+<span>✨ Surpresa</span>
+</div>
+
+<button class="primary" id="spin">🎯 GIRAR AGORA</button>
+<p class="hint" id="wheel-status">Sua chance diária está esperando!</p>
+</section>
+
+<footer>Resultado validado e registrado pelo servidor.</footer>
+</main>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/wheel.js?v=5"></script>
+</body>
+</html>
