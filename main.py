@@ -278,6 +278,7 @@ def back(): return [[btn("⬅️ Menu principal","home")]]
 
 def admin_menu():
     return [[btn("📊 Estatísticas","admin:stats"),btn("👤 Consultar usuário","admin:user")],
+            [btn("📅 Cadastros de hoje","admin:dailyusers:0")],
             [btn("🆔 IDs de todos os usuários","admin:userids:0")],
             [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
             [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
@@ -1144,6 +1145,41 @@ def send_admin_user_ids(chat,page=0):
     send(chat,message,keyboard)
 
 
+
+def send_admin_daily_users(chat,page=0):
+    page_size=30
+    total,rows=db.admin_daily_registrations_page(page,page_size)
+    pages=max(1,(total+page_size-1)//page_size)
+    page=max(0,min(int(page),pages-1))
+    if not rows:
+        send(chat,"📅 <b>CADASTROS DE HOJE</b>\\n━━━━━━━━━━━━━━━━━━\\nNenhum usuário se cadastrou hoje ainda.\\n\\nA lista será atualizada automaticamente à meia-noite (horário de Brasília).",[[btn("🔄 Atualizar","admin:dailyusers:0")],[btn("⬅️ Voltar ao painel","admin:back")]])
+        return
+    first=page*page_size+1
+    last=first+len(rows)-1
+    entries=[]
+    for row in rows:
+        name=escape((row["first_name"] or "Sem nome")[:45])
+        username="@"+escape(row["username"]) if row["username"] else "sem username"
+        registered=escape(str(row["created_local"] or "")[11:16] or "horário indisponível")
+        entries.append(f"👤 <b>{name}</b> ({username})\\n🆔 <code>{row['user_id']}</code> — 🕒 {registered}")
+    message=(f"📅 <b>CADASTROS DE HOJE</b>\\n"
+             f"Total de hoje: <b>{total}</b>\\n"
+             f"Página <b>{page+1}/{pages}</b> — exibindo <b>{first}–{last}</b>\\n"
+             f"━━━━━━━━━━━━━━━━━━\\n" + "\\n\\n".join(entries) +
+             "\\n\\n<i>Filtro diário no horário de Brasília. Amanhã a lista começa novamente, sem apagar nenhum cadastro.</i>")
+    keyboard=[]
+    navigation=[]
+    if page>0:
+        navigation.append(btn("⬅️ Anterior",f"admin:dailyusers:{page-1}"))
+    if page+1<pages:
+        navigation.append(btn("Próxima ➡️",f"admin:dailyusers:{page+1}"))
+    if navigation:
+        keyboard.append(navigation)
+    keyboard.append([btn("🔄 Atualizar lista","admin:dailyusers:0")])
+    keyboard.append([btn("⬅️ Voltar ao painel","admin:back")])
+    send(chat,message,keyboard)
+
+
 def callback(c,update_id=None):
     data=c.get("data",""); uid=c.get("from",{}).get("id"); msg=c.get("message",{}); chat=msg.get("chat",{}).get("id")
     if chat is None: return
@@ -1315,6 +1351,9 @@ def callback(c,update_id=None):
         elif action=="finance":
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu())
+        elif action=="dailyusers" or action.startswith("dailyusers:"):
+            page=int(action.split(":",1)[1]) if ":" in action else 0
+            send_admin_daily_users(chat,page)
         elif action=="userids" or action.startswith("userids:"):
             page=int(action.split(":",1)[1]) if ":" in action else 0
             send_admin_user_ids(chat,page)
