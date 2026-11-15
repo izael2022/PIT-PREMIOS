@@ -345,6 +345,18 @@ def init_db():
         if "conversion_version" not in payout_columns:
             # Registros já existentes mantêm a conversão histórica (100 pontos = R$ 1).
             db.execute("ALTER TABLE payout_requests ADD COLUMN conversion_version INTEGER NOT NULL DEFAULT 1")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS additional_admins(
+                user_id INTEGER PRIMARY KEY,
+                permissions TEXT NOT NULL DEFAULT '[]',
+                active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+                added_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_additional_admins_active ON additional_admins(active)")
         db.commit()
 
 
@@ -1833,3 +1845,113 @@ def set_maintenance_mode(enabled):
         db.execute("INSERT INTO bot_settings(key,value) VALUES('maintenance_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("1" if enabled else "0",))
         db.commit()
     return bool(enabled)
+
+
+# Administradores adicionais: permissões independentes da equipe de suporte.
+ADMIN_PERMISSION_GROUPS = {
+    "users": "Consultar usuários e cadastros",
+    "points": "Adicionar ou retirar pontos",
+    "vip": "Gerenciar VIP",
+    "redemptions": "Analisar resgates",
+    "payouts": "Analisar saques Pix",
+    "store": "Gerenciar pedidos e prêmios da loja",
+    "tasks": "Gerenciar e revisar tarefas",
+    "fraud": "Analisar indicações e antifraude",
+    "codes": "Gerar códigos promocionais",
+    "broadcast": "Enviar comunicados",
+    "finance": "Consultar painel financeiro",
+    "health": "Consultar monitoramento",
+    "support": "Gerenciar equipe e atendimentos",
+    "maintenance": "Ativar ou desativar manutenção",
+}
+
+
+def add_additional_admin(user_id, permissions, added_by):
+    user_id=int(user_id)
+    added_by=int(added_by)
+    if user_id in ADMIN_IDS:
+        raise ValueError("Administradores principais já possuem acesso total e não podem ser alterados.")
+    clean=sorted({str(p) for p in permissions if str(p) in ADMIN_PERMISSION_GROUPS})
+    if not clean:
+        raise ValueError("Selecione pelo menos uma permissão.")
+    with connect() as db:
+        exists=db.execute("SELECT 1 FROM users WHERE user_id=?",(user_id,)).fetchone()
+        if not exists:
+            raise ValueError("Esse usuário ainda não iniciou o bot com /start.")
+        db.execute("""
+            INSERT INTO additional_admins(user_id,permissions,active,added_by)
+            VALUES(?,?,1,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                permissions=excluded.permissions,active=1,
+                added_by=excluded.added_by,updated_at=CURRENT_TIMESTAMP
+        """,(user_id,json.dumps(clean,ensure_ascii=False),added_by))
+        db.commit()
+    return clean
+
+
+def get_additional_admin(user_id):
+    user_id=int(user_id)
+    if user_id in ADMIN_IDS:
+        return {"user_id":user_id,"permissions":list(ADMIN_PERMISSION_GROUPS),"active":True,"primary":True}
+    with connect() as db:
+        row=db.execute("""
+            SELECT a.user_id,a.permissions,a.active,a.added_by,a.created_at,a.updated_at,
+                   u.first_name,u.username
+            FROM additional_admins a LEFT JOIN users u ON u.user_id=a.user_id
+            WHERE a.user_id=?
+        """,(user_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            permissions=json.loads(row["permissions"] or "[]")
+        except (TypeError,ValueError):
+            permissions=[]
+        return {**dict(row),"permissions":[p for p in permissions if p in ADMIN_PERMISSION_GROUPS],
+                "active":bool(row["active"]),"primary":False}
+
+
+def list_additional_admins(active_only=False):
+    query="""
+        SELECT a.user_id,a.permissions,a.active,a.added_by,a.created_at,a.updated_at,
+               u.first_name,u.username
+        FROM additional_admins a LEFT JOIN users u ON u.user_id=a.user_id
+    """
+    if active_only:
+        query+=" WHERE a.active=1"
+    query+=" ORDER BY a.active DESC,a.created_at DESC"
+    with connect() as db:
+        rows=db.execute(query).fetchall()
+    result=[]
+    for row in rows:
+        item=dict(row)
+        try:
+            permissions=json.loads(item.get("permissions") or "[]")
+        except (TypeError,ValueError):
+            permissions=[]
+        item["permissions"]=[p for p in permissions if p in ADMIN_PERMISSION_GROUPS]
+        item["active"]=bool(item["active"])
+        result.append(item)
+    return result
+
+
+def has_admin_permission(user_id, permission):
+    user_id=int(user_id)
+    if user_id in ADMIN_IDS:
+        return True
+    if permission not in ADMIN_PERMISSION_GROUPS:
+        return False
+    record=get_additional_admin(user_id)
+    return bool(record and record["active"] and permission in record["permissions"])
+
+
+def revoke_additional_admin(user_id):
+    user_id=int(user_id)
+    if user_id in ADMIN_IDS:
+        raise ValueError("O acesso dos administradores principais é protegido.")
+    with connect() as db:
+        cur=db.execute("""
+            UPDATE additional_admins SET active=0,updated_at=CURRENT_TIMESTAMP
+            WHERE user_id=? AND active=1
+        """,(user_id,))
+        db.commit()
+        return cur.rowcount>0
