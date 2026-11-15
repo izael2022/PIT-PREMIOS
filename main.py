@@ -251,6 +251,16 @@ def send_photo(chat,photo,caption,keyboard=None):
 def admin(uid): return uid in ADMIN_IDS
 def admin_has(uid,permission):
     return bool(uid and db.has_admin_permission(uid,permission))
+
+def is_active_additional_admin(uid):
+    if not uid or admin(uid):
+        return False
+    try:
+        record=db.get_additional_admin(uid)
+        return bool(record and record.get("active"))
+    except Exception:
+        log.exception("Não foi possível consultar o cadastro de administrador adicional")
+        return False
 def btn(label,data): return {"text":label,"callback_data":data}
 
 ADMIN_ACTION_PERMISSIONS = {
@@ -914,7 +924,7 @@ def command(m,update_id=None):
         else:
             send(chat,"🔒 Por segurança, os comandos do PIT PRÊMIOS só podem ser usados na conversa privada com o bot.")
         return
-    if uid and not admin(uid) and not (db.get_additional_admin(uid) and db.get_additional_admin(uid).get("active")):
+    if uid and not admin(uid) and not is_active_additional_admin(uid):
         block=db.get_account_block(uid)
         if block:
             send(chat,"🚫 <b>CONTA BLOQUEADA</b>\n\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\nMotivo: "+escape(block["reason"])+"\n\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
@@ -1363,7 +1373,7 @@ def callback(c,update_id=None):
         else:
             permission=admin_action_permission(action)
             delegated=db.get_additional_admin(uid) if uid else None
-            allowed=(bool(delegated and delegated.get("active")) if permission=="__active_admin__"
+            allowed=(is_active_additional_admin(uid) if permission=="__active_admin__"
                      else bool(permission and admin_has(uid,permission)))
             if not admin(uid) and not allowed:
                 send(chat,"⛔ Você não tem permissão para acessar essa função.")
@@ -1760,7 +1770,7 @@ def process_update(update):
         if "message" in update:
             m=update["message"]
             sender=m.get("from",{}).get("id")
-            if sender and not admin(sender) and not (db.get_additional_admin(sender) and db.get_additional_admin(sender).get("active")) and db.get_maintenance_mode():
+            if sender and not admin(sender) and not is_active_additional_admin(sender) and db.get_maintenance_mode():
                 if (m.get("text") or "").startswith("/start"):
                     send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
                 if update_id is not None: db.mark_update_processed(update_id)
