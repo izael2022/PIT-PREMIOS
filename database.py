@@ -295,6 +295,40 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(user_id)
             )
         """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS support_staff(
+                user_id INTEGER PRIMARY KEY,
+                active INTEGER NOT NULL DEFAULT 1,
+                added_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS support_tickets(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed')),
+                assigned_to INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                closed_at TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS support_messages(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER NOT NULL,
+                sender_id INTEGER NOT NULL,
+                sender_role TEXT NOT NULL CHECK(sender_role IN ('user','staff','admin')),
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(ticket_id) REFERENCES support_tickets(id)
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status,updated_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id,id)")
+
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
@@ -305,6 +339,122 @@ def init_db():
             # Registros já existentes mantêm a conversão histórica (100 pontos = R$ 1).
             db.execute("ALTER TABLE payout_requests ADD COLUMN conversion_version INTEGER NOT NULL DEFAULT 1")
         db.commit()
+
+
+
+# Atendimento interno: tabelas aditivas; nunca apaga dados existentes.
+def add_support_staff(user_id,admin_id):
+    user_id=int(user_id)
+    if user_id in ADMIN_IDS:
+        raise ValueError("Esse usuário já é administrador principal.")
+    with connect() as db:
+        if not db.execute("SELECT 1 FROM users WHERE user_id=?",(user_id,)).fetchone():
+            raise ValueError("Esse ID ainda não iniciou o bot. Peça para a pessoa enviar /start primeiro.")
+        db.execute("INSERT INTO support_staff(user_id,active,added_by) VALUES(?,1,?) ON CONFLICT(user_id) DO UPDATE SET active=1,added_by=excluded.added_by",(user_id,int(admin_id)))
+        db.commit()
+    return True
+
+def remove_support_staff(user_id):
+    with connect() as db:
+        cur=db.execute("UPDATE support_staff SET active=0 WHERE user_id=? AND active=1",(int(user_id),))
+        db.commit()
+        return cur.rowcount==1
+
+def list_support_staff():
+    with connect() as db:
+        return [dict(r) for r in db.execute("SELECT s.user_id,s.active,s.created_at,u.first_name,u.username FROM support_staff s LEFT JOIN users u ON u.user_id=s.user_id ORDER BY s.active DESC,s.created_at").fetchall()]
+
+def is_support_staff(user_id):
+    with connect() as db:
+        return db.execute("SELECT 1 FROM support_staff WHERE user_id=? AND active=1",(int(user_id),)).fetchone() is not None
+
+def create_support_ticket(user_id):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",(int(user_id),)).fetchone()
+        if row:
+            db.commit()
+            return dict(row),False
+        cur=db.execute("INSERT INTO support_tickets(user_id) VALUES(?)",(int(user_id),))
+        row=db.execute("SELECT * FROM support_tickets WHERE id=?",(cur.lastrowid,)).fetchone()
+        db.commit()
+        return dict(row),True
+
+def get_open_support_ticket(user_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",(int(user_id),)).fetchone()
+        return dict(row) if row else None
+
+def get_support_ticket(ticket_id):
+    with connect() as db:
+        row=db.execute("SELECT * FROM support_tickets WHERE id=?",(int(ticket_id),)).fetchone()
+        return dict(row) if row else None
+
+def list_support_tickets(status='open',limit=30):
+    with connect() as db:
+        rows=db.execute("""SELECT t.*,u.first_name,u.username FROM support_tickets t
+                           LEFT JOIN users u ON u.user_id=t.user_id
+                           WHERE t.status=? ORDER BY t.updated_at DESC LIMIT ?""",(str(status),max(1,min(int(limit),100)))).fetchall()
+        return [dict(r) for r in rows]
+
+def claim_support_ticket(ticket_id,staff_id):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM support_tickets WHERE id=? AND status='open'",(int(ticket_id),)).fetchone()
+        if not row:
+            db.rollback()
+            return None,"closed"
+        if row["assigned_to"] not in (None,int(staff_id)):
+            db.rollback()
+            return dict(row),"taken"
+        db.execute("UPDATE support_tickets SET assigned_to=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='open' AND (assigned_to IS NULL OR assigned_to=?)",(int(staff_id),int(ticket_id),int(staff_id)))
+        result=db.execute("SELECT * FROM support_tickets WHERE id=?",(int(ticket_id),)).fetchone()
+        db.commit()
+        return dict(result),"ok"
+
+def add_support_message(ticket_id,sender_id,sender_role,message):
+    value=str(message or "").strip()
+    if not value or len(value)>4000:
+        raise ValueError("A mensagem deve ter entre 1 e 4.000 caracteres.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        ticket=db.execute("SELECT * FROM support_tickets WHERE id=? AND status='open'",(int(ticket_id),)).fetchone()
+        if not ticket:
+            db.rollback()
+            raise ValueError("Este atendimento está encerrado.")
+        if sender_role=="user" and int(ticket["user_id"])!=int(sender_id):
+            db.rollback()
+            raise ValueError("Este atendimento não pertence a você.")
+        if sender_role=="staff" and int(ticket["assigned_to"] or 0)!=int(sender_id):
+            db.rollback()
+            raise ValueError("Somente o atendente responsável pode responder.")
+        db.execute("INSERT INTO support_messages(ticket_id,sender_id,sender_role,message) VALUES(?,?,?,?)",(int(ticket_id),int(sender_id),str(sender_role),value))
+        db.execute("UPDATE support_tickets SET updated_at=CURRENT_TIMESTAMP WHERE id=?",(int(ticket_id),))
+        db.commit()
+    return True
+
+def support_ticket_history(ticket_id,limit=50):
+    with connect() as db:
+        return [dict(r) for r in db.execute("SELECT * FROM support_messages WHERE ticket_id=? ORDER BY id DESC LIMIT ?",(int(ticket_id),max(1,min(int(limit),100)))).fetchall()][::-1]
+
+def close_support_ticket(ticket_id,actor_id,actor_role):
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row=db.execute("SELECT * FROM support_tickets WHERE id=? AND status='open'",(int(ticket_id),)).fetchone()
+        if not row:
+            db.rollback()
+            return None
+        if actor_role=="user" and int(row["user_id"])!=int(actor_id):
+            db.rollback()
+            return None
+        if actor_role=="staff" and int(row["assigned_to"] or 0)!=int(actor_id):
+            db.rollback()
+            return None
+        db.execute("UPDATE support_tickets SET status='closed',closed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",(int(ticket_id),))
+        result=dict(row)
+        db.commit()
+        return result
+
 
 def get_auto_delete_settings():
     with connect() as db:
