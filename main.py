@@ -914,7 +914,7 @@ def command(m,update_id=None):
         else:
             send(chat,"🔒 Por segurança, os comandos do PIT PRÊMIOS só podem ser usados na conversa privada com o bot.")
         return
-    if uid and not admin(uid):
+    if uid and not admin(uid) and not (db.get_additional_admin(uid) and db.get_additional_admin(uid).get("active")):
         block=db.get_account_block(uid)
         if block:
             send(chat,"🚫 <b>CONTA BLOQUEADA</b>\n\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\nMotivo: "+escape(block["reason"])+"\n\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
@@ -1249,7 +1249,7 @@ def callback(c,update_id=None):
             else:
                 send(chat,"🚫 <b>CONTA BLOQUEADA</b>\nSeu acesso está temporariamente bloqueado. Motivo: "+escape(block["reason"]))
             return
-    if uid and not admin(uid) and db.get_maintenance_mode():
+    if uid and not admin(uid) and not (db.get_additional_admin(uid) and db.get_additional_admin(uid).get("active")) and db.get_maintenance_mode():
         send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias para oferecer uma experiência melhor. Tente novamente mais tarde. 💙")
         if not c.get("_answered_immediately"):
             try: api("answerCallbackQuery",{"callback_query_id":c["id"]})
@@ -1267,7 +1267,7 @@ def callback(c,update_id=None):
         try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
     if data.startswith("admin:payoutreduce:"):
-        if not admin(uid): return
+        if not admin_has(uid,"payouts"): return
         payout_id=int(data.rsplit(":",1)[1])
         payout=next((x for x in db.pending_payouts() if x["id"]==payout_id),None)
         if payout:
@@ -1415,7 +1415,7 @@ def callback(c,update_id=None):
 
         if action=="stats":
             st=db.stats()
-            send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
+            send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu(uid))
         elif action=="maintenance":
             enabled=db.get_maintenance_mode()
             if enabled:
@@ -1456,22 +1456,22 @@ def callback(c,update_id=None):
             admin_health_report(chat)
         elif action=="finance":
             f=db.financial_dashboard()
-            send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu())
+            send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu(uid))
         elif action=="dailyusers" or action.startswith("dailyusers:"):
             page=int(action.split(":",1)[1]) if ":" in action else 0
             send_admin_daily_users(chat,page)
         elif action=="userids" or action.startswith("userids:"):
             page=int(action.split(":",1)[1]) if ":" in action else 0
             send_admin_user_ids(chat,page)
-        elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
-        elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
-        elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu())
+        elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu(uid))
+        elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu(uid))
+        elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu(uid))
         elif action=="codes":
-            send(chat,"🎟️ <b>GERADOR DE CÓDIGOS PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\nCrie códigos promocionais para distribuir pontos aos participantes.\n\n<b>Formato</b>\n<code>/gerarcodigo PONTOS [QUANTIDADE_DE_USOS]</code>\n\n<b>Exemplos</b>\n• <code>/gerarcodigo 1000</code> — 1 pessoa recebe 1.000 pontos.\n• <code>/gerarcodigo 5000 10</code> — até 10 pessoas recebem 5.000 pontos cada.\n\n<b>Regras</b>\n• Cada participante pode usar o mesmo código uma única vez.\n• O código é encerrado automaticamente ao atingir o limite.\n• Compartilhe o código somente com o público desejado.\n\nO participante deve abrir o bot no privado, tocar em <b>🎟️ RESGATAR CÓDIGO</b> e informar o código.",admin_menu())
-        elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu())
+            send(chat,"🎟️ <b>GERADOR DE CÓDIGOS PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\nCrie códigos promocionais para distribuir pontos aos participantes.\n\n<b>Formato</b>\n<code>/gerarcodigo PONTOS [QUANTIDADE_DE_USOS]</code>\n\n<b>Exemplos</b>\n• <code>/gerarcodigo 1000</code> — 1 pessoa recebe 1.000 pontos.\n• <code>/gerarcodigo 5000 10</code> — até 10 pessoas recebem 5.000 pontos cada.\n\n<b>Regras</b>\n• Cada participante pode usar o mesmo código uma única vez.\n• O código é encerrado automaticamente ao atingir o limite.\n• Compartilhe o código somente com o público desejado.\n\nO participante deve abrir o bot no privado, tocar em <b>🎟️ RESGATAR CÓDIGO</b> e informar o código.",admin_menu(uid))
+        elif action=="broadcast": send(chat,"📢 Para enviar um comunicado a todos os usuários, envie:\n<code>/broadcast SUA MENSAGEM</code>",admin_menu(uid))
         elif action=="managerewards":
             rows=db.all_rewards()
-            if not rows: send(chat,"🗂️ Nenhum prêmio cadastrado.",admin_menu()); return
+            if not rows: send(chat,"🗂️ Nenhum prêmio cadastrado.",admin_menu(uid)); return
             kb=[]
             for r in rows:
                 state="ATIVO" if r["active"] else "INATIVO"
@@ -1483,26 +1483,26 @@ def callback(c,update_id=None):
             send(chat,"🗂️ <b>GERENCIAR PRÊMIOS</b>\nPrêmios inativos e pedidos antigos permanecem salvos no histórico.",kb)
         elif action=="rewardorders":
             rows=db.pending_reward_orders()
-            if not rows: send(chat,"🎁 Nenhum pedido da loja aguardando análise.",admin_menu()); return
+            if not rows: send(chat,"🎁 Nenhum pedido da loja aguardando análise.",admin_menu(uid)); return
             for r in rows:
                 kb=[[btn("✅ Aprovar pedido","rewardreview:"+str(r["id"])+":yes"),btn("❌ Rejeitar","rewardreview:"+str(r["id"])+":no")]]
                 send(chat,f"🎁 <b>PEDIDO DA LOJA #{r['id']}</b>\nPrêmio: {escape(r['title'])}\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points_spent']}",kb)
         elif action=="orders":
             rows=db.pending_redemptions()
-            if not rows: send(chat,"Nenhum resgate pendente.",admin_menu())
+            if not rows: send(chat,"Nenhum resgate pendente.",admin_menu(uid))
             for r in rows:
                 kb=[[btn("✅ Aprovar","review:"+str(r["id"])+":yes"),btn("❌ Rejeitar","review:"+str(r["id"])+":no")]]
                 send(chat,f"🎟️ <b>RESGATE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nPontos: {r['points']}\nPrêmio: {escape(r['reward'])}",kb)
         elif action=="manage_tasks":
             rows=db.active_tasks()
             if not rows:
-                send(chat,"🗂️ Não há tarefas ativas para apagar.",admin_menu()); return
+                send(chat,"🗂️ Não há tarefas ativas para apagar.",admin_menu(uid)); return
             send(chat,"🗂️ <b>GERENCIAR TAREFAS</b>\nEscolha a tarefa que deseja retirar da lista dos usuários:",[[btn("🗑️ #"+str(row["id"])+" — "+row["title"][:30],"taskdisable:"+str(row["id"]))] for row in rows]+[[btn("⬅️ Voltar ao painel","admin:back")]])
         elif action=="back":
-            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
+            send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu(uid))
         elif action=="tasks":
             rows=db.pending_task_submissions()
-            if not rows: send(chat,"📋 Nenhuma tarefa aguardando revisão.",admin_menu()); return
+            if not rows: send(chat,"📋 Nenhuma tarefa aguardando revisão.",admin_menu(uid)); return
             for row in rows:
                 kb=[[btn("✅ Aprovar pontos","taskreview:"+str(row["id"])+":yes"),btn("❌ Rejeitar","taskreview:"+str(row["id"])+":no")]]
                 proof=row["proof"] or ""
@@ -1513,14 +1513,14 @@ def callback(c,update_id=None):
                     send(chat,caption+"\nComprovação: "+escape(proof),kb)
         elif action=="fraud":
             rows=db.pending_referral_reviews()
-            if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu()); return
+            if not rows: send(chat,"🛡️ Nenhuma indicação aguardando análise.",admin_menu(uid)); return
             for r in rows:
                 kb=[[btn("✅ Aprovar indicação","refreview:"+str(r["id"])+":yes"),btn("❌ Rejeitar","refreview:"+str(r["id"])+":no")]]
                 level="🔴 RISCO ALTO" if r["risk_level"]=="high" else "🟡 REVISÃO"
                 send(chat,f"🛡️ <b>ANÁLISE ANTIFRAUDE #{r['id']}</b>\n{level}\n━━━━━━━━━━━━━━━━━━\nIndicador: <code>{r['referrer_id']}</code>\nNovo usuário: <code>{r['referred_user_id']}</code>\nNome: {escape(r['first_name'] or 'Sem nome')} (@{escape(r['username'] or 'sem username')})\n\n📈 <b>Atividade do indicador</b>\nCadastros em 10 min: <b>{r['referrer_last_10m']}</b>\nCadastros em 24 horas: <b>{r['referrer_last_24h']}</b>\nIndicações pendentes: <b>{r['referrer_pending']}</b>\n\n⚠️ <b>Sinais detectados</b>\n{escape(r['risk_reason'])}\n\nA análise é um alerta para revisão humana, não uma confirmação automática de fraude.",kb)
         elif action=="payouts":
             rows=db.pending_payouts()
-            if not rows: send(chat,"Nenhum saque pendente.",admin_menu())
+            if not rows: send(chat,"Nenhum saque pendente.",admin_menu(uid))
             for r in rows:
                 amount=r["amount_cents"]/100
                 kb=[[btn("➖ Diminuir saque","admin:payoutreduce:"+str(r["id"]))],[btn("✅ Confirmar Pix pago","payout:"+str(r["id"])+":yes"),btn("❌ Rejeitar pedido","payout:"+str(r["id"])+":no")]]
@@ -1757,7 +1757,7 @@ def process_update(update):
         if "message" in update:
             m=update["message"]
             sender=m.get("from",{}).get("id")
-            if sender and not admin(sender) and db.get_maintenance_mode():
+            if sender and not admin(sender) and not (db.get_additional_admin(sender) and db.get_additional_admin(sender).get("active")) and db.get_maintenance_mode():
                 if (m.get("text") or "").startswith("/start"):
                     send(m["chat"]["id"],"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias. Assim que terminar, o acesso será liberado. Obrigado pela compreensão! 💙")
                 if update_id is not None: db.mark_update_processed(update_id)
@@ -2273,7 +2273,7 @@ class MiniAppHandler(http.server.BaseHTTPRequestHandler):
             auth=self.headers.get("Authorization","")
             if not auth.startswith("tma "): raise ValueError("Abra a Mini App pelo botão oficial do bot.")
             uid=validate_telegram_init_data(auth[4:])
-            if db.get_maintenance_mode() and not admin(uid):
+            if db.get_maintenance_mode() and not admin(uid) and not (db.get_additional_admin(uid) and db.get_additional_admin(uid).get("active")):
                 self._json(503,{"ok":False,"error":"PIT PRÊMIOS em manutenção. Tente novamente mais tarde."},origin)
                 return
             user=db.get_user(uid)
