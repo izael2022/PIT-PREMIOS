@@ -1509,7 +1509,7 @@ def callback(c,update_id=None):
                 send(chat,f"💸 <b>SAQUE #{r['id']}</b>\nUsuário: <code>{r['user_id']}</code>\nValor: R$ {amount:.2f}\nPontos: {r['points']}\nChave ({escape(r['pix_key_type'])}): <code>{escape(r['pix_key'])}</code>",kb)
         return
     if data.startswith("pixreview:"):
-        if not admin(uid): return
+        if not admin_has(uid,"payouts"): return
         _,target,decision=data.split(":")
         result=db.review_pix_profile(int(target),uid,decision=="yes")
         if not result: send(chat,"Esse cadastro Pix não está mais aguardando análise."); return
@@ -1640,7 +1640,7 @@ def callback(c,update_id=None):
         except (ValueError,IndexError):
             send(chat,"Identificação de tarefa inválida.")
     elif data.startswith("taskreview:"):
-        if not admin(uid): return
+        if not admin_has(uid,"tasks"): return
         _,sid,decision=data.split(":")
         result=db.review_task_submission(int(sid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Essa tarefa já foi analisada."); return
@@ -1652,7 +1652,7 @@ def callback(c,update_id=None):
         try: notify_user(result["user_id"],f"📋 Sua comprovação da tarefa <b>{escape(result['title'])}</b> foi {status}.")
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
-        if not admin(uid): return
+        if not admin_has(uid,"fraud"): return
         _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL,update_id=update_id)
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
@@ -1680,7 +1680,7 @@ def callback(c,update_id=None):
         except (ValueError,IndexError):
             send(chat,"Não foi possível cancelar este saque.")
     elif data.startswith("payout:"):
-        if not admin(uid): return
+        if not admin_has(uid,"payouts"): return
         _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Este pedido já foi analisado."); return
         approved=decision=="yes"
@@ -1691,7 +1691,7 @@ def callback(c,update_id=None):
             else: notify_user(result["user_id"],f"❌ Seu saque #{rid} foi rejeitado. Seus pontos foram devolvidos à carteira.")
         except Exception: log.exception("Falha ao avisar usuário sobre saque")
     elif data.startswith("rewarddisable:"):
-        if not admin(uid): return
+        if not admin_has(uid,"store"): return
         try:
             reward_id=int(data.split(":",1)[1])
             if db.deactivate_reward(reward_id):
@@ -1700,7 +1700,7 @@ def callback(c,update_id=None):
                 send(chat,"Esse prêmio já está inativo ou não existe.",[[btn("🗂️ Gerenciar prêmios","admin:managerewards")]])
         except (ValueError,IndexError): send(chat,"Identificação de prêmio inválida.")
     elif data.startswith("rewardinfo:"):
-        if not admin(uid): return
+        if not admin_has(uid,"store"): return
         send(chat,"Este prêmio está inativo. Os registros foram mantidos.",[[btn("🗂️ Gerenciar prêmios","admin:managerewards")]])
     elif data.startswith("rewardcancel:"):
         try:
@@ -1713,7 +1713,7 @@ def callback(c,update_id=None):
         except (ValueError,IndexError):
             send(chat,"Não foi possível cancelar este pedido.")
     elif data.startswith("rewardreview:"):
-        if not admin(uid): return
+        if not admin_has(uid,"store"): return
         _,rid,decision=data.split(":")
         result=db.review_reward_order(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: send(chat,"Este pedido já foi analisado."); return
@@ -1722,7 +1722,7 @@ def callback(c,update_id=None):
         try: notify_user(result["user_id"],f"🎁 Seu pedido de recompensa #{rid} foi {status}.")
         except Exception: log.exception("Falha ao avisar usuário sobre pedido da loja")
     elif data.startswith("review:"):
-        if not admin(uid): return
+        if not admin_has(uid,"redemptions"): return
         _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes",update_id=update_id)
         if not result: return
         status="aprovado" if decision=="yes" else "rejeitado; pontos devolvidos"
