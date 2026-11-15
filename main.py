@@ -259,6 +259,8 @@ def menu():
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
         [webapp_btn("🗓️ CALENDÁRIO DE RECOMPENSAS","calendario.html")],
         [webapp_btn("🎁 EVENTO SURPRESA","surpresa.html")],
+        [webapp_btn("🧠 QUIZ DIÁRIO","quiz.html")],
+        [webapp_btn("✉️ ENVELOPE PREMIADO","envelope.html")],
         [btn("🎁 BAÚ SURPRESA","game:chest")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
@@ -1835,6 +1837,13 @@ def validate_telegram_init_data(init_data):
     if uid<=0: raise ValueError("Conta do Telegram inválida.")
     return uid
 
+
+QUIZ_QUESTIONS = [{"id":"q01","question":"Qual é o maior planeta do Sistema Solar?","options":[["A","Terra"],["B","Júpiter"],["C","Marte"],["D","Vênus"]],"answer":"B"},{"id":"q02","question":"Quantos lados tem um hexágono?","options":[["A","Cinco"],["B","Seis"],["C","Sete"],["D","Oito"]],"answer":"B"},{"id":"q03","question":"Qual é a capital do Japão?","options":[["A","Seul"],["B","Pequim"],["C","Tóquio"],["D","Bangkok"]],"answer":"C"},{"id":"q04","question":"Qual mamífero põe ovos?","options":[["A","Morcego"],["B","Ornitorrinco"],["C","Golfinho"],["D","Coala"]],"answer":"B"},{"id":"q05","question":"Quanto é 9 × 7?","options":[["A","56"],["B","63"],["C","72"],["D","79"]],"answer":"B"},{"id":"q06","question":"Qual oceano banha a costa leste do Brasil?","options":[["A","Pacífico"],["B","Índico"],["C","Atlântico"],["D","Ártico"]],"answer":"C"},{"id":"q07","question":"Em qual estado físico está o gelo?","options":[["A","Gasoso"],["B","Líquido"],["C","Sólido"],["D","Plasma"]],"answer":"C"},{"id":"q08","question":"Quanto é 100 dividido por 4?","options":[["A","20"],["B","25"],["C","30"],["D","40"]],"answer":"B"},{"id":"q09","question":"Qual instrumento mede a temperatura?","options":[["A","Barômetro"],["B","Termômetro"],["C","Bússola"],["D","Régua"]],"answer":"B"},{"id":"q10","question":"Quantos minutos há em duas horas?","options":[["A","90"],["B","100"],["C","120"],["D","180"]],"answer":"C"},{"id":"q11","question":"Qual país fica na América do Sul?","options":[["A","Portugal"],["B","Chile"],["C","Canadá"],["D","Japão"]],"answer":"B"},{"id":"q12","question":"Qual estrela fica no centro do Sistema Solar?","options":[["A","Lua"],["B","Sirius"],["C","Sol"],["D","Polaris"]],"answer":"C"},{"id":"q13","question":"Quantos dias tem uma semana?","options":[["A","Cinco"],["B","Seis"],["C","Sete"],["D","Oito"]],"answer":"C"},{"id":"q14","question":"Qual é o idioma oficial do Brasil?","options":[["A","Espanhol"],["B","Português"],["C","Inglês"],["D","Francês"]],"answer":"B"},{"id":"q15","question":"Qual é o maior animal conhecido atualmente?","options":[["A","Elefante-africano"],["B","Tubarão-branco"],["C","Baleia-azul"],["D","Girafa"]],"answer":"C"},{"id":"q16","question":"Quanto é 15 + 27?","options":[["A","32"],["B","40"],["C","42"],["D","45"]],"answer":"C"},{"id":"q17","question":"Qual material é atraído por um ímã comum?","options":[["A","Madeira"],["B","Ferro"],["C","Vidro"],["D","Papel"]],"answer":"B"},{"id":"q18","question":"Em qual continente fica o Egito?","options":[["A","África"],["B","Europa"],["C","Oceania"],["D","América"]],"answer":"A"},{"id":"q19","question":"Qual órgão bombeia o sangue pelo corpo?","options":[["A","Pulmão"],["B","Estômago"],["C","Coração"],["D","Rim"]],"answer":"C"},{"id":"q20","question":"Quanto é 8 × 8?","options":[["A","56"],["B","64"],["C","72"],["D","88"]],"answer":"B"}]
+
+def daily_quiz_for_date(day):
+    rng=random.Random('pit-premios-quiz-'+day)
+    return sorted(rng.sample(list(QUIZ_QUESTIONS),5),key=lambda item:item['id'])
+
 class MiniAppHandler(http.server.BaseHTTPRequestHandler):
     server_version="PITMiniApps/1.0"
     def log_message(self,fmt,*args):
@@ -1866,7 +1875,7 @@ class MiniAppHandler(http.server.BaseHTTPRequestHandler):
         if origin not in MINIAPP_ALLOWED_ORIGINS:
             self._json(403,{"ok":False,"error":"Origem não autorizada."})
             return
-        if self.path not in ("/api/miniapps/me","/api/miniapps/calendar/claim","/api/miniapps/surprise/open","/api/miniapps/wheel/spin"):
+        if self.path not in ("/api/miniapps/me","/api/miniapps/calendar/claim","/api/miniapps/surprise/open","/api/miniapps/wheel/spin","/api/miniapps/quiz/today","/api/miniapps/quiz/submit","/api/miniapps/envelope/open"):
             self._json(404,{"ok":False,"error":"Operação não encontrada."},origin)
             return
         if not MINIAPPS_ENABLED:
@@ -1912,6 +1921,36 @@ class MiniAppHandler(http.server.BaseHTTPRequestHandler):
                 points=db.play_daily_game(uid,"chest",prize)
                 fresh=db.get_user(uid)
                 self._json(200,{"ok":True,"message":"Baú aberto! "+("Hoje não saiu prêmio em pontos. Tente novamente amanhã." if points==0 else "Você encontrou uma recompensa!"),"points":points,"balance":int(fresh["points"])},origin)
+                return
+            if self.path=="/api/miniapps/quiz/today":
+                day=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).date().isoformat()
+                previous=db.daily_quiz_status(uid,day)
+                if previous:
+                    self._json(200,{"ok":True,"completed":True,"correct":previous["correct_count"],"points":previous["points"],"balance":int(user["points"])},origin)
+                else:
+                    safe=[{"id":q["id"],"question":q["question"],"options":[{"value":o[0],"label":o[1]} for o in q["options"]]} for q in daily_quiz_for_date(day)]
+                    self._json(200,{"ok":True,"completed":False,"questions":safe},origin)
+                return
+            if self.path=="/api/miniapps/quiz/submit":
+                answers=body.get("answers")
+                if not isinstance(answers,dict) or len(answers)!=5:
+                    raise ValueError("Responda às cinco perguntas antes de enviar.")
+                day=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).date().isoformat()
+                questions=daily_quiz_for_date(day)
+                if set(answers)!={q["id"] for q in questions} or any(v not in ("A","B","C","D") for v in answers.values()):
+                    raise ValueError("Respostas inválidas. Atualize o quiz e tente novamente.")
+                correct=sum(1 for q in questions if answers.get(q["id"])==q["answer"])
+                points=correct*10
+                db.submit_daily_quiz(uid,day,correct,points,answers)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":f"Quiz concluído: {correct} de 5 acertos!","correct":correct,"points":points,"balance":int(fresh["points"])},origin)
+                return
+            if self.path=="/api/miniapps/envelope/open":
+                day=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).date().isoformat()
+                prize=random.choices([5,10,15,20,30,50],[35,25,18,12,8,2])[0]
+                points=db.claim_daily_envelope(uid,day,prize)
+                fresh=db.get_user(uid)
+                self._json(200,{"ok":True,"message":"Seu envelope foi aberto!","points":points,"balance":int(fresh["points"])},origin)
                 return
             if self.path=="/api/miniapps/wheel/spin":
                 prize=random.choices([0,5,10,15,20,25,50,100],[15,20,20,15,12,8,8,2])[0]
