@@ -284,7 +284,7 @@ def admin_menu(uid=None):
             keyboard.append([btn(label,"admin:"+action)])
     if admin(uid):
         keyboard.append([btn("👥 Gerenciar administradores","admin:admins")])
-    keyboard.append([btn("⬅️ Fechar painel","home")])
+    if admin(uid):\n        keyboard.append([btn("👥 Gerenciar administradores","admin:admins")])\n    keyboard.append([btn("⬅️ Fechar painel","home")])
     return keyboard
 def webapp_btn(label,path):
     base="https://izael2022.github.io/PIT-PREMIOS/"
