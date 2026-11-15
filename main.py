@@ -263,7 +263,7 @@ ADMIN_ACTION_PERMISSIONS = {
 }
 def admin_action_permission(action):
     key=action.split(":",1)[0]
-    return "users" if key=="back" else ADMIN_ACTION_PERMISSIONS.get(key)
+    return "__active_admin__" if key=="back" else ADMIN_ACTION_PERMISSIONS.get(key)
 
 ADMIN_COMMAND_PERMISSIONS = {
     "/admin": None, "/stats": "health", "/saude": "health", "/health": "health",
@@ -1362,7 +1362,10 @@ def callback(c,update_id=None):
             if not admin(uid): return
         else:
             permission=admin_action_permission(action)
-            if not admin(uid) and (not permission or not admin_has(uid,permission)):
+            delegated=db.get_additional_admin(uid) if uid else None
+            allowed=(bool(delegated and delegated.get("active")) if permission=="__active_admin__"
+                     else bool(permission and admin_has(uid,permission)))
+            if not admin(uid) and not allowed:
                 send(chat,"⛔ Você não tem permissão para acessar essa função.")
                 return
         if action=="admins":
