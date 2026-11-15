@@ -433,6 +433,22 @@ def process_support_message(m):
     if not state:
         return False
     value=(m.get("text") or "").strip()
+    if state=="admin_add":
+        if not admin(uid):
+            db.clear_support_input_state(uid)
+            send(chat,"⛔ Somente administradores principais podem cadastrar outros administradores.")
+            return True
+        if not value.isdigit():
+            send(chat,"Envie somente o ID numérico do Telegram.")
+            return True
+        try:
+            db.add_additional_admin(int(value),["users"],uid)
+            db.clear_support_input_state(uid)
+            send(chat,f"✅ Administrador <code>{value}</code> cadastrado com permissão inicial de consulta. Você pode configurar as demais permissões no painel.",
+                 [[btn("⚙️ Configurar permissões","admin:admins:edit:"+value)],[btn("👥 Lista de administradores","admin:admins")]])
+        except ValueError as exc:
+            send(chat,escape(str(exc)))
+        return True
     if state=="staff_add":
         if not admin(uid):
             db.clear_support_input_state(uid)
@@ -970,7 +986,7 @@ def command(m,update_id=None):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and (admin(uid) or (cmd=="/admin" and db.get_additional_admin(uid))):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and (admin(uid) or (cmd=="/admin" and db.get_additional_admin(uid) and db.get_additional_admin(uid)["active"])):
         if cmd in ("/saude","/health"):
             admin_health_report(chat)
         elif cmd=="/auditoria":
@@ -1021,7 +1037,7 @@ def command(m,update_id=None):
             try: send(target,"✅ <b>SUA CONTA FOI DESBLOQUEADA</b>\nVocê já pode voltar a utilizar o PIT PRÊMIOS.")
             except Exception: log.warning("Não foi possível notificar usuário desbloqueado %s",target)
             send(chat,f"✅ Conta <code>{target}</code> desbloqueada. O saldo e todo o histórico continuam preservados.")
-        elif cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu())
+        elif cmd=="/admin": send(chat,"🛠️ <b>PAINEL ADMINISTRATIVO PIT</b>\nEscolha uma função abaixo:",admin_menu(uid))
         elif cmd=="/risco":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /risco ID_DO_INDICADOR"); return
