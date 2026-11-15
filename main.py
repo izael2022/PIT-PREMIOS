@@ -1393,8 +1393,8 @@ def callback(c,update_id=None):
                 send(chat,f"⚙️ <b>PERMISSÕES DO ADMIN</b>\\nID: <code>{target}</code>\\nStatus: {state}\\n\\nToque para alternar permissões.",kb)
         elif action.startswith("admins:toggle:"):
             parts=action.split(":")
-            if len(parts)!=5: return
-            target=int(parts[3]); permission=parts[4]
+            if len(parts)!=4: return
+            target=int(parts[2]); permission=parts[3]
             item=db.get_additional_admin(target)
             if not item or permission not in db.ADMIN_PERMISSION_GROUPS: return
             permissions=set(item["permissions"])
