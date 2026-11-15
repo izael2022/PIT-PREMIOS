@@ -312,24 +312,6 @@ def menu():
     ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
 
-def admin_menu():
-    return [[btn("📊 Estatísticas","admin:stats"),btn("👤 Consultar usuário","admin:user")],
-            [btn("📅 Cadastros de hoje","admin:dailyusers:0")],
-            [btn("🆔 IDs de todos os usuários","admin:userids:0")],
-            [btn("➕ Adicionar pontos","admin:add"),btn("💎 Gerenciar VIP","admin:vip")],
-            [btn("🎟️ Resgates","admin:orders"),btn("💸 Saques Pix","admin:payouts")],
-            [btn("🎁 Pedidos da loja","admin:rewardorders")],
-            [btn("🗂️ Gerenciar prêmios","admin:managerewards")],
-            [btn("🛡️ Análise antifraude","admin:fraud")],
-            [btn("📋 Revisar tarefas","admin:tasks"),btn("🗂️ Gerenciar tarefas","admin:manage_tasks")],
-            [btn("🎟️ Gerar códigos de pontos","admin:codes")],
-            [btn("📢 Enviar comunicado","admin:broadcast")],
-            [btn("💹 Painel financeiro","admin:finance")],
-            [btn("🩺 Monitoramento do bot","admin:health")],
-            [btn("🛡️ Gerenciar equipe de suporte","admin:support")],
-            [btn("🛠️ Modo de manutenção","admin:maintenance")],
-            [btn("⬅️ Fechar painel","home")]]
-
 def admin_health_report(chat):
     try:
         snapshot=db.health_snapshot()
@@ -1016,7 +998,7 @@ def command(m,update_id=None):
             for row in rows:
                 name=escape(row["first_name"] or "Sem nome")
                 lines.append(f"\n<b>{name}</b> — <code>{row['user_id']}</code>\nMotivo: {escape(row['reason'])}\nBloqueada em: {row['blocked_at']}\nPor admin: <code>{row['blocked_by']}</code>")
-            send(chat,"\n".join(lines),admin_menu())
+            send(chat,"\n".join(lines),admin_menu(uid))
         elif cmd=="/historicoantifraude":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /historicoantifraude ID"); return
@@ -1341,8 +1323,14 @@ def callback(c,update_id=None):
             send(chat,"Atendimento encerrado.")
         return
     if data.startswith("admin:"):
-        if not admin(uid): return
         action=data.split(":",1)[1]
+        if action=="admins" or action.startswith("admins:"):
+            if not admin(uid): return
+        else:
+            permission=admin_action_permission(action)
+            if not admin(uid) and (not permission or not admin_has(uid,permission)):
+                send(chat,"⛔ Você não tem permissão para acessar essa função.")
+                return
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
