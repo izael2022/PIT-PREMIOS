@@ -367,13 +367,14 @@ def support_user_keyboard(ticket_id):
     return [[btn("💬 Responder ao suporte",f"support:user_reply:{ticket_id}")],
             [btn("❌ Encerrar atendimento",f"support:user_close:{ticket_id}")]]
 
-def support_staff_keyboard(ticket):
+def support_staff_keyboard(ticket,viewer_id):
     tid=ticket["id"]
-    if ticket.get("assigned_to") is None:
+    assigned=ticket.get("assigned_to")
+    if assigned is None:
         return [[btn("🙋 Assumir atendimento",f"support:claim:{tid}")],
                 [btn("📜 Ver histórico",f"support:history:{tid}")]]
-    if int(ticket["assigned_to"]) in ():
-        pass
+    if int(assigned)!=int(viewer_id):
+        return [[btn("📜 Ver histórico",f"support:history:{tid}")]]
     return [[btn("📜 Ver histórico",f"support:history:{tid}")],
             [btn("💬 Responder ao usuário",f"support:reply:{tid}")],
             [btn("🔒 Encerrar atendimento",f"support:close:{tid}")]]
@@ -473,7 +474,7 @@ def process_support_message(m):
             db.clear_support_input_state(uid)
             send(ticket["user_id"],f"💬 <b>RESPOSTA DO SUPORTE — ATENDIMENTO #{ticket_id}</b>\n\n{escape(value[:3000])}",
                  support_user_keyboard(ticket_id))
-            send(chat,"✅ Resposta enviada ao usuário.",support_staff_keyboard(ticket))
+            send(chat,"✅ Resposta enviada ao usuário.",support_staff_keyboard(ticket,uid))
         except (ValueError,TypeError) as exc:
             db.clear_support_input_state(uid)
             send(chat,escape(str(exc)))
