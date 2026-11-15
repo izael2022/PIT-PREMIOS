@@ -328,6 +328,13 @@ def init_db():
         """)
         db.execute("CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status,updated_at)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_support_messages_ticket ON support_messages(ticket_id,id)")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS support_input_states(
+                user_id INTEGER PRIMARY KEY,
+                state TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
         columns={r["name"] for r in db.execute("PRAGMA table_info(users)")}
         if "daily_streak" not in columns:
@@ -343,6 +350,21 @@ def init_db():
 
 
 # Atendimento interno: tabelas aditivas; nunca apaga dados existentes.
+def set_support_input_state(user_id,state):
+    with connect() as db:
+        db.execute("INSERT INTO support_input_states(user_id,state) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET state=excluded.state,updated_at=CURRENT_TIMESTAMP",(int(user_id),str(state)))
+        db.commit()
+
+def get_support_input_state(user_id):
+    with connect() as db:
+        row=db.execute("SELECT state FROM support_input_states WHERE user_id=?",(int(user_id),)).fetchone()
+        return row["state"] if row else None
+
+def clear_support_input_state(user_id):
+    with connect() as db:
+        db.execute("DELETE FROM support_input_states WHERE user_id=?",(int(user_id),))
+        db.commit()
+
 def add_support_staff(user_id,admin_id):
     user_id=int(user_id)
     if user_id in ADMIN_IDS:
