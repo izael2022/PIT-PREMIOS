@@ -16,15 +16,14 @@ jobs:
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
-      - name: Gerar ZIP sem banco de produção
+      - name: Montar pacote sem banco de produção
         run: |
-          zip -r PIT-PREMIOS-DISCloud.zip . \
-            -x ".git/*" \
-               "data/*" \
-               "*.db" "*.sqlite" "*.sqlite3" \
-               "__pycache__/*" \
-               ".github/*" \
-               "PIT-PREMIOS-DISCloud.zip"
+          mkdir -p /tmp/pit-package
+          git archive HEAD | tar -x -C /tmp/pit-package
+          rm -rf /tmp/pit-package/.git /tmp/pit-package/.github /tmp/pit-package/data
+          find /tmp/pit-package -type f \( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) -delete
+          cd /tmp/pit-package
+          zip -r "$GITHUB_WORKSPACE/PIT-PREMIOS-DISCloud.zip" .
       - name: Disponibilizar ZIP
         uses: actions/upload-artifact@v4
         with:
