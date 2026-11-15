@@ -1206,7 +1206,7 @@ def callback(c,update_id=None):
         for ticket in rows:
             assigned=f"Responsável: {ticket['assigned_to']}" if ticket.get("assigned_to") else "⏳ Sem responsável"
             send(chat,f"🎧 <b>ATENDIMENTO #{ticket['id']}</b>\nUsuário: <code>{ticket['user_id']}</code>\n{assigned}\nÚltima atualização: {ticket['updated_at']}",
-                 support_staff_keyboard(ticket))
+                 support_staff_keyboard(ticket,uid))
         return
     if data.startswith("support:claim:"):
         if not support_staff(uid): return
@@ -1227,7 +1227,7 @@ def callback(c,update_id=None):
             send(chat,"Atendimento não encontrado."); return
         if ticket.get("assigned_to") not in (None,int(uid)) and not admin(uid):
             send(chat,"Este chamado está atribuído a outro atendente. Você pode apenas visualizar o histórico.")
-        send(chat,support_ticket_text(ticket)+"\n\n"+support_history_text(tid),support_staff_keyboard(ticket))
+        send(chat,support_ticket_text(ticket)+"\n\n"+support_history_text(tid),support_staff_keyboard(ticket,uid))
         return
     if data.startswith("support:reply:"):
         if not support_staff(uid): return
