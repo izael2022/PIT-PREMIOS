@@ -834,6 +834,27 @@ def admin_user_ids_page(page=0,page_size=30):
         rows=db.execute("SELECT user_id FROM users ORDER BY user_id LIMIT ? OFFSET ?",(page_size,page*page_size)).fetchall()
         return total,[row["user_id"] for row in rows]
 
+
+def admin_daily_registrations_page(page=0,page_size=30):
+    """Lista somente os usuários cadastrados hoje no horário de Brasília (UTC-3)."""
+    page=max(0,int(page))
+    page_size=max(1,min(int(page_size),100))
+    with connect() as db:
+        total=db.execute(
+            "SELECT COUNT(*) AS total FROM users WHERE date(created_at,'-3 hours')=date('now','-3 hours')"
+        ).fetchone()["total"]
+        rows=db.execute(
+            """SELECT user_id,username,first_name,
+                      datetime(created_at,'-3 hours') AS created_local
+               FROM users
+               WHERE date(created_at,'-3 hours')=date('now','-3 hours')
+               ORDER BY created_at DESC,user_id DESC
+               LIMIT ? OFFSET ?""",
+            (page_size,page*page_size)
+        ).fetchall()
+        return total,rows
+
+
 def add_points(uid,amount,reason,update_id=None):
     if amount==0:return
     with connect() as db:
