@@ -378,7 +378,11 @@ def add_support_staff(user_id,admin_id):
 
 def remove_support_staff(user_id):
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
         cur=db.execute("UPDATE support_staff SET active=0 WHERE user_id=? AND active=1",(int(user_id),))
+        if cur.rowcount:
+            # Chamados abertos voltam à fila para não ficarem presos a um atendente removido.
+            db.execute("UPDATE support_tickets SET assigned_to=NULL,updated_at=CURRENT_TIMESTAMP WHERE assigned_to=? AND status='open'",(int(user_id),))
         db.commit()
         return cur.rowcount==1
 
