@@ -249,7 +249,43 @@ def send_photo(chat,photo,caption,keyboard=None):
         return send(chat,fallback,keyboard)
 
 def admin(uid): return uid in ADMIN_IDS
+def admin_has(uid,permission):
+    return bool(uid and db.has_admin_permission(uid,permission))
 def btn(label,data): return {"text":label,"callback_data":data}
+
+ADMIN_ACTION_PERMISSIONS = {
+    "stats":"health","user":"users","dailyusers":"users","userids":"users",
+    "add":"points","vip":"vip","orders":"redemptions","payouts":"payouts",
+    "rewardorders":"store","managerewards":"store","fraud":"fraud","tasks":"tasks",
+    "manage_tasks":"tasks","codes":"codes","broadcast":"broadcast","finance":"finance",
+    "health":"health","support":"support","support_add":"support","support_remove":"support",
+    "maintenance":"maintenance","payoutreduce":"payouts",
+}
+def admin_action_permission(action):
+    key=action.split(":",1)[0]
+    return ADMIN_ACTION_PERMISSIONS.get(key)
+
+def admin_menu(uid=None):
+    rows=[
+        ("📊 Estatísticas","stats","health"),("👤 Consultar usuário","user","users"),
+        ("📅 Cadastros de hoje","dailyusers:0","users"),("🆔 IDs de todos os usuários","userids:0","users"),
+        ("➕ Adicionar pontos","add","points"),("💎 Gerenciar VIP","vip","vip"),
+        ("🎟️ Resgates","orders","redemptions"),("💸 Saques Pix","payouts","payouts"),
+        ("🎁 Pedidos da loja","rewardorders","store"),("🗂️ Gerenciar prêmios","managerewards","store"),
+        ("🛡️ Análise antifraude","fraud","fraud"),("📋 Revisar tarefas","tasks","tasks"),
+        ("🗂️ Gerenciar tarefas","manage_tasks","tasks"),("🎟️ Gerar códigos de pontos","codes","codes"),
+        ("📢 Enviar comunicado","broadcast","broadcast"),("💹 Painel financeiro","finance","finance"),
+        ("🩺 Monitoramento do bot","health","health"),("🛡️ Gerenciar equipe de suporte","support","support"),
+        ("🛠️ Modo de manutenção","maintenance","maintenance")
+    ]
+    keyboard=[]
+    for label,action,permission in rows:
+        if uid is None or admin_has(uid,permission):
+            keyboard.append([btn(label,"admin:"+action)])
+    if admin(uid):
+        keyboard.append([btn("👥 Gerenciar administradores","admin:admins")])
+    keyboard.append([btn("⬅️ Fechar painel","home")])
+    return keyboard
 def webapp_btn(label,path):
     base="https://izael2022.github.io/PIT-PREMIOS/"
     return {"text":label,"web_app":{"url":base+path}}
@@ -867,7 +903,7 @@ def command(m,update_id=None):
         if block:
             send(chat,"🚫 <b>CONTA BLOQUEADA</b>\n\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\nMotivo: "+escape(block["reason"])+"\n\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
             return
-    if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
+    if (admin(uid) or db.get_additional_admin(uid)) and cmd not in ("/admin","/stats"):
         try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
         except Exception: log.exception("Falha ao registrar auditoria administrativa")
     if cmd=="/start": start(m)
@@ -952,7 +988,7 @@ def command(m,update_id=None):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and (admin(uid) or (cmd=="/admin" and db.get_additional_admin(uid))):
         if cmd in ("/saude","/health"):
             admin_health_report(chat)
         elif cmd=="/auditoria":
