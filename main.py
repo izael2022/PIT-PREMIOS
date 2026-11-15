@@ -263,7 +263,7 @@ ADMIN_ACTION_PERMISSIONS = {
 }
 def admin_action_permission(action):
     key=action.split(":",1)[0]
-    return ADMIN_ACTION_PERMISSIONS.get(key)
+    return "users" if key=="back" else ADMIN_ACTION_PERMISSIONS.get(key)
 
 ADMIN_COMMAND_PERMISSIONS = {
     "/admin": None, "/stats": "health", "/saude": "health", "/health": "health",
@@ -1043,7 +1043,7 @@ def command(m,update_id=None):
             for row in rows:
                 action="🔒 BLOQUEADO" if row["action"]=="blocked" else "🔓 DESBLOQUEADO"
                 lines.append(f"\n{action} — {row['created_at']}\nAdmin: <code>{row['admin_id']}</code>\nMotivo: {escape(row['reason'] or 'Não informado')}")
-            send(chat,"\n".join(lines),admin_menu())
+            send(chat,"\n".join(lines),admin_menu(uid))
         elif cmd=="/desbloquear":
             if len(p)<2 or not p[1].isdigit():
                 send(chat,"Use: /desbloquear ID"); return
@@ -1170,13 +1170,13 @@ def _should_delete_callback_message(data,uid):
     return data in navigation_actions or data.startswith("task:") or data.startswith("history:")
 
 
-def send_admin_user_ids(chat,page=0):
+def send_admin_user_ids(chat,page=0,uid=None):
     page_size=30
     total,ids=db.admin_user_ids_page(page,page_size)
     pages=max(1,(total+page_size-1)//page_size)
     page=max(0,min(int(page),pages-1))
     if not ids:
-        send(chat,"🆔 <b>IDs dos usuários</b>\nNenhum usuário cadastrado.",admin_menu())
+        send(chat,"🆔 <b>IDs dos usuários</b>\nNenhum usuário cadastrado.",admin_menu(uid))
         return
     first=page*page_size+1
     last=first+len(ids)-1
@@ -1462,7 +1462,7 @@ def callback(c,update_id=None):
             send_admin_daily_users(chat,page)
         elif action=="userids" or action.startswith("userids:"):
             page=int(action.split(":",1)[1]) if ":" in action else 0
-            send_admin_user_ids(chat,page)
+            send_admin_user_ids(chat,page,uid)
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu(uid))
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu(uid))
         elif action=="vip": send(chat,"💎 Para ativar ou desativar o VIP, envie:\n<code>/setvip ID on</code> ou <code>/setvip ID off</code>",admin_menu(uid))
