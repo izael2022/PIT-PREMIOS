@@ -265,6 +265,24 @@ def admin_action_permission(action):
     key=action.split(":",1)[0]
     return ADMIN_ACTION_PERMISSIONS.get(key)
 
+ADMIN_COMMAND_PERMISSIONS = {
+    "/admin": None, "/stats": "health", "/saude": "health", "/health": "health",
+    "/auditoria": "health", "/usuario": "users", "/bloquear": "users",
+    "/desbloquear": "users", "/bloqueados": "users", "/addpoints": "points",
+    "/setvip": "vip", "/pedidos": "redemptions", "/saques": "payouts",
+    "/diminuirsaque": "payouts", "/broadcast": "broadcast", "/novopremio": "store",
+    "/novatarefa": "tasks", "/gerarcodigo": "codes", "/risco": "fraud",
+    "/monitorarindicacoes": "fraud", "/historicoantifraude": "fraud",
+}
+def admin_command_allowed(uid,cmd):
+    if admin(uid):
+        return True
+    permission=ADMIN_COMMAND_PERMISSIONS.get(cmd,"__not_admin_command__")
+    if cmd=="/admin":
+        item=db.get_additional_admin(uid)
+        return bool(item and item.get("active"))
+    return permission!="__not_admin_command__" and permission is not None and admin_has(uid,permission)
+
 def admin_menu(uid=None):
     rows=[
         ("📊 Estatísticas","stats","health"),("👤 Consultar usuário","user","users"),
@@ -908,7 +926,7 @@ def command(m,update_id=None):
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking_menu(chat)
     elif cmd=="/diario": daily(chat,uid)
-    elif cmd=="/novopremio" and admin(uid):
+    elif cmd=="/novopremio" and admin_has(uid,"store"):
         raw=t.split(maxsplit=1)
         if len(raw)<2:
             send(chat,"Use: /novopremio PONTOS | ESTOQUE | TITULO | DESCRICAO\nUse -1 no estoque para ilimitado."); return
@@ -919,7 +937,7 @@ def command(m,update_id=None):
             rid=db.create_reward(parts[2],parts[3],int(parts[0]),int(parts[1]),update_id=update_id)
             send(chat,f"✅ Prêmio #{rid} cadastrado na loja!")
         except ValueError as e: send(chat,escape(str(e)))
-    elif cmd=="/novatarefa" and admin(uid):
+    elif cmd=="/novatarefa" and admin_has(uid,"tasks"):
         raw=t.split(maxsplit=1)
         if len(raw)<2 or "|" not in raw[1]:
             send(chat,"Use: /novatarefa PONTOS | TITULO | DESCRICAO"); return
@@ -931,8 +949,8 @@ def command(m,update_id=None):
             send(chat,f"✅ Tarefa #{task_id} cadastrada com {int(parts[0])} pontos.")
         except ValueError as e: send(chat,escape(str(e)))
     elif cmd=="/diminuirsaque":
-        if not admin(uid):
-            send(chat,"Apenas administradores podem diminuir saques.")
+        if not admin_has(uid,"payouts"):
+            send(chat,"Você não tem permissão para diminuir saques.")
             return
         args=t.split()
         if len(args)!=3 or not args[1].isdigit() or not args[2].isdigit():
@@ -948,7 +966,7 @@ def command(m,update_id=None):
             send(chat,f"Saque #{payout_id} reduzido. Devolvidos {result['refunded_points']:,} pontos.")
         except ValueError as e:
             send(chat,escape(str(e)))
-    elif cmd=="/gerarcodigo" and admin(uid):
+    elif cmd=="/gerarcodigo" and admin_has(uid,"codes"):
         args=t.split()
         if len(args) not in (2,3) or not args[1].isdigit() or (len(args)==3 and not args[2].isdigit()):
             send(chat,"🎟️ <b>GERAR CÓDIGO PROMOCIONAL</b>\n\nInforme a quantidade de pontos e, opcionalmente, o número máximo de resgates.\n\nFormato: <code>/gerarcodigo PONTOS [USOS]</code>\nExemplo: <code>/gerarcodigo 5000 10</code>\n\nSe não informar a quantidade de usos, o código será válido para uma pessoa.")
@@ -986,7 +1004,7 @@ def command(m,update_id=None):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and (admin(uid) or (cmd=="/admin" and db.get_additional_admin(uid) and db.get_additional_admin(uid)["active"])):
+    elif cmd in ADMIN_COMMAND_PERMISSIONS and admin_command_allowed(uid,cmd):
         if cmd in ("/saude","/health"):
             admin_health_report(chat)
         elif cmd=="/auditoria":
