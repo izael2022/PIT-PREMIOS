@@ -1331,6 +1331,54 @@ def callback(c,update_id=None):
             if not admin(uid) and (not permission or not admin_has(uid,permission)):
                 send(chat,"⛔ Você não tem permissão para acessar essa função.")
                 return
+        if action=="admins":
+            items=db.list_additional_admins()
+            lines=["👥 <b>ADMINISTRADORES ADICIONAIS</b>","━━━━━━━━━━━━━━━━━━"]
+            for item in items:
+                status="ATIVO" if item["active"] else "INATIVO"
+                lines.append(f"• <code>{item['user_id']}</code> — {escape(item.get('first_name') or 'Sem nome')} — {status}")
+            if not items: lines.append("Nenhum administrador adicional cadastrado.")
+            kb=[[btn("➕ Cadastrar administrador","admin:admins:add")]]
+            for item in items:
+                kb.append([btn("⚙️ Gerenciar "+str(item["user_id"]),"admin:admins:edit:"+str(item["user_id"]))])
+            kb.append([btn("⬅️ Voltar","admin:back")])
+            send(chat,"\\n".join(lines),kb)
+        elif action=="admins:add":
+            db.set_support_input_state(uid,"admin_add")
+            send(chat,"➕ <b>CADASTRAR ADMINISTRADOR</b>\\n\\nEnvie o ID numérico do Telegram. A pessoa precisa ter iniciado o bot com /start.",[[btn("❌ Cancelar","admin:admins")]])
+        elif action.startswith("admins:edit:"):
+            target=int(action.rsplit(":",1)[1])
+            item=db.get_additional_admin(target)
+            if not item or item.get("primary"):
+                send(chat,"Administrador não encontrado ou protegido.",[[btn("⬅️ Voltar","admin:admins")]])
+            else:
+                state="ATIVO" if item["active"] else "INATIVO"
+                kb=[[btn(("✅ " if p in item["permissions"] else "⬜ ")+label,"admin:admins:toggle:"+str(target)+":"+p)] for p,label in db.ADMIN_PERMISSION_GROUPS.items()]
+                kb.append([btn("🚫 Revogar acesso","admin:admins:revoke:"+str(target))])
+                kb.append([btn("⬅️ Voltar","admin:admins")])
+                send(chat,f"⚙️ <b>PERMISSÕES DO ADMIN</b>\\nID: <code>{target}</code>\\nStatus: {state}\\n\\nToque para alternar permissões.",kb)
+        elif action.startswith("admins:toggle:"):
+            parts=action.split(":")
+            if len(parts)!=5: return
+            target=int(parts[3]); permission=parts[4]
+            item=db.get_additional_admin(target)
+            if not item or permission not in db.ADMIN_PERMISSION_GROUPS: return
+            permissions=set(item["permissions"])
+            if permission in permissions: permissions.remove(permission)
+            else: permissions.add(permission)
+            if not permissions:
+                send(chat,"O administrador precisa manter ao menos uma permissão. Use Revogar acesso para removê-lo.")
+            else:
+                db.add_additional_admin(target,permissions,uid)
+                send(chat,"✅ Permissões atualizadas.",[[btn("⚙️ Voltar às permissões","admin:admins:edit:"+str(target))],[btn("👥 Lista de administradores","admin:admins")]])
+        elif action.startswith("admins:revoke:"):
+            target=int(action.rsplit(":",1)[1])
+            try:
+                changed=db.revoke_additional_admin(target)
+                send(chat,"✅ Acesso revogado. O histórico foi preservado." if changed else "Esse administrador já estava inativo.",[[btn("👥 Lista de administradores","admin:admins")]])
+            except ValueError as exc:
+                send(chat,escape(str(exc)),[[btn("⬅️ Voltar","admin:admins")]])
+
         if action=="stats":
             st=db.stats()
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
