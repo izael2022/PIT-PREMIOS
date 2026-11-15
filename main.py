@@ -1087,7 +1087,7 @@ def command(m,update_id=None):
                 state={"approved":"Aprovada","pending":"Pendente","rejected":"Rejeitada"}.get(item["status"],item["status"])
                 lines.append(f"• <code>{item['user_id']}</code> — {state} — {item['created_at']}")
                 if item["risk_reason"]: lines.append("  ⚠️ "+escape(item["risk_reason"][:140]))
-            send(chat,"\n".join(lines),admin_menu())
+            send(chat,"\n".join(lines),admin_menu(uid))
         elif cmd=="/monitorarindicacoes":
             if len(p)<3 or not p[1].isdigit() or p[2].lower() not in ("on","off"):
                 send(chat,"Use: /monitorarindicacoes ID on\nOu: /monitorarindicacoes ID off\n\nON: novas indicações ficam pendentes para revisão. OFF: volta à análise automática."); return
@@ -1120,7 +1120,7 @@ def command(m,update_id=None):
                     lines.append(f"{sign}{item['amount']} pts — {escape(item['reason'][:55])} ({item['created_at']})")
             else:
                 lines.append("Nenhuma movimentação registrada.")
-            send(chat,"\n".join(lines),admin_menu())
+            send(chat,"\n".join(lines),admin_menu(uid))
         elif cmd=="/broadcast":
             if len(p)<2 or not p[1].strip(): send(chat,"Use /broadcast SUA MENSAGEM"); return
             message=escape(t.split(maxsplit=1)[1][:3500])
