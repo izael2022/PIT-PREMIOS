@@ -1218,7 +1218,7 @@ def callback(c,update_id=None):
             send(chat,f"Este chamado já foi assumido pelo atendente <code>{ticket['assigned_to']}</code>. Você pode apenas consultar o histórico.")
         else:
             send(ticket["user_id"],f"🙋 <b>SEU ATENDIMENTO #{tid} FOI ASSUMIDO</b>\nUm atendente está disponível para ajudar você.",support_user_keyboard(tid))
-            send(chat,f"✅ Você assumiu o atendimento #{tid}. Agora pode responder ao usuário.",support_staff_keyboard(ticket))
+            send(chat,f"✅ Você assumiu o atendimento #{tid}. Agora pode responder ao usuário.",support_staff_keyboard(ticket,uid))
         return
     if data.startswith("support:history:"):
         if not support_staff(uid): return
