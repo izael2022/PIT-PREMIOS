@@ -23,7 +23,8 @@ jobs:
                "data/*" \
                "*.db" "*.sqlite" "*.sqlite3" \
                "__pycache__/*" \
-               ".github/*"
+               ".github/*" \
+               "PIT-PREMIOS-DISCloud.zip"
       - name: Disponibilizar ZIP
         uses: actions/upload-artifact@v4
         with:
