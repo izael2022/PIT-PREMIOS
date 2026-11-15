@@ -1152,7 +1152,7 @@ def send_admin_daily_users(chat,page=0):
     pages=max(1,(total+page_size-1)//page_size)
     page=max(0,min(int(page),pages-1))
     if not rows:
-        send(chat,"📅 <b>CADASTROS DE HOJE</b>\\n━━━━━━━━━━━━━━━━━━\\nNenhum usuário se cadastrou hoje ainda.\\n\\nA lista será atualizada automaticamente à meia-noite (horário de Brasília).",[[btn("🔄 Atualizar","admin:dailyusers:0")],[btn("⬅️ Voltar ao painel","admin:back")]])
+        send(chat,"📅 <b>CADASTROS DE HOJE</b>\n━━━━━━━━━━━━━━━━━━\nNenhum usuário se cadastrou hoje ainda.\n\nA lista será atualizada automaticamente à meia-noite (horário de Brasília).",[[btn("🔄 Atualizar","admin:dailyusers:0")],[btn("⬅️ Voltar ao painel","admin:back")]])
         return
     first=page*page_size+1
     last=first+len(rows)-1
@@ -1161,12 +1161,12 @@ def send_admin_daily_users(chat,page=0):
         name=escape((row["first_name"] or "Sem nome")[:45])
         username="@"+escape(row["username"]) if row["username"] else "sem username"
         registered=escape(str(row["created_local"] or "")[11:16] or "horário indisponível")
-        entries.append(f"👤 <b>{name}</b> ({username})\\n🆔 <code>{row['user_id']}</code> — 🕒 {registered}")
-    message=(f"📅 <b>CADASTROS DE HOJE</b>\\n"
-             f"Total de hoje: <b>{total}</b>\\n"
-             f"Página <b>{page+1}/{pages}</b> — exibindo <b>{first}–{last}</b>\\n"
-             f"━━━━━━━━━━━━━━━━━━\\n" + "\\n\\n".join(entries) +
-             "\\n\\n<i>Filtro diário no horário de Brasília. Amanhã a lista começa novamente, sem apagar nenhum cadastro.</i>")
+        entries.append(f"👤 <b>{name}</b> ({username})\n🆔 <code>{row['user_id']}</code> — 🕒 {registered}")
+    message=(f"📅 <b>CADASTROS DE HOJE</b>\n"
+             f"Total de hoje: <b>{total}</b>\n"
+             f"Página <b>{page+1}/{pages}</b> — exibindo <b>{first}–{last}</b>\n"
+             f"━━━━━━━━━━━━━━━━━━\n" + "\n\n".join(entries) +
+             "\n\n<i>Filtro diário no horário de Brasília. Amanhã a lista começa novamente, sem apagar nenhum cadastro.</i>")
     keyboard=[]
     navigation=[]
     if page>0:
