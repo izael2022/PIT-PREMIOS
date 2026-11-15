@@ -187,6 +187,8 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_reward_orders_status ON reward_orders(status);
+        CREATE TABLE IF NOT EXISTS daily_quiz_attempts(user_id INTEGER NOT NULL,played_on TEXT NOT NULL,correct_count INTEGER NOT NULL CHECK(correct_count BETWEEN 0 AND 5),points INTEGER NOT NULL CHECK(points BETWEEN 0 AND 50),answers_json TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(user_id,played_on),FOREIGN KEY(user_id) REFERENCES users(user_id));
+        CREATE TABLE IF NOT EXISTS daily_envelope_claims(user_id INTEGER NOT NULL,claimed_on TEXT NOT NULL,points INTEGER NOT NULL CHECK(points BETWEEN 5 AND 50),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(user_id,claimed_on),FOREIGN KEY(user_id) REFERENCES users(user_id));
         CREATE TABLE IF NOT EXISTS daily_games(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -819,6 +821,44 @@ def play_daily_game(uid,game,points,update_id=None):
         _idempotency_save(db,update_id,"game.play",points)
         db.commit()
         return points
+
+def daily_quiz_status(uid,played_on):
+    with connect() as db:
+        row=db.execute("SELECT correct_count,points,answers_json FROM daily_quiz_attempts WHERE user_id=? AND played_on=?",(int(uid),str(played_on))).fetchone()
+        return dict(row) if row else None
+
+def submit_daily_quiz(uid,played_on,correct_count,points,answers):
+    correct_count=int(correct_count); points=int(points)
+    if correct_count<0 or correct_count>5 or points!=correct_count*10: raise ValueError("Resultado do quiz inválido.")
+    encoded=json.dumps(answers,sort_keys=True,separators=(",",":"))
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        old=db.execute("SELECT correct_count,points,answers_json FROM daily_quiz_attempts WHERE user_id=? AND played_on=?",(int(uid),str(played_on))).fetchone()
+        if old:
+            if old["answers_json"]==encoded:
+                db.rollback(); return {"correct_count":int(old["correct_count"]),"points":int(old["points"])}
+            db.rollback(); raise ValueError("Você já participou do Quiz de hoje. Volte amanhã!")
+        cur=db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,int(uid)))
+        if cur.rowcount!=1: db.rollback(); raise ValueError("Usuário não encontrado.")
+        db.execute("INSERT INTO daily_quiz_attempts(user_id,played_on,correct_count,points,answers_json) VALUES(?,?,?,?,?)",(int(uid),str(played_on),correct_count,points,encoded))
+        if points:
+            db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(int(uid),points,f"Quiz diário — {correct_count}/5 acertos"))
+            db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(int(uid),points,"daily_quiz"))
+        db.commit(); return {"correct_count":correct_count,"points":points}
+
+def claim_daily_envelope(uid,claimed_on,points):
+    points=int(points)
+    if points not in (5,10,15,20,30,50): raise ValueError("Recompensa do envelope inválida.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        try: db.execute("INSERT INTO daily_envelope_claims(user_id,claimed_on,points) VALUES(?,?,?)",(int(uid),str(claimed_on),points))
+        except sqlite3.IntegrityError:
+            db.rollback(); raise ValueError("Você já abriu seu envelope de hoje. Volte amanhã!")
+        cur=db.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,int(uid)))
+        if cur.rowcount!=1: db.rollback(); raise ValueError("Usuário não encontrado.")
+        db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(int(uid),points,"Envelope premiado diário"))
+        db.execute("INSERT INTO weekly_earnings(user_id,points,source) VALUES(?,?,?)",(int(uid),points,"daily_envelope"))
+        db.commit(); return points
 
 def game_status(uid):
     current=today()
