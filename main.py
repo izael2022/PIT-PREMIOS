@@ -271,6 +271,7 @@ def menu():
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
+        [btn("🎧 FALAR COM O SUPORTE","support:start")],
         [btn("❓ CENTRAL DE AJUDA","help")]
     ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
@@ -288,6 +289,7 @@ def admin_menu():
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
+            [btn("🛡️ Gerenciar equipe de suporte","admin:support")],
             [btn("🛠️ Modo de manutenção","admin:maintenance")],
             [btn("⬅️ Fechar painel","home")]]
 
@@ -354,6 +356,129 @@ def admin_health_report(chat):
     except Exception:
         log.exception("Falha ao montar painel de saúde")
         send(chat,"⚠️ Não foi possível carregar todos os indicadores. Verifique os logs e tente novamente.",[[btn("🔄 Tentar novamente","admin:health")],[btn("⬅️ Voltar ao painel","admin:back")]])
+
+
+
+
+def support_staff(uid):
+    return bool(uid and (admin(uid) or db.is_support_staff(uid)))
+
+def support_user_keyboard(ticket_id):
+    return [[btn("💬 Responder ao suporte",f"support:user_reply:{ticket_id}")],
+            [btn("❌ Encerrar atendimento",f"support:user_close:{ticket_id}")]]
+
+def support_staff_keyboard(ticket):
+    tid=ticket["id"]
+    if ticket.get("assigned_to") is None:
+        return [[btn("🙋 Assumir atendimento",f"support:claim:{tid}")],
+                [btn("📜 Ver histórico",f"support:history:{tid}")]]
+    if int(ticket["assigned_to"]) in ():
+        pass
+    return [[btn("📜 Ver histórico",f"support:history:{tid}")],
+            [btn("💬 Responder ao usuário",f"support:reply:{tid}")],
+            [btn("🔒 Encerrar atendimento",f"support:close:{tid}")]]
+
+def support_ticket_text(ticket):
+    return (f"🎧 <b>ATENDIMENTO #{ticket['id']}</b>\n"
+            f"Usuário: <code>{ticket['user_id']}</code>\n"
+            f"Responsável: <code>{ticket['assigned_to']}</code>" if ticket.get("assigned_to") else
+            f"🎧 <b>ATENDIMENTO #{ticket['id']}</b>\nUsuário: <code>{ticket['user_id']}</code>\n⏳ Aguardando atendente")
+
+def support_history_text(ticket_id):
+    rows=db.support_ticket_history(ticket_id,50)
+    if not rows:
+        return "Ainda não há mensagens neste atendimento."
+    lines=[]
+    for row in rows:
+        who="Usuário" if row["sender_role"]=="user" else ("Atendente" if row["sender_role"]=="staff" else "Administração")
+        lines.append(f"<b>{who}:</b> {escape(row['message'][:1000])}")
+    return "\n\n".join(lines)
+
+def notify_support_team(ticket):
+    recipients=set(ADMIN_IDS)
+    recipients.update(int(x["user_id"]) for x in db.list_support_staff() if x["active"])
+    for aid in recipients:
+        try:
+            send(aid,support_ticket_text(ticket)+"\n\n🆕 Novo atendimento aguardando responsável.",
+                 [[btn("📥 Abrir fila de suporte","support:inbox")]])
+        except Exception:
+            log.exception("Falha ao notificar atendente %s sobre chamado %s",aid,ticket["id"])
+
+def process_support_message(m):
+    uid=m.get("from",{}).get("id")
+    chat=m.get("chat",{}).get("id")
+    if not uid or not chat or m.get("chat",{}).get("type")!="private":
+        return False
+    state=db.get_support_input_state(uid)
+    if not state:
+        return False
+    value=(m.get("text") or "").strip()
+    if state=="staff_add":
+        if not admin(uid):
+            db.clear_support_input_state(uid)
+            return False
+        if not value.isdigit():
+            send(chat,"Envie somente o ID numérico do usuário que será atendente.")
+            return True
+        try:
+            db.add_support_staff(int(value),uid)
+            db.clear_support_input_state(uid)
+            send(chat,f"✅ Usuário <code>{value}</code> adicionado à equipe de suporte. Ele precisa abrir o bot e enviar /start para receber chamados.",
+                 [[btn("👥 Ver equipe","admin:support")],[btn("⬅️ Painel administrativo","admin:back")]])
+        except ValueError as exc:
+            send(chat,escape(str(exc)))
+        return True
+    if state.startswith("user:"):
+        try:
+            ticket_id=int(state.split(":",1)[1])
+            ticket=db.get_support_ticket(ticket_id)
+            if not ticket or ticket["status"]!="open" or int(ticket["user_id"])!=int(uid):
+                db.clear_support_input_state(uid)
+                send(chat,"Este atendimento não está mais aberto.",menu())
+                return True
+            if not value:
+                send(chat,"Envie sua mensagem em texto para o suporte.")
+                return True
+            db.add_support_message(ticket_id,uid,"user",value)
+            db.clear_support_input_state(uid)
+            recipients={int(ticket["assigned_to"])} if ticket.get("assigned_to") else set(ADMIN_IDS)
+            if not ticket.get("assigned_to"):
+                recipients.update(int(x["user_id"]) for x in db.list_support_staff() if x["active"])
+            for aid in recipients:
+                send(aid,f"📩 <b>NOVA MENSAGEM — ATENDIMENTO #{ticket_id}</b>\nUsuário <code>{uid}</code>:\n{escape(value[:3000])}",
+                     [[btn("📜 Abrir atendimento",f"support:history:{ticket_id}")]])
+            send(chat,"✅ Mensagem enviada à equipe. Quando responderem, você receberá a mensagem aqui.",
+                 support_user_keyboard(ticket_id))
+        except (ValueError,TypeError) as exc:
+            db.clear_support_input_state(uid)
+            send(chat,escape(str(exc)))
+        return True
+    if state.startswith("staff:"):
+        if not support_staff(uid):
+            db.clear_support_input_state(uid)
+            send(chat,"Seu acesso à equipe de suporte não está ativo.")
+            return True
+        try:
+            ticket_id=int(state.split(":",1)[1])
+            ticket=db.get_support_ticket(ticket_id)
+            if not ticket or ticket["status"]!="open" or int(ticket.get("assigned_to") or 0)!=int(uid):
+                db.clear_support_input_state(uid)
+                send(chat,"Este atendimento não está mais atribuído a você.")
+                return True
+            if not value:
+                send(chat,"Digite a mensagem que deseja enviar ao usuário.")
+                return True
+            role="admin" if admin(uid) else "staff"
+            db.add_support_message(ticket_id,uid,role,value)
+            db.clear_support_input_state(uid)
+            send(ticket["user_id"],f"💬 <b>RESPOSTA DO SUPORTE — ATENDIMENTO #{ticket_id}</b>\n\n{escape(value[:3000])}",
+                 support_user_keyboard(ticket_id))
+            send(chat,"✅ Resposta enviada ao usuário.",support_staff_keyboard(ticket))
+        except (ValueError,TypeError) as exc:
+            db.clear_support_input_state(uid)
+            send(chat,escape(str(exc)))
+        return True
+    return False
 
 
 def start(m):
@@ -648,7 +773,7 @@ def notifications_page(chat,uid):
     send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\n\n<b>Últimos avisos</b>\n{history}",[[btn(label,action)],[btn("🔄 Atualizar","notifications")],[btn("⬅️ Menu principal","home")]])
 
 def help_page(chat):
-    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 1.000 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
+    send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 1.000 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nUse o botão <b>Falar com o suporte</b> para abrir um atendimento diretamente aqui no bot. Nunca compartilhe senhas ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
 def _valid_pix_key(key_type,key):
     value=str(key or "").strip()
@@ -1061,6 +1186,87 @@ def callback(c,update_id=None):
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
+    if data=="support:start":
+        ticket,created=db.create_support_ticket(uid)
+        if ticket["status"]!="open":
+            send(chat,"Seu atendimento anterior foi encerrado. Abra um novo chamado.",[[btn("🆕 Novo atendimento","support:start")],[btn("⬅️ Menu principal","home")]])
+            return
+        db.set_support_input_state(uid,"user:"+str(ticket["id"]))
+        send(chat,f"🎧 <b>ATENDIMENTO #{ticket['id']} ABERTO</b>\n\nDescreva seu problema ou dúvida. Nossa equipe responderá por aqui.\n\nEnvie sua primeira mensagem abaixo.",
+             [[btn("❌ Cancelar mensagem","support:user_cancel:"+str(ticket["id"]))]])
+        if created: notify_support_team(ticket)
+        return
+    if data=="support:inbox":
+        if not support_staff(uid): return
+        rows=db.list_support_tickets("open",50)
+        if not rows:
+            send(chat,"📥 Não há atendimentos abertos no momento.",[[btn("🔄 Atualizar fila","support:inbox")],[btn("⬅️ Voltar","admin:support" if admin(uid) else "home")]])
+            return
+        for ticket in rows:
+            assigned=f"Responsável: {ticket['assigned_to']}" if ticket.get("assigned_to") else "⏳ Sem responsável"
+            send(chat,f"🎧 <b>ATENDIMENTO #{ticket['id']}</b>\nUsuário: <code>{ticket['user_id']}</code>\n{assigned}\nÚltima atualização: {ticket['updated_at']}",
+                 support_staff_keyboard(ticket))
+        return
+    if data.startswith("support:claim:"):
+        if not support_staff(uid): return
+        tid=int(data.rsplit(":",1)[1])
+        ticket,status=db.claim_support_ticket(tid,uid)
+        if status=="closed" or not ticket:
+            send(chat,"Este chamado já foi encerrado.")
+        elif status=="taken":
+            send(chat,f"Este chamado já foi assumido pelo atendente <code>{ticket['assigned_to']}</code>. Você pode apenas consultar o histórico.")
+        else:
+            send(ticket["user_id"],f"🙋 <b>SEU ATENDIMENTO #{tid} FOI ASSUMIDO</b>\nUm atendente está disponível para ajudar você.",support_user_keyboard(tid))
+            send(chat,f"✅ Você assumiu o atendimento #{tid}. Agora pode responder ao usuário.",support_staff_keyboard(ticket))
+        return
+    if data.startswith("support:history:"):
+        if not support_staff(uid): return
+        tid=int(data.rsplit(":",1)[1]); ticket=db.get_support_ticket(tid)
+        if not ticket:
+            send(chat,"Atendimento não encontrado."); return
+        if ticket.get("assigned_to") not in (None,int(uid)) and not admin(uid):
+            send(chat,"Este chamado está atribuído a outro atendente. Você pode apenas visualizar o histórico.")
+        send(chat,support_ticket_text(ticket)+"\n\n"+support_history_text(tid),support_staff_keyboard(ticket))
+        return
+    if data.startswith("support:reply:"):
+        if not support_staff(uid): return
+        tid=int(data.rsplit(":",1)[1]); ticket=db.get_support_ticket(tid)
+        if not ticket or ticket["status"]!="open" or int(ticket.get("assigned_to") or 0)!=int(uid):
+            send(chat,"Somente o atendente responsável pode responder a este chamado."); return
+        db.set_support_input_state(uid,"staff:"+str(tid))
+        send(chat,f"💬 Digite a resposta para o usuário do atendimento #{tid}.",[[btn("❌ Cancelar","support:history:"+str(tid))]])
+        return
+    if data.startswith("support:user_reply:"):
+        tid=int(data.rsplit(":",1)[1]); ticket=db.get_support_ticket(tid)
+        if not ticket or ticket["status"]!="open" or int(ticket["user_id"])!=int(uid):
+            send(chat,"Este atendimento não está mais aberto."); return
+        db.set_support_input_state(uid,"user:"+str(tid))
+        send(chat,f"💬 Digite sua mensagem para o suporte (atendimento #{tid}).",[[btn("❌ Cancelar","support:user_cancel:"+str(tid))]])
+        return
+    if data.startswith("support:user_cancel:"):
+        db.clear_support_input_state(uid)
+        tid=int(data.rsplit(":",1)[1]); ticket=db.get_support_ticket(tid)
+        send(chat,"Envio cancelado.",support_user_keyboard(tid) if ticket and ticket["status"]=="open" else menu())
+        return
+    if data.startswith("support:user_close:") or data.startswith("support:close:"):
+        user_action=data.startswith("support:user_close:")
+        tid=int(data.rsplit(":",1)[1]); ticket=db.get_support_ticket(tid)
+        if not ticket or ticket["status"]!="open":
+            send(chat,"Este atendimento já foi encerrado."); return
+        if user_action:
+            if int(ticket["user_id"])!=int(uid): return
+            actor_role="user"
+        else:
+            if not support_staff(uid) or int(ticket.get("assigned_to") or 0)!=int(uid): return
+            actor_role="staff"
+        closed=db.close_support_ticket(tid,uid,actor_role)
+        if closed:
+            db.clear_support_input_state(ticket["user_id"])
+            send(ticket["user_id"],f"🔒 <b>ATENDIMENTO #{tid} ENCERRADO</b>\nObrigado por entrar em contato. Se precisar novamente, abra um novo chamado.",[[btn("🆕 Novo atendimento","support:start")],[btn("⬅️ Menu principal","home")]])
+            if ticket.get("assigned_to") and int(ticket["assigned_to"])!=int(uid):
+                send(ticket["assigned_to"],f"🔒 O atendimento #{tid} foi encerrado pelo usuário.")
+            send(chat,"Atendimento encerrado.")
+        return
     if data.startswith("admin:"):
         if not admin(uid): return
         action=data.split(":",1)[1]
@@ -1075,6 +1281,34 @@ def callback(c,update_id=None):
             else:
                 db.set_maintenance_mode(True)
                 send(chat,"🛠️ <b>MODO DE MANUTENÇÃO ATIVADO</b>\n\nOs usuários não administradores receberão um aviso temporário. Administradores continuam com acesso.",[[btn("🔓 Desativar manutenção","admin:maintenance")],[btn("⬅️ Voltar ao painel","admin:back")]])
+        elif action=="support":
+            staff=db.list_support_staff()
+            open_tickets=db.list_support_tickets("open",50)
+            body="\n".join(f"• <code>{x['user_id']}</code> — {escape(x.get('first_name') or 'Sem nome')} — {'ativo' if x['active'] else 'inativo'}" for x in staff) or "Nenhum atendente cadastrado."
+            send(chat,"🛡️ <b>EQUIPE DE SUPORTE</b>\n\n"+body,
+                 [[btn("➕ Adicionar atendente","admin:support_add")],
+                  [btn("➖ Remover atendente","admin:support_remove")],
+                  [btn(f"📥 Chamados abertos ({len(open_tickets)})","support:inbox")],
+                  [btn("⬅️ Voltar ao painel","admin:back")]])
+        elif action=="support_add":
+            db.set_support_input_state(uid,"staff_add")
+            send(chat,"➕ <b>ADICIONAR ATENDENTE</b>\n\nEnvie o ID numérico do Telegram da pessoa. Ela precisa ter iniciado o bot com /start antes.",
+                 [[btn("❌ Cancelar","admin:support")]])
+        elif action=="support_remove":
+            staff=[x for x in db.list_support_staff() if x["active"]]
+            if not staff:
+                send(chat,"Não há atendentes ativos para remover.",[[btn("⬅️ Voltar","admin:support")]])
+            else:
+                kb=[[btn(f"➖ {x['user_id']} — {(x.get('first_name') or 'Atendente')[:20]}",f"admin:support_remove:{x['user_id']}")] for x in staff]
+                kb.append([btn("⬅️ Voltar","admin:support")])
+                send(chat,"Escolha o atendente que deseja desativar:",kb)
+        elif action.startswith("support_remove:"):
+            target=int(action.split(":",1)[1])
+            if db.remove_support_staff(target):
+                send(chat,f"✅ O acesso de suporte do usuário <code>{target}</code> foi desativado. Chamados e mensagens antigos foram preservados.",
+                     [[btn("👥 Gerenciar equipe","admin:support")],[btn("⬅️ Painel","admin:back")]])
+            else:
+                send(chat,"Esse atendente já estava inativo ou não foi encontrado.",[[btn("⬅️ Voltar","admin:support")]])
         elif action=="health":
             admin_health_report(chat)
         elif action=="finance":
@@ -1389,6 +1623,9 @@ def process_update(update):
                 block=db.get_account_block(uid) if uid and not admin(uid) else None
                 if block:
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
+                    if update_id is not None: db.mark_update_processed(update_id)
+                    return True
+                if process_support_message(m):
                     if update_id is not None: db.mark_update_processed(update_id)
                     return True
                 input_state=db.get_user_input_state(uid)
