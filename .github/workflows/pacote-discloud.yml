@@ -1,0 +1,32 @@
+name: Gerar pacote ZIP Discloud
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pacote-discloud.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+      - name: Gerar ZIP sem banco de produção
+        run: |
+          zip -r PIT-PREMIOS-DISCloud.zip . \
+            -x ".git/*" \
+               "data/*" \
+               "*.db" "*.sqlite" "*.sqlite3" \
+               "__pycache__/*" \
+               ".github/*"
+      - name: Disponibilizar ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: PIT-PREMIOS-DISCloud
+          path: PIT-PREMIOS-DISCloud.zip
+          retention-days: 7
