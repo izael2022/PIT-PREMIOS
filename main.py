@@ -47,8 +47,19 @@ def resolve_health_issue(alert_key, details="O serviço voltou a operar normalme
     except Exception:
         log.exception("Não foi possível registrar recuperação de saúde %s",alert_key)
 
+class TelegramUserBlockedError(RuntimeError):
+    """O usuário bloqueou o bot; não é uma falha operacional da fila."""
+
 def api(method, data=None):
-    payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
+    data=data or {}
+    chat_id=data.get("chat_id") if method=="sendMessage" else None
+    if chat_id is not None:
+        try:
+            if db.is_telegram_chat_blocked(chat_id):
+                return None
+        except Exception:
+            log.exception("Não foi possível consultar o bloqueio de entrega do chat %s",chat_id)
+    payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in data.items()}).encode()
     attempts=4 if method=="getUpdates" else 1
     for attempt in range(attempts):
         req=urllib.request.Request(API+method,data=payload)
@@ -65,6 +76,14 @@ def api(method, data=None):
             return result.get("result")
         except urllib.error.HTTPError as e:
             detail=e.read().decode("utf-8","replace")[:500]
+            if method=="sendMessage" and chat_id is not None and e.code==403 and "bot was blocked by the user" in detail.lower():
+                try:
+                    first_detection=db.mark_telegram_chat_blocked(chat_id,detail)
+                    if first_detection:
+                        log.warning("Chat %s bloqueou o bot; envios futuros serão ignorados.",chat_id)
+                except Exception:
+                    log.exception("Não foi possível registrar o bloqueio do chat %s",chat_id)
+                raise TelegramUserBlockedError(f"Chat {chat_id} bloqueou o bot.") from e
             if method=="getUpdates" and e.code in (429,500,502,503,504) and attempt<attempts-1:
                 retry_after=2
                 try:
@@ -161,6 +180,9 @@ def _outbound_worker():
             last_chat[str(chat)]=time.monotonic()
             last_global=time.monotonic()
             future.set_result(result)
+        except TelegramUserBlockedError:
+            # O bloqueio foi registrado; conclui sem repetir erro nem travar a fila.
+            future.set_result(None)
         except Exception as exc:
             future.set_exception(exc)
             log.exception("Falha no envio para chat %s",chat)
