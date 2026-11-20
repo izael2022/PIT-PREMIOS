@@ -14,6 +14,8 @@ LAST_BACKUP_ERROR=""
 HEALTH_ALERT_COOLDOWN_MINUTES=30
 HEALTH_FALLBACK_LAST={}
 HEALTH_FALLBACK_LOCK=threading.Lock()
+DELETE_WARNING_LAST={}
+DELETE_WARNING_LOCK=threading.Lock()
 
 def _send_health_message(message):
     for admin_id in ADMIN_IDS:
@@ -1274,8 +1276,22 @@ def callback(c,update_id=None):
         try: db.log_admin_action(uid,"callback",data)
         except Exception: log.exception("Falha ao registrar auditoria de callback")
     if _should_delete_callback_message(data,uid) and msg.get("message_id"):
-        try: api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
-        except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
+        try:
+            api("deleteMessage",{"chat_id":chat,"message_id":msg["message_id"]})
+        except Exception as exc:
+            # A exclusão é uma limpeza opcional: não deve gerar uma linha de log
+            # a cada clique quando o Telegram já removeu/bloqueou a mensagem.
+            detail=str(exc).strip()[:300] or exc.__class__.__name__
+            now=time.monotonic()
+            with DELETE_WARNING_LOCK:
+                previous=DELETE_WARNING_LAST.get(detail,0)
+                should_log=(now-previous)>=300
+                if should_log:
+                    DELETE_WARNING_LAST[detail]=now
+            if should_log:
+                log.warning("Falha ao apagar mensagem anterior (chat=%s, message=%s): %s",chat,msg["message_id"],detail)
+            else:
+                log.debug("Falha repetida ao apagar mensagem anterior: %s",detail)
     if data.startswith("admin:payoutreduce:"):
         if not admin_has(uid,"payouts"): return
         payout_id=int(data.rsplit(":",1)[1])
@@ -2037,10 +2053,21 @@ def _send_backup_document(chat_id, filename, file_bytes):
     body.extend(file_bytes+crlf)
     body.extend(("--"+boundary+"--").encode()+crlf)
     req=urllib.request.Request(API+"sendDocument",data=bytes(body),headers={"Content-Type":"multipart/form-data; boundary="+boundary})
-    with urllib.request.urlopen(req,timeout=60) as response:
-        result=json.loads(response.read())
-    if not result.get("ok"): raise RuntimeError(str(result))
-    return result.get("result")
+    last_error=None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req,timeout=120) as response:
+                result=json.loads(response.read())
+            if not result.get("ok"):
+                raise RuntimeError(str(result))
+            return result.get("result")
+        except (urllib.error.URLError,TimeoutError,ConnectionError,OSError,RuntimeError) as exc:
+            last_error=exc
+            if attempt<2:
+                delay=5*(attempt+1)
+                log.warning("Falha ao enviar backup pelo Telegram; nova tentativa %s/3 em %s segundos: %s",attempt+2,delay,exc)
+                time.sleep(delay)
+    raise RuntimeError("Não foi possível enviar o backup após 3 tentativas: "+str(last_error)) from last_error
 
 def create_and_send_backup():
     payload=create_backup_archive(DATABASE_PATH)
