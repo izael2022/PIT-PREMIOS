@@ -262,6 +262,12 @@ def init_db():
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         );
+        CREATE TABLE IF NOT EXISTS telegram_blocked_chats(
+            chat_id INTEGER PRIMARY KEY,
+            reason TEXT NOT NULL DEFAULT '',
+            detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS redeem_codes(
@@ -708,6 +714,25 @@ def cancel_reward_order(user_id,order_id):
         db.execute("UPDATE rewards SET stock=stock+1 WHERE id=? AND stock>=0",(row["reward_id"],))
         db.commit()
         return dict(row)
+
+def mark_telegram_chat_blocked(chat_id,reason=""):
+    with connect() as db:
+        existed=db.execute("SELECT 1 FROM telegram_blocked_chats WHERE chat_id=?",(int(chat_id),)).fetchone()
+        db.execute("""INSERT INTO telegram_blocked_chats(chat_id,reason) VALUES(?,?)
+            ON CONFLICT(chat_id) DO UPDATE SET reason=excluded.reason,updated_at=CURRENT_TIMESTAMP""",
+            (int(chat_id),str(reason)[:500]))
+        db.commit()
+        return existed is None
+
+def is_telegram_chat_blocked(chat_id):
+    with connect() as db:
+        return db.execute("SELECT 1 FROM telegram_blocked_chats WHERE chat_id=?",(int(chat_id),)).fetchone() is not None
+
+def clear_telegram_chat_blocked(chat_id):
+    with connect() as db:
+        cur=db.execute("DELETE FROM telegram_blocked_chats WHERE chat_id=?",(int(chat_id),))
+        db.commit()
+        return cur.rowcount>0
 
 def set_notifications(user_id,enabled):
     with connect() as db:
