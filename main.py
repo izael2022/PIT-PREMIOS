@@ -60,7 +60,8 @@ def api(method, data=None):
                 error_code=result.get("error_code")
                 if error_code in retryable_codes and attempt<attempts-1:
                     retry_after=result.get("parameters",{}).get("retry_after",2)
-                    time.sleep(max(1,min(int(retry_after),30)))
+                    delay=max(1,min(int(retry_after),30)) if error_code==429 else min(2**attempt,8)
+                    time.sleep(delay)
                     continue
                 raise RuntimeError(str(result))
             return result.get("result")
