@@ -1625,24 +1625,25 @@ def schedule_update(update):
     update_id=update.get("update_id")
     if "callback_query" in update:
         acknowledge_callback(update)
+    # Fast duplicate check avoids waiting on semaphore capacity for already queued IDs.
+    if update_id is not None:
+        with USER_QUEUE_LOCK:
+            if update_id in SCHEDULED_UPDATE_IDS:
+                return
     UPDATE_CAPACITY.acquire()
     submit_worker=False
     with USER_QUEUE_LOCK:
+        # Recheck after capacity acquisition to close the race between concurrent schedulers.
         if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
             UPDATE_CAPACITY.release()
-            if uid not in ACTIVE_USERS and USER_QUEUES.get(uid):
-                ACTIVE_USERS.add(uid)
-                submit_worker=True
-            else:
-                return
-        else:
-            if update_id is not None:
-                SCHEDULED_UPDATE_IDS.add(update_id)
-            pending=USER_QUEUES.setdefault(uid,deque())
-            pending.append(update)
-            if uid not in ACTIVE_USERS:
-                ACTIVE_USERS.add(uid)
-                submit_worker=True
+            return
+        if update_id is not None:
+            SCHEDULED_UPDATE_IDS.add(update_id)
+        pending=USER_QUEUES.setdefault(uid,deque())
+        pending.append(update)
+        if uid not in ACTIVE_USERS:
+            ACTIVE_USERS.add(uid)
+            submit_worker=True
     if submit_worker:
         try:
             UPDATE_POOL.submit(drain_user_queue,uid)
