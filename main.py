@@ -1235,12 +1235,26 @@ def callback(c,update_id=None):
         db.set_notifications(uid,True); notifications_page(chat,uid)
     elif data=="notifications:off":
         db.set_notifications(uid,False); notifications_page(chat,uid)
+    elif data=="game:scratch":
+        if "scratch" in db.game_status(uid):
+            send(chat,"⏳ Você já participou da Raspadinha Virtual hoje. Volte amanhã!",back()); return
+        send(chat,"🎟️ <b>RASPADINHA VIRTUAL</b>\n━━━━━━━━━━━━━━━━━━\nEsta é uma participação promocional gratuita. Toque no botão para revelar o resultado. Uma tentativa por dia; não é necessário pagar nem apostar.",[[btn("✨ RASPAR E REVELAR","game:scratch:reveal")],[btn("⬅️ Menu principal","home")]])
+    elif data=="game:scratch:reveal":
+        if "scratch" in db.game_status(uid):
+            send(chat,"⏳ Você já participou da Raspadinha Virtual hoje. Volte amanhã!",back()); return
+        prizes=[0,2,3,5,8,10,15,25]; weights=[25,22,18,14,10,6,4,1]
+        prize=random.choices(prizes,weights=weights,k=1)[0]
+        try:
+            db.play_daily_game(uid,"scratch",prize)
+            outcome=("😔 Não foi premiado desta vez." if prize==0 else f"🎉 Você revelou <b>+{prize} pontos</b>!")
+            send(chat,"🎟️ <b>RASPADINHA REVELADA!</b>\n━━━━━━━━━━━━━━━━━━\n"+outcome+"\n\nSua participação foi registrada e o resultado já foi processado. Limite: uma participação gratuita por dia.",[[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
+        except ValueError as e:
+            send(chat,escape(str(e)),back())
     elif data.startswith("game:"):
         game=data.split(":",1)[1]
         configs={
             "chest":("🎁 BAÚ SURPRESA DIÁRIO",[0,2,3,5,8,10,15,20],[25,25,20,15,8,4,2,1]),
-            "roulette":("🎡 ROLETA DE PONTOS",[0,2,5,8,10,15,20,30],[25,20,18,14,10,7,4,2]),
-            "scratch":("🎟️ RASPADINHA VIRTUAL",[0,2,3,5,8,10,15,25],[25,22,18,14,10,6,4,1])
+            "roulette":("🎡 ROLETA DE PONTOS",[0,2,5,8,10,15,20,30],[25,20,18,14,10,7,4,2])
         }
         if game not in configs: return
         title,prizes,weights=configs[game]
