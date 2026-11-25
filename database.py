@@ -802,6 +802,11 @@ def game_status(uid):
         rows=db.execute("SELECT game,points FROM daily_games WHERE user_id=? AND played_on=?",(uid,current)).fetchall()
         return {r["game"]:int(r["points"]) for r in rows}
 
+def daily_game_history(uid,limit=10):
+    limit=max(1,min(int(limit),50))
+    with connect() as db:
+        return db.execute("SELECT game,points,played_on,created_at FROM daily_games WHERE user_id=? ORDER BY played_on DESC,id DESC LIMIT ?",(int(uid),limit)).fetchall()
+
 def notification_history(uid,limit=10):
     with connect() as db:
         return db.execute("SELECT category,title,message,created_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
