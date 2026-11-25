@@ -1250,22 +1250,34 @@ def callback(c,update_id=None):
             send(chat,"🎟️ <b>RASPADINHA REVELADA!</b>\n━━━━━━━━━━━━━━━━━━\n"+outcome+"\n\nSua participação foi registrada e o resultado já foi processado. Limite: uma participação gratuita por dia.",[[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
         except ValueError as e:
             send(chat,escape(str(e)),back())
-    elif data.startswith("game:"):
-        game=data.split(":",1)[1]
-        configs={
-            "chest":("🎁 BAÚ SURPRESA DIÁRIO",[0,2,3,5,8,10,15,20],[25,25,20,15,8,4,2,1]),
-            "roulette":("🎡 ROLETA DE PONTOS",[0,2,5,8,10,15,20,30],[25,20,18,14,10,7,4,2])
-        }
-        if game not in configs: return
-        title,prizes,weights=configs[game]
-        if game in db.game_status(uid):
-            send(chat,f"⏳ Você já participou de {title.lower()} hoje. Volte amanhã!",back()); return
+    elif data=="game:chest":
+        if "chest" in db.game_status(uid):
+            send(chat,"⏳ Você já abriu o Baú Surpresa hoje. Volte amanhã!",back()); return
+        send(chat,"🎁 <b>BAÚ SURPRESA</b>\n━━━━━━━━━━━━━━━━━━\nAbra gratuitamente seu baú diário e descubra seu resultado. Uma tentativa por dia.",[[btn("🔓 ABRIR BAÚ","game:chest:open")],[btn("⬅️ Menu principal","home")]])
+    elif data=="game:chest:open":
+        if "chest" in db.game_status(uid):
+            send(chat,"⏳ Você já abriu o Baú Surpresa hoje. Volte amanhã!",back()); return
+        prizes=[0,2,3,5,8,10,15,20]; weights=[25,25,20,15,8,4,2,1]
         prize=random.choices(prizes,weights=weights,k=1)[0]
         try:
-            db.play_daily_game(uid,game,prize)
-            send(chat,f"{title}\n━━━━━━━━━━━━━━━━━━\n🎉 Resultado: <b>+{prize} pontos</b>!\n\nCada jogo tem uma tentativa por dia. Seus pontos já foram adicionados à carteira.",[[btn("🎁 Baú surpresa","game:chest"),btn("🎡 Roleta","game:roulette")],[btn("🎟️ Raspadinha","game:scratch")],[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
-        except ValueError as e:
-            send(chat,escape(str(e)),back())
+            db.play_daily_game(uid,"chest",prize)
+            outcome=("😔 O baú não trouxe pontos desta vez." if prize==0 else f"🎉 O baú trouxe <b>+{prize} pontos</b>!")
+            send(chat,"🎁 <b>BAÚ ABERTO!</b>\n━━━━━━━━━━━━━━━━━━\n"+outcome+"\n\nParticipação gratuita registrada. Limite: uma abertura por dia.",[[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
+        except ValueError as e: send(chat,escape(str(e)),back())
+    elif data=="game:roulette":
+        if "roulette" in db.game_status(uid):
+            send(chat,"⏳ Você já girou a Roleta hoje. Volte amanhã!",back()); return
+        send(chat,"🎡 <b>ROLETa DE PONTOS</b>\n━━━━━━━━━━━━━━━━━━\nGiro promocional gratuito. Uma tentativa por dia, sem compra ou aposta.",[[btn("🎡 GIRAR","game:roulette:spin")],[btn("⬅️ Menu principal","home")]])
+    elif data=="game:roulette:spin":
+        if "roulette" in db.game_status(uid):
+            send(chat,"⏳ Você já girou a Roleta hoje. Volte amanhã!",back()); return
+        prizes=[0,2,5,8,10,15,20,30]; weights=[25,20,18,14,10,7,4,2]
+        prize=random.choices(prizes,weights=weights,k=1)[0]
+        try:
+            db.play_daily_game(uid,"roulette",prize)
+            outcome=("😔 A roleta não concedeu pontos nesta rodada." if prize==0 else f"🎉 Resultado: <b>+{prize} pontos</b>!")
+            send(chat,"🎡 <b>ROLETa CONCLUÍDA!</b>\n━━━━━━━━━━━━━━━━━━\n"+outcome+"\n\nParticipação gratuita registrada. Limite: um giro por dia.",[[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
+        except ValueError as e: send(chat,escape(str(e)),back())
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
     elif data=="mytasks": my_task_submissions(chat,uid)
