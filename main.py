@@ -1045,7 +1045,12 @@ def callback(c,update_id=None):
         except Exception: log.warning("Não foi possível apagar a mensagem anterior do bot")
     if data.startswith("admin:payoutreduce:"):
         if not admin(uid): return
-        payout_id=int(data.rsplit(":",1)[1])
+        try:
+            raw_id=data.rsplit(":",1)[1]
+            if not raw_id.isdigit(): return
+            payout_id=int(raw_id)
+        except (ValueError,IndexError):
+            return
         payout=next((x for x in db.pending_payouts() if x["id"]==payout_id),None)
         if payout:
             send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout['points']:,} pontos.")
@@ -1064,7 +1069,11 @@ def callback(c,update_id=None):
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu())
         elif action=="userids" or action.startswith("userids:"):
-            page=int(action.split(":",1)[1]) if ":" in action else 0
+            try:
+                page=int(action.split(":",1)[1]) if ":" in action else 0
+                if page<0: page=0
+            except (ValueError,IndexError):
+                page=0
             send_admin_user_ids(chat,page)
         elif action=="user": send(chat,"👤 Para consultar um membro, envie:\n<code>/usuario ID</code>",admin_menu())
         elif action=="add": send(chat,"➕ Para adicionar ou retirar pontos, envie:\n<code>/addpoints ID QUANTIDADE</code>\nUse quantidade negativa para retirar.",admin_menu())
