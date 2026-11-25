@@ -150,6 +150,45 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
             with self.assertRaises(sqlite3.IntegrityError):
                 conn.execute("UPDATE users SET points=-1 WHERE user_id=1")
 
+    def test_task_approval_awards_points_once(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(70,'Task test',0)")
+            conn.execute("INSERT INTO tasks(title,description,reward_points,requires_proof) VALUES('Test task','',250,1)")
+            conn.execute("INSERT INTO task_submissions(task_id,user_id,proof,status) VALUES(1,70,'proof text','pending')")
+        first = database.review_task_submission(1, 999, True)
+        second = database.review_task_submission(1, 999, True)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=70").fetchone()[0], 250)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=70").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_earnings WHERE user_id=70 AND source='task'").fetchone()[0], 1)
+
+    def test_rejected_task_proof_is_archived_and_can_be_resubmitted(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(71,'Retry task test',0)")
+            conn.execute("INSERT INTO tasks(title,description,reward_points,requires_proof) VALUES('Retry task','',150,1)")
+            conn.execute("INSERT INTO task_submissions(task_id,user_id,proof,status) VALUES(1,71,'first proof','pending')")
+        rejected = database.review_task_submission(1, 999, False)
+        self.assertIsNotNone(rejected)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT status FROM task_submissions WHERE id=1").fetchone()[0], "rejected")
+            self.assertEqual(conn.execute("SELECT status FROM task_submission_history WHERE submission_id=1").fetchone()[0], "rejected")
+        renewed_id = database.submit_task(1,71,"corrected proof")
+        self.assertEqual(renewed_id, 1)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT status FROM task_submissions WHERE id=1").fetchone()[0], "pending")
+            self.assertEqual(conn.execute("SELECT proof FROM task_submissions WHERE id=1").fetchone()[0], "corrected proof")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM task_submission_history WHERE submission_id=1"), 1)
+
+    def test_approved_task_cannot_be_resubmitted(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(72,'No repeat task',0)")
+            conn.execute("INSERT INTO tasks(title,description,reward_points,requires_proof) VALUES('Once task','',100,1)")
+            conn.execute("INSERT INTO task_submissions(task_id,user_id,proof,status) VALUES(1,72,'proof','approved')")
+        with self.assertRaises(ValueError):
+            database.submit_task(1,72,"another proof")
+
 
 if __name__ == "__main__":
     unittest.main()
