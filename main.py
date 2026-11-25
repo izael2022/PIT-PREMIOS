@@ -281,6 +281,7 @@ def menu():
         [btn("🎯 MISSÕES E TAREFAS","missions"),btn("🎁 CHECK-IN DIÁRIO","daily")],
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
+        [btn("🎮 HISTÓRICO DOS JOGOS","game:history")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR CÓDIGO","user:redeem_code")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
@@ -1278,6 +1279,19 @@ def callback(c,update_id=None):
             outcome=("😔 A roleta não concedeu pontos nesta rodada." if prize==0 else f"🎉 Resultado: <b>+{prize} pontos</b>!")
             send(chat,"🎡 <b>ROLETa CONCLUÍDA!</b>\n━━━━━━━━━━━━━━━━━━\n"+outcome+"\n\nParticipação gratuita registrada. Limite: um giro por dia.",[[btn("💰 Minha carteira","wallet")],[btn("⬅️ Menu principal","home")]])
         except ValueError as e: send(chat,escape(str(e)),back())
+    elif data=="game:history":
+        rows=db.daily_game_history(uid,10)
+        if not rows:
+            send(chat,"🎮 <b>HISTÓRICO DOS JOGOS</b>\n\nVocê ainda não participou dos jogos promocionais.",[[btn("⬅️ Menu principal","home")]])
+        else:
+            labels={"chest":"Baú Surpresa","roulette":"Roleta","scratch":"Raspadinha"}
+            lines=["🎮 <b>HISTÓRICO DOS JOGOS</b>","━━━━━━━━━━━━━━━━━━"]
+            for row in rows:
+                game_label=labels.get(row["game"],row["game"])
+                pts=int(row["points"])
+                result=("Sem pontos" if pts==0 else f"+{pts} pontos")
+                lines.append(f"📅 {escape(row['played_on'])} — {game_label}: <b>{result}</b>")
+            send(chat,"\n".join(lines),[[btn("⬅️ Menu principal","home")]])
     elif data=="home": send_photo(chat,BANNER_URL,"🐾 <b>PIT PRÊMIOS</b>\nSua central de pontos, conquistas e recompensas.",menu())
     elif data=="tasks": task_list(chat,uid)
     elif data=="mytasks": my_task_submissions(chat,uid)
