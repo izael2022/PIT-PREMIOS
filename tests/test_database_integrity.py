@@ -316,6 +316,36 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE user_id=99999").fetchone()[0],0)
 
+    def test_notification_preference_defaults_enabled_and_toggle_persists(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(94,'Notification preference',0)")
+        self.assertTrue(database.notifications_enabled(94))
+        database.set_notifications(94,False)
+        self.assertFalse(database.notifications_enabled(94))
+        database.set_notifications(94,True)
+        self.assertTrue(database.notifications_enabled(94))
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT enabled FROM notification_preferences WHERE user_id=94").fetchone()[0],1)
+
+    def test_notification_history_records_and_respects_limit(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(95,'Notification history',0)")
+        for i in range(5):
+            database.record_notification(95,"general",f"Title {i}",f"Message {i}")
+        rows=database.notification_history(95,3)
+        self.assertEqual(len(rows),3)
+        self.assertEqual(rows[0]["title"],"Title 4")
+        self.assertEqual(rows[-1]["title"],"Title 2")
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notification_events WHERE user_id=95").fetchone()[0],5)
+
+    def test_notification_history_limit_is_parameterized(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(96,'Notification limit',0)")
+        database.record_notification(96,"test","A","B")
+        with self.assertRaises((ValueError,TypeError)):
+            database.notification_history(96,"1 OR 1=1")
+
 
 if __name__ == "__main__":
     unittest.main()
