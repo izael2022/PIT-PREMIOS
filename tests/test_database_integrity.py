@@ -368,6 +368,32 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         database.set_maintenance_mode(False)
         self.assertFalse(database.maintenance_mode_enabled())
 
+    def test_backup_encrypt_validate_and_restore_round_trip(self):
+        import base64
+        from backup_utils import create_backup_archive, validate_backup_archive, restore_backup_archive
+        key=base64.urlsafe_b64encode(b"z"*32).decode()
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(99,'Backup fixture',123)")
+        payload=create_backup_archive(database.DATABASE_PATH,key)
+        restored_data=validate_backup_archive(payload,key)
+        self.assertTrue(restored_data)
+        destination=Path(self.tmp.name)/"restored.db"
+        restore_backup_archive(payload,destination,key)
+        with sqlite3.connect(destination) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=99").fetchone()[0],123)
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0],"ok")
+
+    def test_backup_restore_refuses_overwriting_existing_destination(self):
+        import base64
+        from backup_utils import create_backup_archive, restore_backup_archive
+        key=base64.urlsafe_b64encode(b"z"*32).decode()
+        payload=create_backup_archive(database.DATABASE_PATH,key)
+        destination=Path(self.tmp.name)/"existing.db"
+        destination.write_text("keep-existing")
+        with self.assertRaises(FileExistsError):
+            restore_backup_archive(payload,destination,key)
+        self.assertEqual(destination.read_text(),"keep-existing")
+
 
 if __name__ == "__main__":
     unittest.main()
