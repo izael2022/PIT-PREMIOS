@@ -243,6 +243,57 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             self.assertEqual(conn.execute("SELECT uses FROM redeem_codes WHERE code=?",(code,)).fetchone()[0],0)
 
+    def test_daily_checkin_concurrency_credits_once(self):
+        import threading
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(90,'Daily concurrency',0)")
+        barrier=threading.Barrier(2)
+        outcomes=[]
+        def claim():
+            barrier.wait()
+            outcomes.append(database.daily_claim(90,[100,200]))
+        threads=[threading.Thread(target=claim) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(timeout=10)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(sum(result[0] for result in outcomes),1)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=90").fetchone()[0],100)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=90").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_earnings WHERE user_id=90 AND source='daily_checkin'").fetchone()[0],1)
+
+    def test_daily_game_concurrency_awards_once_and_ledger_matches(self):
+        import threading
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(91,'Game concurrency',0)")
+        barrier=threading.Barrier(2)
+        outcomes=[]
+        def play():
+            barrier.wait()
+            try:
+                outcomes.append(("ok",database.play_daily_game(91,"chest",25)))
+            except ValueError as exc:
+                outcomes.append(("blocked",str(exc)))
+        threads=[threading.Thread(target=play) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(timeout=10)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(sum(kind=="ok" for kind,_ in outcomes),1)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=91").fetchone()[0],25)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM daily_games WHERE user_id=91 AND game='chest'").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=91 AND amount=25").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_earnings WHERE user_id=91 AND source='game_chest' AND points=25").fetchone()[0],1)
+
+    def test_game_rejects_invalid_game_and_caps_reward(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(92,'Game limits',0)")
+        with self.assertRaises(ValueError):
+            database.play_daily_game(92,"unknown",50)
+        self.assertEqual(database.play_daily_game(92,"scratch",999),100)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=92").fetchone()[0],100)
+
 
 if __name__ == "__main__":
     unittest.main()
