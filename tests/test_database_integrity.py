@@ -346,6 +346,21 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with self.assertRaises((ValueError,TypeError)):
             database.notification_history(96,"1 OR 1=1")
 
+    def test_account_block_and_unblock_history_are_recorded(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(97,'Blocked user',0)")
+        self.assertTrue(database.block_account(97,123456789,"Auditoria de teste"))
+        self.assertEqual(database.get_account_block(97)["reason"],"Auditoria de teste")
+        self.assertTrue(database.unblock_account(97,123456789))
+        self.assertIsNone(database.get_account_block(97))
+        history=database.account_block_history(97)
+        self.assertEqual([x["action"] for x in history],["unblocked","blocked"])
+
+    def test_block_account_requires_reason_and_registered_user(self):
+        with self.assertRaises(ValueError):
+            database.block_account(98,123456789," ")
+        self.assertFalse(database.block_account(999999,123456789,"Teste"))
+
 
 if __name__ == "__main__":
     unittest.main()
