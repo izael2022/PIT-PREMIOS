@@ -757,10 +757,17 @@ def command(m,update_id=None):
         if block:
             send(chat,"🚫 <b>CONTA BLOQUEADA</b>\n\nSeu acesso ao PIT PRÊMIOS está temporariamente bloqueado.\nMotivo: "+escape(block["reason"])+"\n\nSe acredita que houve um engano, entre em contato com a equipe responsável.")
             return
+    if uid and not admin(uid) and db.maintenance_mode_enabled():
+        send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\n\nEstamos realizando melhorias. Tente novamente mais tarde.")
+        return
     if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
         try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
         except Exception: log.exception("Falha ao registrar auditoria administrativa")
-    if cmd=="/start": start(m)
+    if cmd=="/manutencao" and admin(uid):
+        state=(len(p)>1 and p[1].lower() in ("on","1","ativar","ativa"))
+        db.set_maintenance_mode(state)
+        send(chat,"🛠️ Modo de manutenção "+("ATIVADO" if state else "DESATIVADO")+"." )
+    elif cmd=="/start": start(m)
     elif cmd=="/saldo": balance(chat,uid)
     elif cmd=="/ranking": ranking_menu(chat)
     elif cmd=="/diario": daily(chat,uid)
@@ -842,7 +849,7 @@ def command(m,update_id=None):
         for aid in ADMIN_IDS:
             try: send(aid,f"Novo resgate #{rid}\nUsuário: {uid}\nPontos: {pts}\nPrêmio: {escape(reward)}")
             except Exception: log.exception("Falha ao notificar admin")
-    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria") and admin(uid):
+    elif cmd in ("/admin","/stats","/addpoints","/setvip","/pedidos","/saques","/broadcast","/usuario","/novopremio","/risco","/monitorarindicacoes","/bloquear","/desbloquear","/bloqueados","/historicoantifraude","/saude","/health","/auditoria","/manutencao") and admin(uid):
         if cmd in ("/saude","/health"):
             admin_health_report(chat)
         elif cmd=="/auditoria":
@@ -1042,6 +1049,13 @@ def callback(c,update_id=None):
         if not c.get("_answered_immediately"):
             try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Por segurança, abra o bot no privado.","show_alert":True})
             except Exception: log.info("Callback em grupo expirou antes da confirmação.")
+        return
+    if uid and not admin(uid) and db.maintenance_mode_enabled():
+        if not c.get("_answered_immediately"):
+            try: api("answerCallbackQuery",{"callback_query_id":c["id"],"text":"Bot em manutenção. Tente novamente mais tarde.","show_alert":True})
+            except Exception: log.info("Callback durante manutenção expirou.")
+        else:
+            send(chat,"🛠️ <b>PIT PRÊMIOS EM MANUTENÇÃO</b>\nTente novamente mais tarde.")
         return
     if uid and not admin(uid):
         block=db.get_account_block(uid)
