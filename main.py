@@ -1374,15 +1374,16 @@ def process_update(update):
             return True
         if "message" in update:
             m=update["message"]
-            if (m.get("text") or "").startswith("/"):
-                command(m,update_id=update_id)
-            elif m.get("chat",{}).get("type")=="private":
-                uid=m.get("from",{}).get("id")
-                block=db.get_account_block(uid) if uid and not admin(uid) else None
+            uid=m.get("from",{}).get("id")
+            if m.get("chat",{}).get("type")=="private" and uid and not admin(uid):
+                block=db.get_account_block(uid)
                 if block:
                     send(m["chat"]["id"],"🚫 <b>CONTA BLOQUEADA</b>\nMotivo: "+escape(block["reason"])+"\nEntre em contato com a equipe responsável.")
                     if update_id is not None: db.mark_update_processed(update_id)
                     return True
+            if (m.get("text") or "").startswith("/"):
+                command(m,update_id=update_id)
+            elif m.get("chat",{}).get("type")=="private":
                 input_state=db.get_user_input_state(uid)
                 if input_state:
                     value=(m.get("text") or "").strip()
