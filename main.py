@@ -1131,7 +1131,9 @@ def callback(c,update_id=None):
         return
     if data.startswith("pixreview:"):
         if not admin(uid): return
-        _,target,decision=data.split(":")
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        target,decision=parts[1],parts[2]
         result=db.review_pix_profile(int(target),uid,decision=="yes")
         if not result: send(chat,"Esse cadastro Pix não está mais aguardando análise."); return
         status="aprovada" if decision=="yes" else "reprovada"
@@ -1262,7 +1264,9 @@ def callback(c,update_id=None):
             send(chat,"Identificação de tarefa inválida.")
     elif data.startswith("taskreview:"):
         if not admin(uid): return
-        _,sid,decision=data.split(":")
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        sid,decision=parts[1],parts[2]
         result=db.review_task_submission(int(sid),uid,decision=="yes")
         if not result: send(chat,"Essa tarefa já foi analisada."); return
         status="aprovada; pontos creditados" if decision=="yes" else "rejeitada"
@@ -1274,7 +1278,10 @@ def callback(c,update_id=None):
         except Exception: log.exception("Falha ao notificar usuário sobre tarefa")
     elif data.startswith("refreview:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        rid,decision=parts[1],parts[2]
+        result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
@@ -1302,7 +1309,10 @@ def callback(c,update_id=None):
             send(chat,"Não foi possível cancelar este saque.")
     elif data.startswith("payout:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_payout(int(rid),uid,decision=="yes")
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        rid,decision=parts[1],parts[2]
+        result=db.review_payout(int(rid),uid,decision=="yes")
         if not result: send(chat,"Este pedido já foi analisado."); return
         approved=decision=="yes"
         status="aprovado" if approved else "rejeitado; os pontos foram devolvidos"
@@ -1335,7 +1345,9 @@ def callback(c,update_id=None):
             send(chat,"Não foi possível cancelar este pedido.")
     elif data.startswith("rewardreview:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":")
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        rid,decision=parts[1],parts[2]
         result=db.review_reward_order(int(rid),uid,decision=="yes")
         if not result: send(chat,"Este pedido já foi analisado."); return
         status="aprovado" if decision=="yes" else "rejeitado; os pontos foram devolvidos e o estoque restaurado"
@@ -1344,7 +1356,10 @@ def callback(c,update_id=None):
         except Exception: log.exception("Falha ao avisar usuário sobre pedido da loja")
     elif data.startswith("review:"):
         if not admin(uid): return
-        _,rid,decision=data.split(":"); result=db.review_redemption(int(rid),uid,decision=="yes")
+        parts=data.split(":")
+        if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
+        rid,decision=parts[1],parts[2]
+        result=db.review_redemption(int(rid),uid,decision=="yes")
         if not result: return
         status="aprovado" if decision=="yes" else "rejeitado; pontos devolvidos"
         api("editMessageText",{"chat_id":chat,"message_id":msg["message_id"],"text":msg.get("text","")+f"\nStatus: {status}","parse_mode":"HTML"})
