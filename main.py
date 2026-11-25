@@ -327,7 +327,7 @@ def admin_health_report(chat):
             f"📨 Atualizações aguardando: <b>{runtime['queued']}</b>",
             f"👤 Usuários com fila ativa: <b>{runtime['active_users']}</b>",
             f"📊 Processadas desde o início: <b>{runtime['completed']:,}</b> | falhas: <b>{runtime['failed']:,}</b>",
-            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/3</b>",
+            f"⚙️ Serviços internos ativos: <b>{sum(1 for thread in BACKGROUND_THREADS.values() if thread.is_alive())}/4</b>",
             f"👥 Usuários cadastrados: <b>{stats['users']:,}</b>",
             f"🪙 Pontos em circulação: <b>{stats['points']:,}</b>",
             f"📥 Atualizações pendentes: <b>{snapshot['pending_updates']}</b>",
