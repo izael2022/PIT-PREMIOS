@@ -1610,13 +1610,13 @@ def drain_user_queue(uid):
                         SCHEDULED_UPDATE_IDS.discard(update["update_id"])
                 UPDATE_CAPACITY.release()
             else:
-                # Mantém a atualização na frente da fila do usuário e libera o worker.
-                # A rotina de recuperação tentará novamente sem inverter a ordem.
+                # Remove a cópia em memória após falha; o registro durável é a fonte
+                # de recuperação. Evita re-enfileirar a mesma atualização duplicadamente.
                 with USER_QUEUE_LOCK:
-                    USER_QUEUES.setdefault(uid,deque()).appendleft(update)
-                    ACTIVE_USERS.discard(uid)
                     if update.get("update_id") is not None:
                         SCHEDULED_UPDATE_IDS.discard(update["update_id"])
+                    ACTIVE_USERS.discard(uid)
+                UPDATE_CAPACITY.release()
                 return
 
 def schedule_update(update):
