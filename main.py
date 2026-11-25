@@ -47,7 +47,10 @@ def resolve_health_issue(alert_key, details="O serviço voltou a operar normalme
 
 def api(method, data=None):
     payload=urllib.parse.urlencode({k: json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in (data or {}).items()}).encode()
-    attempts=4 if method=="getUpdates" else 1
+    # Retry only responses that clearly indicate rejection/transient server failure.
+    # Network timeouts on message sends are not retried to avoid duplicate delivery.
+    attempts=4 if method=="getUpdates" else (3 if method in ("sendMessage","sendPhoto","sendDocument","sendVideo","sendAudio") else 1)
+    retryable_codes=(429,500,502,503,504)
     for attempt in range(attempts):
         req=urllib.request.Request(API+method,data=payload)
         try:
@@ -55,22 +58,23 @@ def api(method, data=None):
                 result=json.loads(response.read())
             if not result.get("ok"):
                 error_code=result.get("error_code")
-                if method=="getUpdates" and error_code in (429,500,502,503,504) and attempt<attempts-1:
+                if error_code in retryable_codes and attempt<attempts-1:
                     retry_after=result.get("parameters",{}).get("retry_after",2)
-                    time.sleep(max(1,min(int(retry_after),15)))
+                    time.sleep(max(1,min(int(retry_after),30)))
                     continue
                 raise RuntimeError(str(result))
             return result.get("result")
         except urllib.error.HTTPError as e:
             detail=e.read().decode("utf-8","replace")[:500]
-            if method=="getUpdates" and e.code in (429,500,502,503,504) and attempt<attempts-1:
+            if e.code in retryable_codes and attempt<attempts-1:
                 retry_after=2
                 try:
                     parsed=json.loads(detail)
                     retry_after=parsed.get("parameters",{}).get("retry_after",2)
                 except Exception:
                     pass
-                time.sleep(max(1,min(int(retry_after),15)))
+                delay=max(1,min(int(retry_after),30)) if e.code==429 else min(2**attempt,8)
+                time.sleep(delay)
                 continue
             raise RuntimeError(f"Telegram HTTP {e.code}: {detail}") from e
         except (urllib.error.URLError,TimeoutError,ConnectionError,OSError) as e:
@@ -78,7 +82,7 @@ def api(method, data=None):
                 time.sleep(min(2**attempt,8))
                 continue
             raise
-    raise RuntimeError("Não foi possível consultar atualizações do Telegram após várias tentativas.")
+    raise RuntimeError("Não foi possível consultar o Telegram após várias tentativas.")
 
 
 def acknowledge_callback(update):
