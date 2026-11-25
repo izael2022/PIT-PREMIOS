@@ -394,6 +394,28 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
             restore_backup_archive(payload,destination,key)
         self.assertEqual(destination.read_text(),"keep-existing")
 
+    def test_durable_update_enqueue_is_idempotent_and_pending(self):
+        update={"update_id":1001,"message":{"text":"/start","from":{"id":7},"chat":{"id":7,"type":"private"}}}
+        self.assertTrue(database.enqueue_update(update))
+        self.assertFalse(database.enqueue_update(update))
+        pending=database.pending_updates(limit=10)
+        self.assertEqual([item["update_id"] for item in pending],[1001])
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM durable_updates WHERE update_id=1001").fetchone()[0],1)
+
+    def test_mark_update_processed_transitions_durable_state(self):
+        update={"update_id":1002,"message":{"text":"test","from":{"id":8},"chat":{"id":8,"type":"private"}}}
+        database.enqueue_update(update)
+        database.mark_update_processed(1002)
+        database.mark_update_processed(1002)
+        self.assertTrue(database.update_was_processed(1002))
+        self.assertEqual(database.pending_updates(limit=10),[])
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            row=conn.execute("SELECT status,completed_at FROM durable_updates WHERE update_id=1002").fetchone()
+            self.assertEqual(row[0],"completed")
+            self.assertIsNotNone(row[1])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM processed_updates WHERE update_id=1002").fetchone()[0],1)
+
 
 if __name__ == "__main__":
     unittest.main()
