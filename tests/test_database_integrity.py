@@ -110,6 +110,40 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
             balance = conn.execute("SELECT points FROM users WHERE user_id=32").fetchone()[0]
         self.assertEqual(balance, 20000)
 
+
+    def test_referral_approval_awards_once(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(40,'Referrer',0)")
+            conn.execute("INSERT INTO users(user_id,first_name,points,referred_by) VALUES(41,'Referred',0,40)")
+            conn.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,status) VALUES(40,41,'normal','pending')")
+        first = database.review_referral(1, 999, True, 1000)
+        second = database.review_referral(1, 999, True, 1000)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=40").fetchone()[0], 1000)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=40").fetchone()[0], 1)
+
+    def test_blocked_referrer_cannot_claim_referral_reward(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(50,'Blocked referrer',0)")
+            conn.execute("INSERT INTO users(user_id,first_name,points,referred_by) VALUES(51,'Referral user',0,50)")
+            conn.execute("INSERT INTO referral_reviews(referrer_id,referred_user_id,risk_level,status) VALUES(50,51,'normal','pending')")
+        database.block_account(50, 999, "Teste isolado")
+        result = database.review_referral(1, 999, True, 500)
+        self.assertTrue(result.get("blocked_referrer"))
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=50").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT status FROM referral_reviews WHERE id=1").fetchone()[0], "pending")
+
+    def test_manual_referral_hold_can_be_set_and_removed(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(60,'Hold test',0)")
+        self.assertTrue(database.set_referral_manual_hold(60, True, 999, "Test hold"))
+        self.assertEqual(database.get_referral_manual_hold(60)["reason"], "Test hold")
+        self.assertTrue(database.set_referral_manual_hold(60, False, 999))
+        self.assertIsNone(database.get_referral_manual_hold(60))
+
     def test_user_points_constraint(self):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(1,'Test',0)")
