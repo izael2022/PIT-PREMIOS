@@ -971,8 +971,8 @@ def command(m,update_id=None):
                 except Exception:
                     failed+=1
                     log.warning("Broadcast falhou para usuário %s (posição %s)",target,index,exc_info=True)
-                # Ritmo conservador, evitando rajadas excessivas na API.
-                time.sleep(0.05)
+                # A fila possui seu próprio limitador; envio direto exige intervalo maior.
+                time.sleep(0.05 if OUTBOUND_READY else 1.05)
             send(chat,f"📣 <b>Disparo finalizado</b>\nEnviados: {sent}\nFalhas: {failed}\nIgnorados (notificações desativadas): {skipped}")
         elif cmd=="/stats":
             s=db.stats()
