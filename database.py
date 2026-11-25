@@ -304,6 +304,16 @@ def init_db():
             db.execute("ALTER TABLE payout_requests ADD COLUMN conversion_version INTEGER NOT NULL DEFAULT 1")
         db.commit()
 
+def maintenance_mode_enabled():
+    with connect() as db:
+        row=db.execute("SELECT value FROM bot_settings WHERE key='maintenance_mode'").fetchone()
+        return bool(row and row["value"]=="1")
+
+def set_maintenance_mode(enabled):
+    with connect() as db:
+        db.execute("INSERT INTO bot_settings(key,value) VALUES('maintenance_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("1" if enabled else "0",))
+        db.commit()
+
 def get_auto_delete_settings():
     with connect() as db:
         db.execute("CREATE TABLE IF NOT EXISTS bot_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
