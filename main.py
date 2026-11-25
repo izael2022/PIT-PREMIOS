@@ -109,7 +109,7 @@ BACKGROUND_RESTART_AT={}
 BACKGROUND_FAILURES={}
 
 def ensure_background_worker(name,target,restart_backoff=5):
-    """Start a worker once, or restart it after an unexpected thread exit."""
+    """Start a worker once; throttle restarts after unexpected exits."""
     now=time.monotonic()
     should_alert=False
     with BACKGROUND_THREADS_LOCK:
@@ -118,18 +118,25 @@ def ensure_background_worker(name,target,restart_backoff=5):
             return current
         if current is not None:
             allowed_at=BACKGROUND_RESTART_AT.get(name,0)
-            if now<allowed_at:
-                return None
-            failures=BACKGROUND_FAILURES.get(name,0)+1
-            BACKGROUND_FAILURES[name]=failures
-            delay=0 if float(restart_backoff)<=0 else min(60, max(float(restart_backoff), 2 ** min(failures,6)))
-            BACKGROUND_RESTART_AT[name]=now+delay
-            should_alert=True
+            if allowed_at:
+                if now<allowed_at:
+                    return None
+                # The waiting period elapsed; allow this restart.
+                BACKGROUND_RESTART_AT[name]=0
+                should_alert=True
+            else:
+                failures=BACKGROUND_FAILURES.get(name,0)+1
+                BACKGROUND_FAILURES[name]=failures
+                delay=0 if float(restart_backoff)<=0 else min(60, max(float(restart_backoff), 2 ** min(failures,6)))
+                BACKGROUND_RESTART_AT[name]=now+delay
+                should_alert=True
+                if delay>0:
+                    return None
         worker=threading.Thread(target=target,name=name,daemon=True)
         BACKGROUND_THREADS[name]=worker
         worker.start()
     if should_alert:
-        report_health_issue("worker_"+name,f"O serviço interno {name} parou inesperadamente e foi iniciado novamente.")
+        report_health_issue("worker_"+name,f"O serviço interno {name} parou inesperadamente; tentativa de reinício.")
     return worker
 
 def ensure_background_workers():
