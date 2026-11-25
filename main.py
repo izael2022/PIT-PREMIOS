@@ -656,15 +656,22 @@ def history(chat,uid,page=0):
 def redeem_help(chat):
     send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\n━━━━━━━━━━━━━━━━━━\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
 
-def notifications_page(chat,uid):
+def notifications_page(chat,uid,page=0):
+    per_page=8; page=max(0,int(page))
     enabled=db.notifications_enabled(uid)
     state="ATIVADAS ✅" if enabled else "DESATIVADAS 🔕"
     action="notifications:off" if enabled else "notifications:on"
     label="🔕 Desativar notificações" if enabled else "🔔 Ativar notificações"
-    rows=db.notification_history(uid,8)
-    history="\n".join(f"• <b>{escape(str(x['title']))}</b> — {escape(str(x['created_at']))}\n{escape(str(x['message']))[:180]}" for x in rows) or "Nenhum aviso registrado ainda."
-    send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\n\n<b>Últimos avisos</b>\n{history}",[[btn(label,action)],[btn("🔄 Atualizar","notifications")],[btn("⬅️ Menu principal","home")]])
-
+    total=db.notification_count(uid); pages=max(1,(total+per_page-1)//per_page); page=min(page,pages-1)
+    rows=db.notification_history(uid,per_page,page*per_page)
+    history="\n".join("• <b>"+escape(str(x['title']))+"</b> — "+escape(str(x['created_at']))+"\n"+escape(str(x['message']))[:180] for x in rows) or "Nenhum aviso registrado ainda."
+    buttons=[[btn(label,action)],[btn("🔄 Atualizar","notifications")]]
+    nav=[]
+    if page>0: nav.append(btn("⬅️ Anterior", "notifications:page:"+str(page-1)))
+    if page+1<pages: nav.append(btn("➡️ Próxima", "notifications:page:"+str(page+1)))
+    if nav: buttons.append(nav)
+    buttons.append([btn("⬅️ Menu principal","home")])
+    send(chat,f"🔔 <b>CENTRAL DE NOTIFICAÇÕES</b>\nStatus: <b>{state}</b>\nPágina {page+1}/{pages} • {total} aviso(s)\n\n<b>Últimos avisos</b>\n{history}",buttons)
 def help_page(chat):
     send(chat,f"❓ <b>CENTRAL DE AJUDA PIT PRÊMIOS</b>\n━━━━━━━━━━━━━━━━━━\n<b>💰 Pontos e carteira</b>\nConfira seu saldo em Minha carteira e consulte o Extrato para ver créditos e débitos. A conversão exibida é de 1.000 pontos = R$ 1,00.\n\n<b>🚀 Convites</b>\nUse seu link exclusivo em Convidar amigos. Somente novos cadastros pelo seu link podem contar como indicação. Algumas indicações passam por análise antifraude.\n\n<b>🎯 Missões</b>\nFaça o check-in diário, complete metas de indicação e acompanhe tarefas disponíveis. Leia as regras de cada tarefa antes de enviar a comprovação.\n\n<b>🎁 Prêmios e resgates</b>\nConsulte a Loja de prêmios para fazer pedidos. Para solicitar resgate de pontos, use <code>/resgatar PONTOS DESCRIÇÃO</code>. Mínimo configurado: <b>{MIN_REDEEM_POINTS:,} pontos</b>.\n\n<b>💸 Saques</b>\nCadastre sua chave em <b>Minha chave Pix</b> e aguarde a aprovação da equipe. Depois use <code>/sacar PONTOS</code>. Os pagamentos são realizados manualmente.\n\n<b>💎 Clube VIP</b>\nConsulte as metas em Missões ou fale com a administração.\n\n<b>🛟 Precisa de ajuda?</b>\nEnvie uma mensagem para a equipe responsável pelo grupo oficial. Nunca compartilhe senha ou códigos de acesso.",[[btn("💰 Minha carteira","wallet"),btn("🎯 Missões","missions")],[btn("🚀 Convidar amigos","invite")],[btn("⬅️ Menu principal","home")]])
 
@@ -1232,6 +1239,9 @@ def callback(c,update_id=None):
         send(chat,f"Envie agora sua chave Pix do tipo <b>{escape(key_type)}</b> em uma única mensagem.\n\nNão envie senha, código ou token bancário.")
     elif data=="notifications":
         notifications_page(chat,uid)
+    elif data.startswith("notifications:page:"):
+        try: notifications_page(chat,uid,int(data.rsplit(":",1)[1]))
+        except (ValueError,TypeError): notifications_page(chat,uid,0)
     elif data=="notifications:on":
         db.set_notifications(uid,True); notifications_page(chat,uid)
     elif data=="notifications:off":
