@@ -1630,8 +1630,7 @@ def schedule_update(update):
         with USER_QUEUE_LOCK:
             if update_id in SCHEDULED_UPDATE_IDS:
                 return
-    UPDATE_CAPACITY.acquire()
-    submit_worker=False
+    # Não deixe o polling nem o worker de recuperação bloqueados indefinidamente\n    # quando a fila estiver saturada; o update já foi persistido e será recuperado.\n    acquired=UPDATE_CAPACITY.acquire(timeout=5)\n    if not acquired:\n        raise TimeoutError(f\"Fila de atualizações saturada; update {update_id} permanece durável para recuperação.\")\n    submit_worker=False
     with USER_QUEUE_LOCK:
         # Recheck after capacity acquisition to close the race between concurrent schedulers.
         if update_id is not None and update_id in SCHEDULED_UPDATE_IDS:
