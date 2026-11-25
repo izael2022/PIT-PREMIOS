@@ -1615,8 +1615,16 @@ def drain_user_queue(uid):
                 with USER_QUEUE_LOCK:
                     if update.get("update_id") is not None:
                         SCHEDULED_UPDATE_IDS.discard(update["update_id"])
+                    # Descarta as filas em memória deste usuário para que a
+                    # recuperação durable reordene e retome tudo sequencialmente.
+                    abandoned=USER_QUEUES.pop(uid,deque())
+                    for abandoned_update in abandoned:
+                        if abandoned_update.get("update_id") is not None:
+                            SCHEDULED_UPDATE_IDS.discard(abandoned_update["update_id"])
                     ACTIVE_USERS.discard(uid)
                 UPDATE_CAPACITY.release()
+                for _ in abandoned:
+                    UPDATE_CAPACITY.release()
                 return
 
 def schedule_update(update):
