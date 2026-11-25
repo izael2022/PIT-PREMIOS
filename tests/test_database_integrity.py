@@ -66,6 +66,50 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=20").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT status FROM reward_orders WHERE id=1").fetchone()[0], "approved")
 
+
+    def test_payout_request_reserves_points_and_encrypts_pix(self):
+        import base64
+        os.environ["BACKUP_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"x" * 32).decode()
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(30,'Payout test',20000)")
+        payout_id = database.create_payout_request(30, 10000, "test@example.com", "EMAIL", update_id=12345)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            balance = conn.execute("SELECT points FROM users WHERE user_id=30").fetchone()[0]
+            raw_key = conn.execute("SELECT pix_key FROM payout_requests WHERE id=?", (payout_id,)).fetchone()[0]
+        self.assertEqual(balance, 10000)
+        self.assertTrue(raw_key.startswith("enc:v1:"))
+        self.assertNotIn("test@example.com", raw_key)
+
+    def test_rejected_payout_refunds_once(self):
+        import base64
+        os.environ["BACKUP_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"x" * 32).decode()
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(31,'Refund test',20000)")
+        payout_id = database.create_payout_request(31, 10000, "test@example.com", "EMAIL")
+        first = database.review_payout(payout_id, 999, False)
+        second = database.review_payout(payout_id, 999, False)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            balance = conn.execute("SELECT points FROM users WHERE user_id=31").fetchone()[0]
+            refunds = conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=31 AND amount=10000").fetchone()[0]
+        self.assertEqual(balance, 20000)
+        self.assertEqual(refunds, 1)
+
+    def test_payout_cancel_refunds_once(self):
+        import base64
+        os.environ["BACKUP_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"x" * 32).decode()
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(32,'Cancel test',20000)")
+        payout_id = database.create_payout_request(32, 10000, "test@example.com", "EMAIL")
+        first = database.cancel_payout_request(32, payout_id)
+        second = database.cancel_payout_request(32, payout_id)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            balance = conn.execute("SELECT points FROM users WHERE user_id=32").fetchone()[0]
+        self.assertEqual(balance, 20000)
+
     def test_user_points_constraint(self):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(1,'Test',0)")
