@@ -1615,6 +1615,8 @@ def drain_user_queue(uid):
                 with USER_QUEUE_LOCK:
                     USER_QUEUES.setdefault(uid,deque()).appendleft(update)
                     ACTIVE_USERS.discard(uid)
+                    if update.get("update_id") is not None:
+                        SCHEDULED_UPDATE_IDS.discard(update["update_id"])
                 return
 
 def schedule_update(update):
