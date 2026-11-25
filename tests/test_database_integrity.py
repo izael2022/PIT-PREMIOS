@@ -361,6 +361,13 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
             database.block_account(98,123456789," ")
         self.assertFalse(database.block_account(999999,123456789,"Teste"))
 
+    def test_maintenance_mode_persistence_and_toggle(self):
+        self.assertFalse(database.maintenance_mode_enabled())
+        database.set_maintenance_mode(True)
+        self.assertTrue(database.maintenance_mode_enabled())
+        database.set_maintenance_mode(False)
+        self.assertFalse(database.maintenance_mode_enabled())
+
 
 if __name__ == "__main__":
     unittest.main()
