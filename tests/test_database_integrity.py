@@ -294,6 +294,28 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=92").fetchone()[0],100)
 
+    def test_daily_checkin_streak_and_zero_reward_ledger_behavior(self):
+        from datetime import datetime, timezone, timedelta
+        current=datetime.now(timezone(timedelta(hours=-3))).date()
+        yesterday=(current-timedelta(days=1)).isoformat()
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points,last_daily,daily_streak) VALUES(93,'Streak continuity',50,?,4)",(yesterday,))
+        ok,streak,earned=database.daily_claim(93,[0,20,30])
+        self.assertTrue(ok)
+        self.assertEqual(streak,5)
+        self.assertEqual(earned,20)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=93").fetchone()[0],70)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=93").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_earnings WHERE user_id=93 AND source='daily_checkin'").fetchone()[0],1)
+
+    def test_daily_claim_missing_user_does_not_credit(self):
+        ok,streak,earned=database.daily_claim(99999,[100,200])
+        self.assertFalse(ok)
+        self.assertEqual((streak,earned),(0,0))
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE user_id=99999").fetchone()[0],0)
+
 
 if __name__ == "__main__":
     unittest.main()
