@@ -959,11 +959,21 @@ def command(m,update_id=None):
         elif cmd=="/broadcast":
             if len(p)<2 or not p[1].strip(): send(chat,"Use /broadcast SUA MENSAGEM"); return
             message=escape(t.split(maxsplit=1)[1][:3500])
-            sent=0; failed=0
-            for target in db.all_user_ids():
-                try: send(target,"📢 <b>COMUNICADO PIT PRÊMIOS</b>\n\n"+message); sent+=1
-                except Exception: failed+=1
-            send(chat,f"📣 <b>Disparo finalizado</b>\nEnviados: {sent}\nFalhas: {failed}")
+            sent=0; failed=0; skipped=0
+            targets=db.all_user_ids()
+            for index,target in enumerate(targets):
+                try:
+                    if not db.notifications_enabled(target):
+                        skipped+=1
+                        continue
+                    send(target,"📢 <b>COMUNICADO PIT PRÊMIOS</b>\n\n"+message)
+                    sent+=1
+                except Exception:
+                    failed+=1
+                    log.warning("Broadcast falhou para usuário %s (posição %s)",target,index,exc_info=True)
+                # Ritmo conservador, evitando rajadas excessivas na API.
+                time.sleep(0.05)
+            send(chat,f"📣 <b>Disparo finalizado</b>\nEnviados: {sent}\nFalhas: {failed}\nIgnorados (notificações desativadas): {skipped}")
         elif cmd=="/stats":
             s=db.stats()
             send(
