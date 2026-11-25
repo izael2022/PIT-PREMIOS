@@ -154,6 +154,7 @@ def ensure_background_workers():
 def _outbound_worker():
     last_chat={}
     last_global=0.0
+    processed_since_prune=0
     while not OUTBOUND_STOP.is_set():
         try:
             item=OUTBOUND_QUEUE.get(timeout=1)
@@ -168,8 +169,20 @@ def _outbound_worker():
             payload={"chat_id":chat,"text":text_value,"parse_mode":"HTML"}
             if keyboard: payload["reply_markup"]={"inline_keyboard":keyboard}
             result=api("sendMessage",payload)
-            last_chat[str(chat)]=time.monotonic()
-            last_global=time.monotonic()
+            now=time.monotonic()
+            last_chat[str(chat)]=now
+            last_global=now
+            processed_since_prune+=1
+            # Evita crescimento ilimitado do mapa de controle de rate-limit por chat.
+            if processed_since_prune>=256:
+                cutoff=now-300
+                for chat_key,stamp in list(last_chat.items()):
+                    if stamp<cutoff:
+                        last_chat.pop(chat_key,None)
+                while len(last_chat)>5000:
+                    oldest_key=next(iter(last_chat))
+                    last_chat.pop(oldest_key,None)
+                processed_since_prune=0
             future.set_result(result)
         except Exception as exc:
             future.set_exception(exc)
