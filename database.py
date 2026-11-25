@@ -807,10 +807,15 @@ def daily_game_history(uid,limit=10):
     with connect() as db:
         return db.execute("SELECT game,points,played_on,created_at FROM daily_games WHERE user_id=? ORDER BY played_on DESC,id DESC LIMIT ?",(int(uid),limit)).fetchall()
 
-def notification_history(uid,limit=10):
+def notification_history(uid,limit=10,offset=0):
+    limit=max(1,min(int(limit),50)); offset=max(0,int(offset))
     with connect() as db:
-        return db.execute("SELECT category,title,message,created_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ?",(uid,limit)).fetchall()
+        return db.execute("SELECT category,title,message,created_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
+def notification_count(uid):
+    with connect() as db:
+        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=?",(int(uid),)).fetchone()
+        return int(row["total"])
 def record_notification(uid,category,title,message):
     with connect() as db:
         db.execute("INSERT INTO notification_events(user_id,category,title,message) VALUES(?,?,?,?)",(uid,category,title,message))
