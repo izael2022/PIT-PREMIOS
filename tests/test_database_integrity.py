@@ -189,6 +189,60 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             database.submit_task(1,72,"another proof")
 
+    def test_redeem_code_credits_once_and_tracks_usage(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(80,'Code user',0)")
+        code = database.create_redeem_code(500,1,999)
+        result = database.redeem_code(code,80)
+        self.assertEqual(result["points"],500)
+        with self.assertRaises(ValueError):
+            database.redeem_code(code,80)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=80").fetchone()[0],500)
+            self.assertEqual(conn.execute("SELECT uses,active FROM redeem_codes WHERE code=?",(code,)).fetchone(),(1,0))
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM redeem_code_uses WHERE code=?",(code,)).fetchone()[0],1)
+
+    def test_code_usage_limit_is_enforced_across_users(self):
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(81,'Code user A',0)")
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(82,'Code user B',0)")
+        code = database.create_redeem_code(300,1,999)
+        database.redeem_code(code,81)
+        with self.assertRaises(ValueError):
+            database.redeem_code(code,82)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=82").fetchone()[0],0)
+
+    def test_code_redemption_concurrency_respects_max_uses(self):
+        import threading
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(83,'Concurrent A',0)")
+            conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(84,'Concurrent B',0)")
+        code = database.create_redeem_code(250,1,999)
+        barrier=threading.Barrier(2)
+        outcomes=[]
+        def redeem(uid):
+            barrier.wait()
+            try:
+                outcomes.append(("ok",database.redeem_code(code,uid)))
+            except ValueError as exc:
+                outcomes.append(("blocked",str(exc)))
+        threads=[threading.Thread(target=redeem,args=(uid,)) for uid in (83,84)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(timeout=10)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(sum(kind=="ok" for kind,_ in outcomes),1)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT uses FROM redeem_codes WHERE code=?",(code,)).fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT SUM(points) FROM users WHERE user_id IN (83,84)").fetchone()[0],250)
+
+    def test_code_redemption_requires_registered_user(self):
+        code=database.create_redeem_code(200,2,999)
+        with self.assertRaises(ValueError):
+            database.redeem_code(code,99999)
+        with sqlite3.connect(database.DATABASE_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT uses FROM redeem_codes WHERE code=?",(code,)).fetchone()[0],0)
+
 
 if __name__ == "__main__":
     unittest.main()
