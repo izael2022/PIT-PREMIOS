@@ -40,7 +40,13 @@ CREATE INDEX IF NOT EXISTS idx_platform_reviews_status ON platform_fraud_reviews
 """
 def initialize(path):
     with sqlite3.connect(path,timeout=30) as c:
-        c.executescript(SCHEMA);c.commit()
+        c.executescript(SCHEMA)
+        c.executemany("INSERT OR IGNORE INTO platform_badges(badge_key,title,description) VALUES(?,?,?)",[
+            ("xp_1000","Primeiro nível","Acumule 1.000 XP."),
+            ("xp_5000","Veterano","Acumule 5.000 XP."),
+            ("xp_10000","Lenda PIT","Acumule 10.000 XP."),
+        ])
+        c.commit()
 
 def _valid_id(value,label):
     if not isinstance(value,int) or isinstance(value,bool) or value<=0:raise ValueError(label+" inválido.")
@@ -127,8 +133,14 @@ def review_flag(path,review_id,admin_id,status):
 def add_xp(path,user_id,amount):
     _valid_id(user_id,"Usuário")
     if not isinstance(amount,int) or isinstance(amount,bool) or amount<=0 or amount>10**9:raise ValueError("XP inválido.")
+    initialize(path)
     with sqlite3.connect(path,timeout=30) as c:
-        c.execute("INSERT INTO platform_user_levels(user_id,xp) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET xp=xp+excluded.xp,updated_at=CURRENT_TIMESTAMP",(user_id,amount));c.commit()
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("INSERT INTO platform_user_levels(user_id,xp) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET xp=xp+excluded.xp,updated_at=CURRENT_TIMESTAMP",(user_id,amount))
+        xp=c.execute("SELECT xp FROM platform_user_levels WHERE user_id=?",(user_id,)).fetchone()[0]
+        for threshold,key in ((1000,"xp_1000"),(5000,"xp_5000"),(10000,"xp_10000")):
+            if xp>=threshold:c.execute("INSERT OR IGNORE INTO platform_user_badges(user_id,badge_key) VALUES(?,?)",(user_id,key))
+        c.commit()
 
 def level_info(path,user_id):
     _valid_id(user_id,"Usuário")
