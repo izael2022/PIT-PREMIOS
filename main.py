@@ -1738,6 +1738,13 @@ def callback(c,update_id=None):
         if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
         sid,decision=parts[1],parts[2]
         result=db.review_task_submission(int(sid),uid,decision=="yes")
+        if result and decision=="yes":
+            try:
+                import systems_platform as ps
+                ps.initialize(DATABASE_PATH)
+                earned=int(result.get("reward_points") or 0)
+                if earned>0: ps.add_xp(DATABASE_PATH,int(result["user_id"]),earned)
+            except Exception: log.exception("Falha ao registrar XP da tarefa aprovada")
         if not result: send(chat,"Essa tarefa já foi analisada."); return
         status="aprovada; pontos creditados" if decision=="yes" else "rejeitada"
         if msg.get("photo"):
@@ -1752,6 +1759,12 @@ def callback(c,update_id=None):
         if len(parts)!=3 or parts[2] not in ("yes","no") or not parts[1].isdigit(): return
         rid,decision=parts[1],parts[2]
         result=db.review_referral(int(rid),uid,decision=="yes",POINTS_PER_REFERRAL)
+        if result and decision=="yes":
+            try:
+                import systems_platform as ps
+                ps.initialize(DATABASE_PATH)
+                if POINTS_PER_REFERRAL>0: ps.add_xp(DATABASE_PATH,int(result["referrer_id"]),POINTS_PER_REFERRAL)
+            except Exception: log.exception("Falha ao registrar XP da indicação aprovada")
         if not result: send(chat,"Esta indicação já foi analisada."); return
         if result.get("blocked_referrer"):
             send(chat,"⛔ O indicador está com a conta bloqueada. A indicação não pode ser aprovada nem gerar pontos enquanto o bloqueio estiver ativo.")
