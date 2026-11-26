@@ -112,6 +112,9 @@ def flag_user(path,user_id,category,details):
     if not isinstance(category,str) or not category.strip() or len(category)>80:raise ValueError("Categoria inválida.")
     if not isinstance(details,str) or not details.strip() or len(details)>2000:raise ValueError("Detalhes inválidos.")
     with sqlite3.connect(path,timeout=30) as c:
+        c.execute("BEGIN IMMEDIATE")
+        existing=c.execute("SELECT id FROM platform_fraud_reviews WHERE user_id=? AND category=? AND status='pending' AND created_at>=datetime('now','-24 hours') ORDER BY id DESC LIMIT 1",(user_id,category.strip())).fetchone()
+        if existing:c.commit();return existing[0]
         cur=c.execute("INSERT INTO platform_fraud_reviews(user_id,category,details) VALUES(?,?,?)",(user_id,category.strip(),details.strip()));c.commit();return cur.lastrowid
 
 def fraud_reviews(path,status="pending",limit=50):
