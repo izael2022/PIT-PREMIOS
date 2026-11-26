@@ -1233,41 +1233,48 @@ def callback(c,update_id=None):
         except Exception as exc:
             send(chat,"⚠️ "+escape(str(exc) or "Falha ao resgatar."),[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
         return
-    if data=="extras:list":
+    if data=="extras:list" or data.startswith("extras:list:"):
         try:
             import systems_extra as extras
             extras.initialize(DATABASE_PATH)
-            rows=extras.list_campaigns(DATABASE_PATH,active_only=True)
+            filter_kind=data.split(":",2)[2] if data.startswith("extras:list:") else ""
+            allowed_filters={"calendar","event","surprise","challenge","collective_goal","special_mission"}
+            if filter_kind not in allowed_filters: filter_kind=""
+            rows=extras.list_campaigns(DATABASE_PATH,kind=filter_kind or None,active_only=True)
             now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
             visible=[]
             for row in rows:
                 try:
                     start=__import__("datetime").datetime.fromisoformat(str(row["start_at"]).replace("Z","+00:00"))
                     end=__import__("datetime").datetime.fromisoformat(str(row["end_at"]).replace("Z","+00:00"))
+                    if start.tzinfo is None or end.tzinfo is None: continue
                     if start<=now<=end: visible.append(row)
                 except Exception: continue
-            kind_labels={"calendar":"📅 Calendário mensal","event":"🎉 Evento","surprise":"🎁 Evento surpresa","challenge":"🎯 Desafio","collective_goal":"🤝 Meta coletiva","special_mission":"⭐ Missão especial"}
-            lines=["📅 <b>EVENTOS E RECOMPENSAS</b>","Eventos, calendário e campanhas com período válido:\n"]
+            kind_labels={"calendar":"📅 Calendário","event":"🎉 Evento","surprise":"🎁 Surpresa","challenge":"🎯 Desafio","collective_goal":"🤝 Meta coletiva","special_mission":"⭐ Missão especial"}
+            lines=["📅 <b>EVENTOS E RECOMPENSAS</b>","Veja as campanhas dentro do prazo e resgate quando elegível.\n"]
             kb=[]
-            visible.sort(key=lambda row:(row["start_at"],row["id"]))
-            for row in visible[:25]:
+            if not filter_kind:
+                kb.extend([[btn("📅 Calendário","extras:list:calendar"),btn("🎁 Surpresas","extras:list:surprise")],[btn("🎉 Eventos","extras:list:event"),btn("🎯 Desafios","extras:list:challenge")],[btn("🤝 Metas coletivas","extras:list:collective_goal"),btn("⭐ Missões","extras:list:special_mission")]])
+            else:
+                lines.append("<i>Filtro: "+kind_labels.get(filter_kind,"Campanhas")+"</i>\n")
+                kb.append([btn("🔎 Mostrar todas","extras:list")])
+            visible.sort(key=lambda row:(row["end_at"],row["id"]))
+            for row in visible[:20]:
                 label=kind_labels.get(row["kind"],"🎁 Campanha")
-                lines.append(f"{label}\n<b>{escape(row['title'])}</b>\n{escape(row['description'][:250])}\n🎁 Recompensa: <b>{int(row['reward_points']):,} pontos</b>\n⏰ Encerramento: {escape(str(row['end_at'])[:16])}\n")
+                lines.append(f"{label}\n<b>{escape(row['title'])}</b>\n{escape(row['description'][:220])}\n🎁 Recompensa: <b>{int(row['reward_points']):,} pontos</b>\n⏰ Encerramento: {escape(str(row['end_at'])[:16])}\n")
                 if row["kind"]=="collective_goal":
                     with __import__("sqlite3").connect(DATABASE_PATH) as conn:
                         total=conn.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(row["id"],)).fetchone()[0]
                     target=int(row["target_value"])
-                    lines.append(f"🤝 Meta coletiva: <b>{int(total):,}/{target:,}</b>\n")
-                    lines.append("🏁 Meta alcançada!" if target>0 and total>=target else "⏳ A comunidade está avançando!")
+                    lines.append(f"🤝 Meta: <b>{int(total):,}/{target:,}</b> — "+("🏁 concluída!" if target>0 and total>=target else "⏳ em andamento")+"\n")
                 elif row["kind"]=="challenge":
                     with __import__("sqlite3").connect(DATABASE_PATH) as conn:
                         progress=conn.execute("SELECT COALESCE(progress,0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(row["id"],int(uid))).fetchone()
                     current=int(progress[0]) if progress else 0
                     target=int(row["target_value"])
-                    lines.append(f"🎯 Seu progresso: <b>{current:,}/{target:,}</b>\n")
-                    lines.append("🏁 Desafio concluído! Pode resgatar." if target>0 and current>=target else "⏳ Continue participando para completar.")
+                    lines.append(f"🎯 Seu progresso: <b>{current:,}/{target:,}</b> — "+("🏁 concluído!" if target>0 and current>=target else "⏳ continue") +"\n")
                 kb.append([btn("🎁 Resgatar #"+str(row["id"]),"extras_claim:"+str(row["id"]))])
-            if not visible: lines.append("Nenhum evento, recompensa ou desafio disponível agora.")
+            if not visible: lines.append("Nenhum item deste filtro está disponível neste momento.")
             kb.append([btn("⬅️ Menu principal","home")])
             send(chat,"\n".join(lines),kb)
         except Exception:
