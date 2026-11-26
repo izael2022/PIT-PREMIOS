@@ -1169,7 +1169,7 @@ def callback(c,update_id=None):
                 kb.append([btn("🔄 Atualizar lista","admin:extras")])
                 kb.append([btn("⬅️ Voltar","admin:back")])
                 if not rows: lines.append("Nenhuma campanha cadastrada.")
-                send(chat,"\\n".join(lines),kb)
+                send(chat,"\n".join(lines),kb)
             except Exception:
                 log.exception("Falha ao listar campanhas adicionais"); send(chat,"Falha ao carregar módulo adicional.",admin_menu())
         elif action=="finance":
