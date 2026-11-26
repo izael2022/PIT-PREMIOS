@@ -276,7 +276,17 @@ def record_challenge_progress(path,campaign_id,user_id,amount,event_key):
         return True
 
 def challenge_progress(path,campaign_id,user_id):
+    """Return zero for a user with no progress record; validate identifiers."""
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0:
+        raise ValueError("Desafio inválido.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0:
+        raise ValueError("Usuário inválido.")
     with sqlite3.connect(path,timeout=30) as c:
-        row=c.execute("SELECT COALESCE(progress,0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()
-        return int(row[0]) if row else 0
+        row=c.execute("SELECT progress FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()
+        if row is None:
+            return 0
+        value=row[0]
+        if not isinstance(value,int) or isinstance(value,bool) or value<0:
+            raise ValueError("Progresso armazenado inválido.")
+        return value
 
