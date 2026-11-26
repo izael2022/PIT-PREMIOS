@@ -15,6 +15,18 @@ class PlatformSystemsTests(unittest.TestCase):
   self.assertTrue(p.consume_limit(self.path,"mission","daily",5,"2026-11-26",2))
   self.assertFalse(p.consume_limit(self.path,"mission","daily",5,"2026-11-26",1))
   self.assertTrue(p.consume_limit(self.path,"mission","daily",5,"2026-11-27",1))
+ def test_multi_scope_limits_are_atomic_and_daily(self):
+  p.set_limit(self.path,"mission","12",1,9)
+  p.set_limit(self.path,"user","5",2,9)
+  self.assertTrue(p.consume_activity_limits(self.path,5,12,"2026-11-26"))
+  self.assertFalse(p.consume_activity_limits(self.path,5,12,"2026-11-26"))
+  self.assertTrue(p.consume_activity_limits(self.path,5,12,"2026-11-27"))
+ def test_multi_scope_limit_failure_does_not_partially_consume(self):
+  p.set_limit(self.path,"mission","12",5,9)
+  p.set_limit(self.path,"user","5",0,9)
+  self.assertFalse(p.consume_activity_limits(self.path,5,12,"2026-11-26"))
+  with sqlite3.connect(self.path) as conn:
+   self.assertEqual(conn.execute("SELECT COUNT(*) FROM platform_limit_usage").fetchone()[0],0)
  def test_fraud_review_once(self):
   r=p.flag_user(self.path,5,"multi-account","Suspeita")
   self.assertTrue(p.review_flag(self.path,r,9,"blocked"));self.assertFalse(p.review_flag(self.path,r,9,"approved"))
