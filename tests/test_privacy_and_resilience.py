@@ -5,10 +5,24 @@ from unittest.mock import patch
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
 os.environ["ADMIN_IDS"] = "1"
 
-import main as bot\nimport database as db\nimport tempfile\nfrom pathlib import Path\n\n_original_database_path = db.DATABASE_PATH
+import main as bot
+import database as db
+import tempfile
+from pathlib import Path
+
+_original_database_path = db.DATABASE_PATH
 
 
-class PrivacyAndResilienceTests(unittest.TestCase):\n    def setUp(self):\n        self.temp_dir = tempfile.TemporaryDirectory()\n        db.DATABASE_PATH = Path(self.temp_dir.name) / "privacy_test.db"\n        db.init_db()\n        db.register_user(42, "privacy_test", "Privacy Test")\n\n    def tearDown(self):\n        db.DATABASE_PATH = _original_database_path\n        self.temp_dir.cleanup()
+class PrivacyAndResilienceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        db.DATABASE_PATH = Path(self.temp_dir.name) / "privacy_test.db"
+        db.init_db()
+        db.register_user(42, "privacy_test", "Privacy Test")
+
+    def tearDown(self):
+        db.DATABASE_PATH = _original_database_path
+        self.temp_dir.cleanup()
     def test_pix_key_validation(self):
         self.assertTrue(bot._valid_pix_key("CPF", "529.982.247-25"))
         self.assertFalse(bot._valid_pix_key("CPF", "111.111.111-11"))
