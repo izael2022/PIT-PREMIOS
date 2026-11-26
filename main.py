@@ -1801,6 +1801,51 @@ def process_update(update):
                 input_state=db.get_user_input_state(uid)
                 if input_state:
                     value=(m.get("text") or "").strip()
+                    if input_state=="platform_ticket:subject":
+                        if not value or len(value)>120:send(m["chat"]["id"],"Assunto inválido (1 a 120 caracteres).")
+                        else:
+                            db.set_user_input_state(uid,"platform_ticket:body:"+value)
+                            send(m["chat"]["id"],"Descreva seu problema (até 4.000 caracteres).")
+                    elif input_state.startswith("platform_ticket:body:"):
+                        subject=input_state.split(":",2)[2]
+                        try:
+                            import systems_platform as ps
+                            ps.initialize(DATABASE_PATH)
+                            tid=ps.open_ticket(DATABASE_PATH,uid,subject,value)
+                            db.clear_user_input_state(uid)
+                            send(m["chat"]["id"],f"✅ Ticket #{tid} aberto. A equipe responderá por este atendimento.",[[btn("🛟 Meus tickets","platform:support")],[btn("🏠 Menu","home")]])
+                            for aid in ADMIN_IDS:
+                                send(aid,f"🛟 <b>NOVO TICKET #{tid}</b>\\nUsuário: <code>{uid}</code>\\nAssunto: {escape(subject)}\\n\\n{escape(value[:1500])}",[[btn("Responder ticket","platform:admin:ticket:"+str(tid))]])
+                        except Exception as exc:send(m["chat"]["id"],"Falha ao abrir ticket: "+escape(str(exc)))
+                    elif input_state.startswith("platform_ticket:reply:"):
+                        if not admin(uid):
+                            db.clear_user_input_state(uid);send(m["chat"]["id"],"Acesso não autorizado.")
+                        else:
+                            tid=int(input_state.rsplit(":",1)[1])
+                            try:
+                                import systems_platform as ps
+                                ps.initialize(DATABASE_PATH)
+                                row=next((r for r in ps.ticket_list(DATABASE_PATH,limit=100) if r["id"]==tid),None)
+                                if not row:raise ValueError("Ticket não encontrado.")
+                                if ps.answer_ticket(DATABASE_PATH,tid,uid,value):
+                                    db.clear_user_input_state(uid);ps.admin_log(DATABASE_PATH,uid,"ticket_answer",str(tid))
+                                    notify_user(row["user_id"],f"Resposta do suporte ao ticket #{tid}: {value[:1000]}")
+                                    send(m["chat"]["id"],"Resposta enviada ao usuário.",[[btn("🛟 Tickets","platform:admin:tickets")]])
+                                else:send(m["chat"]["id"],"Ticket já encerrado.")
+                            except Exception as exc:send(m["chat"]["id"],"Erro ao responder: "+escape(str(exc)))
+                    elif input_state=="platform_announcement":
+                        if not admin(uid):db.clear_user_input_state(uid);send(m["chat"]["id"],"Acesso não autorizado.")
+                        elif "|" not in value:send(m["chat"]["id"],"Formato: TÍTULO | MENSAGEM")
+                        else:
+                            title,message=value.split("|",1)
+                            try:
+                                import systems_platform as ps
+                                ps.initialize(DATABASE_PATH)
+                                aid=ps.create_announcement(DATABASE_PATH,title.strip(),message.strip(),uid)
+                                ps.admin_log(DATABASE_PATH,uid,"announcement_create",str(aid))
+                                db.clear_user_input_state(uid)
+                                send(m["chat"]["id"],f"📢 Aviso #{aid} criado.")
+                            except Exception as exc:send(m["chat"]["id"],"Falha: "+escape(str(exc)))
                     if input_state.startswith("extra_create:"):
                         if not admin(uid):
                             db.clear_user_input_state(uid)
