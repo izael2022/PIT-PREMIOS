@@ -265,5 +265,33 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertFalse(db.set_referral_manual_hold(91999, True, 1, "No fixture user"))
         self.assertIsNone(db.get_referral_manual_hold(91999))
 
+
+    def test_payout_rejection_refunds_once_and_reconciles_ledger(self):
+        db.add_points(91001, 20000, "Payout rejection fixture")
+        payout_id = db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000)
+        first = db.review_payout(payout_id, 1, False)
+        second = db.review_payout(payout_id, 1, False)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 20000)
+        report = db.financial_dashboard()
+        self.assertEqual(report["ledger_difference"], 0)
+        with db.connect() as conn:
+            row = conn.execute("SELECT status FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual(row["status"], "rejected")
+
+    def test_payout_approval_is_idempotent_and_keeps_reserved_points(self):
+        db.add_points(91001, 20000, "Payout approval fixture")
+        payout_id = db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000)
+        first = db.review_payout(payout_id, 1, True)
+        second = db.review_payout(payout_id, 1, True)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 10000)
+        with db.connect() as conn:
+            row = conn.execute("SELECT status FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
+        self.assertEqual(row["status"], "approved")
+        self.assertEqual(db.financial_dashboard()["ledger_difference"], 0)
+
 if __name__ == "__main__":
     unittest.main()
