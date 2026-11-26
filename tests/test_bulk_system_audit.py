@@ -293,5 +293,26 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertEqual(row["status"], "approved")
         self.assertEqual(db.financial_dashboard()["ledger_difference"], 0)
 
+
+    def test_pix_profile_key_is_encrypted_at_rest_and_roundtrips(self):
+        db.save_pix_profile(91001, "EMAIL", "audit@example.com", "Audit User")
+        profile = db.get_pix_profile(91001)
+        self.assertEqual(profile["pix_key"], "audit@example.com")
+        self.assertEqual(profile["status"], "pending")
+        with db.connect() as conn:
+            stored = conn.execute("SELECT pix_key_encrypted FROM pix_profiles WHERE user_id=91001").fetchone()["pix_key_encrypted"]
+        self.assertNotEqual(stored, "audit@example.com")
+        self.assertTrue(str(stored).startswith("enc:v1:"))
+
+    def test_pix_profile_review_is_idempotent_and_delete_removes_profile(self):
+        db.save_pix_profile(91001, "EMAIL", "audit@example.com", "Audit User")
+        first = db.review_pix_profile(91001, 1, True)
+        second = db.review_pix_profile(91001, 1, False)
+        self.assertEqual(first["status"], "approved")
+        self.assertIsNone(second)
+        self.assertEqual(db.get_pix_profile(91001)["status"], "approved")
+        db.delete_pix_profile(91001)
+        self.assertIsNone(db.get_pix_profile(91001))
+
 if __name__ == "__main__":
     unittest.main()
