@@ -111,7 +111,8 @@ def _award_active_seasons(c, user_id, points):
 
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
     """Idempotent claim; credit and claim record are atomic against users/ledger."""
-    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0: raise ValueError("Campanha inválida.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0: raise ValueError("Usuário inválido.")
     if not isinstance(claim_key,str) or not claim_key.strip() or len(claim_key)>100: raise ValueError("Chave de resgate inválida.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -148,7 +149,10 @@ def contribute_goal(path,campaign_id,user_id,amount):
         c.commit()
 
 def create_achievement(path,key,title,description="",reward_points=0):
-    if not key or len(key)>80 or reward_points<0:raise ValueError("Conquista inválida.")
+    if not isinstance(key,str) or not key.strip() or len(key)>80:raise ValueError("Chave de conquista inválida.")
+    if not isinstance(title,str) or not title.strip() or len(title)>120:raise ValueError("Título inválido.")
+    if not isinstance(description,str):raise ValueError("Descrição inválida.")
+    if not isinstance(reward_points,int) or isinstance(reward_points,bool) or reward_points<0 or reward_points>10**12:raise ValueError("Recompensa inválida.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("INSERT INTO extra_achievements(achievement_key,title,description,reward_points) VALUES(?,?,?,?) ON CONFLICT(achievement_key) DO UPDATE SET title=excluded.title,description=excluded.description,reward_points=excluded.reward_points",(key,title[:120],description[:1000],reward_points));c.commit()
 
@@ -159,7 +163,10 @@ def claim_achievement(path,key,user_id):
         c.execute("BEGIN IMMEDIATE")
         a=c.execute("SELECT reward_points,active FROM extra_achievements WHERE achievement_key=?",(key,)).fetchone()
         if not a or not a[1]:raise ValueError("Conquista indisponível.")
-        c.execute("INSERT INTO extra_achievement_claims(achievement_key,user_id) VALUES(?,?)",(key,user_id))
+        try:
+            c.execute("INSERT INTO extra_achievement_claims(achievement_key,user_id) VALUES(?,?)",(key,user_id))
+        except sqlite3.IntegrityError:
+            raise ValueError("Conquista já resgatada.")
         points=int(a[0])
         if points:
             cur=c.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
