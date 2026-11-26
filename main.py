@@ -1118,7 +1118,7 @@ def callback(c,update_id=None):
         if not admin(uid): return
         kind=data.split(":",1)[1]
         if kind not in {"calendar","event","surprise","challenge","collective_goal","special_mission"}: return
-        db.set_user_input_state(uid,"extra_create:title:"+kind)
+        import base64\n        raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()\n        db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
         return
     if data.startswith("extras_toggle:"):
@@ -1539,49 +1539,61 @@ def process_update(update):
                             db.clear_user_input_state(uid)
                             send(m["chat"]["id"],"Acesso não autorizado.")
                         else:
-                            parts=input_state.split(":")
-                            stage=parts[1]; kind=parts[2] if len(parts)>2 else ""
-                            if stage=="title":
-                                if not value or len(value)>120: send(m["chat"]["id"],"Título inválido (1 a 120 caracteres).")
-                                else:
-                                    db.set_user_input_state(uid,"extra_create:description:"+kind+":"+value)
-                                    send(m["chat"]["id"],"Envie a descrição da campanha:")
-                            elif stage=="description":
-                                title=parts[3]
-                                db.set_user_input_state(uid,"extra_create:start:"+kind+":"+title+":"+value[:2000])
-                                send(m["chat"]["id"],"Informe início em ISO-8601 com fuso. Exemplo: 2026-12-01T00:00:00-03:00")
-                            elif stage=="start":
-                                title=parts[3]; desc=parts[4]
-                                try:
-                                    import systems_extra as extras
-                                    extras._parse_utc(value)
-                                    db.set_user_input_state(uid,"extra_create:end:"+kind+":"+title+":"+desc+":"+value)
-                                    send(m["chat"]["id"],"Informe término em ISO-8601 com fuso. Exemplo: 2026-12-31T23:59:00-03:00")
-                                except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
-                            elif stage=="end":
-                                title=parts[3]; desc=parts[4]; start=parts[5]
-                                try:
-                                    import systems_extra as extras
-                                    extras._parse_utc(value)
-                                    db.set_user_input_state(uid,"extra_create:reward:"+kind+":"+title+":"+desc+":"+start+":"+value)
-                                    send(m["chat"]["id"],"Informe a recompensa em pontos (somente número):")
-                                except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
-                            elif stage=="reward":
-                                title=parts[3]; desc=parts[4]; start=parts[5]; end=parts[6]
-                                if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Recompensa inválida, envie somente números.")
-                                else:
-                                    db.set_user_input_state(uid,"extra_create:target:"+kind+":"+title+":"+desc+":"+start+":"+end+":"+value)
-                                    send(m["chat"]["id"],"Informe a meta numérica (0 se não se aplica):")
-                            elif stage=="target":
-                                title=parts[3]; desc=parts[4]; start=parts[5]; end=parts[6]; reward=parts[7]
-                                if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Meta inválida, envie somente números.")
-                                else:
+                            try:
+                                import base64
+                                stage, encoded=input_state.split(":",2)[1:]
+                                payload=json.loads(base64.urlsafe_b64decode(encoded.encode()).decode())
+                            except Exception:
+                                db.clear_user_input_state(uid)
+                                send(m["chat"]["id"],"Etapa inválida. Inicie novamente pelo painel.")
+                                payload=None
+                            if payload is not None:
+                                def _extra_state(next_stage,data):
+                                    raw=base64.urlsafe_b64encode(json.dumps(data,ensure_ascii=False).encode()).decode()
+                                    db.set_user_input_state(uid,"extra_create:"+next_stage+":"+raw)
+                                kind=payload.get("kind","")
+                                if stage=="title":
+                                    if not value or len(value)>120: send(m["chat"]["id"],"Título inválido (1 a 120 caracteres).")
+                                    else:
+                                        payload["title"]=value
+                                        _extra_state("description",payload)
+                                        send(m["chat"]["id"],"Envie a descrição da campanha:")
+                                elif stage=="description":
+                                    payload["description"]=value[:2000]
+                                    _extra_state("start",payload)
+                                    send(m["chat"]["id"],"Informe início em ISO-8601 com fuso. Exemplo: 2026-12-01T00:00:00-03:00")
+                                elif stage=="start":
                                     try:
                                         import systems_extra as extras
-                                        campaign_id=extras.create_campaign(DATABASE_PATH,kind,title,desc,start,end,int(reward),int(value),uid)
-                                        db.clear_user_input_state(uid)
-                                        send(m["chat"]["id"],f"✅ Campanha #{campaign_id} criada!\n\n<b>{escape(title)}</b>\nRecompensa: {reward} pontos\nMeta: {value}",[[btn("📅 Gerenciar campanhas","admin:extras")],[btn("⬅️ Painel admin","admin:back")]])
-                                    except Exception as exc: send(m["chat"]["id"],"Não foi possível criar: "+escape(str(exc)))
+                                        extras._parse_utc(value)
+                                        payload["start"]=value
+                                        _extra_state("end",payload)
+                                        send(m["chat"]["id"],"Informe término em ISO-8601 com fuso. Exemplo: 2026-12-31T23:59:00-03:00")
+                                    except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
+                                elif stage=="end":
+                                    try:
+                                        import systems_extra as extras
+                                        extras._parse_utc(value)
+                                        if extras._parse_utc(payload["start"])>=extras._parse_utc(value): raise ValueError("O término deve ser posterior ao início.")
+                                        payload["end"]=value
+                                        _extra_state("reward",payload)
+                                        send(m["chat"]["id"],"Informe a recompensa em pontos (somente número):")
+                                    except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
+                                elif stage=="reward":
+                                    if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Recompensa inválida, envie somente números.")
+                                    else:
+                                        payload["reward"]=int(value)
+                                        _extra_state("target",payload)
+                                        send(m["chat"]["id"],"Informe a meta numérica (0 se não se aplica):")
+                                elif stage=="target":
+                                    if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Meta inválida, envie somente números.")
+                                    else:
+                                        try:
+                                            import systems_extra as extras
+                                            cid=extras.create_campaign(DATABASE_PATH,kind,title=payload["title"],description=payload.get("description",""),start_at=payload["start"],end_at=payload["end"],reward_points=payload.get("reward",0),target_value=int(value),created_by=uid)
+                                            db.clear_user_input_state(uid)
+                                            send(m["chat"]["id"],f"✅ Campanha #{cid} criada!\n\n<b>{escape(payload['title'])}</b>\nRecompensa: {payload.get('reward',0)} pontos\nMeta: {value}",[[btn("📅 Gerenciar campanhas","admin:extras")],[btn("⬅️ Painel admin","admin:back")]])
+                                        except Exception as exc: send(m["chat"]["id"],"Não foi possível criar: "+escape(str(exc)))
                     elif input_state=="redeem_code":
                         db.clear_user_input_state(uid)
                         try:
