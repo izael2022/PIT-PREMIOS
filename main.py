@@ -1119,7 +1119,8 @@ def callback(c,update_id=None):
         kind=data.split(":",1)[1]
         if kind not in {"calendar","event","surprise","challenge","collective_goal","special_mission"}: return
         import base64
-        raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()\n        db.set_user_input_state(uid,"extra_create:title:"+raw)
+        raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()
+        db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
         return
     if data.startswith("extras_toggle:"):
@@ -1156,7 +1157,8 @@ def callback(c,update_id=None):
                 for row in rows[:30]:
                     status="🟢" if row["active"] else "⚪"
                     kb.append([btn(f"{status} #{row['id']} {row['title'][:35]}","extras_toggle:"+str(row["id"]))])
-                kb.append([btn("➕ Criar campanha","extras_create")])\n                kb.append([btn("🔄 Atualizar lista","admin:extras")])
+                kb.append([btn("➕ Criar campanha","extras_create")])
+                kb.append([btn("🔄 Atualizar lista","admin:extras")])
                 kb.append([btn("⬅️ Voltar","admin:back")])
                 if not rows: lines.append("Nenhuma campanha cadastrada.")
                 send(chat,"\\n".join(lines),kb)
