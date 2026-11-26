@@ -1179,7 +1179,11 @@ def callback(c,update_id=None):
         import systems_platform as ps
         ps.initialize(DATABASE_PATH);rows=ps.active_announcements(DATABASE_PATH)
         lines=["📢 <b>AVISOS E NOVIDADES</b>"]
-        for r in rows[:15]:lines.append(f"\\n<b>{escape(r['title'])}</b>\\n{escape(r['message'][:1000])}")
+        for r in rows[:15]:
+            lines.append(f"\\n<b>{escape(r['title'])}</b>\\n{escape(r['message'][:1000])}")
+            try:
+                db.record_notification(uid,"novidades",str(r["title"]),str(r["message"]),expires_at=r.get("end_at"),event_key="announcement:"+str(r["id"]))
+            except Exception: log.exception("Falha ao integrar aviso #%s na central",r.get("id"))
         send(chat,"\\n".join(lines) if rows else "Nenhum aviso publicado.",[[btn("⬅️ Menu","home")]])
         return
     if data=="platform:support":
