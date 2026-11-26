@@ -1,6 +1,6 @@
 import os
 import tempfile
-import unittest
+import unittest\nfrom concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
@@ -36,7 +36,7 @@ class DurableUpdateQueueTests(unittest.TestCase):
         self.assertTrue(db.update_was_processed(update["update_id"]))
         self.assertEqual(db.pending_updates(), [])
 
-    def test_failed_or_unfinished_update_remains_pending(self):
+    def test_concurrent_duplicate_delivery_is_persisted_only_once(self):\n        update = {\"update_id\": 88005, \"message\": {\"message_id\": 7, \"text\": \"/start\"}}\n        with ThreadPoolExecutor(max_workers=8) as pool:\n            results = list(pool.map(lambda _: db.enqueue_update(update), range(8)))\n        self.assertEqual(sum(results), 1)\n        self.assertEqual(db.pending_updates(), [update])\n\n    def test_pending_updates_respect_batch_limit_and_cursor(self):\n        updates = [{\"update_id\": 88010+i, \"message\": {\"message_id\": i, \"text\": \"/start\"}} for i in range(4)]\n        for update in updates:\n            db.enqueue_update(update)\n        self.assertEqual(db.pending_updates(limit=2), updates[:2])\n        self.assertEqual(db.pending_updates(limit=2, after_update_id=88011), updates[2:])\n\n    def test_failed_or_unfinished_update_remains_pending:
         update = {"update_id": 88004, "message": {"message_id": 6, "text": "/saque"}}
         db.enqueue_update(update)
         # Simula encerramento inesperado antes de marcar como concluído.
