@@ -283,6 +283,7 @@ def menu():
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🎮 HISTÓRICO DOS JOGOS","game:history")],
         [btn("📅 EVENTOS E RECOMPENSAS","extras:list")],
+        [btn("🏅 CONQUISTAS","extras:achievements")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR CÓDIGO","user:redeem_code")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
@@ -1127,6 +1128,38 @@ def callback(c,update_id=None):
         raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()
         db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
+        return
+    if data=="extras:achievements":
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                conn.row_factory=__import__("sqlite3").Row
+                rows=conn.execute("SELECT achievement_key,title,description,reward_points FROM extra_achievements WHERE active=1 ORDER BY title").fetchall()
+                claimed={r[0] for r in conn.execute("SELECT achievement_key FROM extra_achievement_claims WHERE user_id=?",(int(uid),))}
+            lines=["🏅 <b>CONQUISTAS</b>","Veja as conquistas disponíveis e resgate uma vez:\n"]
+            kb=[]
+            for a in rows[:30]:
+                lines.append(f"🏆 <b>{escape(a['title'])}</b>\n{escape(a['description'])}\nPrêmio: {int(a['reward_points'])} pontos\n")
+                if a["achievement_key"] not in claimed: kb.append([btn("Resgatar: "+str(a["title"])[:35],"achievement_claim:"+str(a["achievement_key"]))])
+                else: lines.append("✅ Já resgatada\n")
+            if not rows: lines.append("Ainda não há conquistas cadastradas.")
+            kb.append([btn("⬅️ Menu principal","home")])
+            send(chat,"\n".join(lines),kb)
+        except Exception:
+            log.exception("Falha ao listar conquistas")
+            send(chat,"Não foi possível carregar as conquistas.",back())
+        return
+    if data.startswith("achievement_claim:"):
+        if not uid: return
+        key=data.split(":",1)[1]
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            points=extras.claim_achievement(DATABASE_PATH,key,int(uid))
+            send(chat,f"🏅 Conquista resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
+        except Exception as exc:
+            send(chat,"⚠️ "+escape(str(exc) or "Falha ao resgatar."),[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
         return
     if data=="extras:list":
         try:
