@@ -251,5 +251,19 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertEqual(snapshot["pending_updates"], 1)
         self.assertIsNotNone(snapshot["oldest_pending_at"])
 
+
+    def test_referral_manual_hold_toggle_persists_and_releases(self):
+        self.assertTrue(db.set_referral_manual_hold(91001, True, 1, "Audit hold"))
+        hold = db.get_referral_manual_hold(91001)
+        self.assertEqual(hold["reason"], "Audit hold")
+        self.assertTrue(db.set_referral_manual_hold(91001, True, 1, "Updated audit hold"))
+        self.assertEqual(db.get_referral_manual_hold(91001)["reason"], "Updated audit hold")
+        self.assertTrue(db.set_referral_manual_hold(91001, False, 1))
+        self.assertIsNone(db.get_referral_manual_hold(91001))
+
+    def test_referral_manual_hold_for_unknown_user_returns_false(self):
+        self.assertFalse(db.set_referral_manual_hold(91999, True, 1, "No fixture user"))
+        self.assertIsNone(db.get_referral_manual_hold(91999))
+
 if __name__ == "__main__":
     unittest.main()
