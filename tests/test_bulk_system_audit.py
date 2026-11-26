@@ -158,3 +158,24 @@ class BulkSystemRegressionAudit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_redeem_code_enforces_global_use_limit_across_users(self):
+        db.register_user(91002, "audit_second", "Audit Second")
+        code = db.create_redeem_code(60, 2, 1)
+        first = db.redeem_code(code, 91001)
+        second = db.redeem_code(code, 91002)
+        self.assertEqual(first["points"], 60)
+        self.assertEqual(second["points"], 60)
+        with self.assertRaises(ValueError):
+            db.redeem_code(code, 91001)
+        with self.assertRaises(ValueError):
+            db.redeem_code(code, 91002)
+        with self.assertRaises(ValueError):
+            db.redeem_code(code, 91001)
+        self.assertEqual(db.get_user(91001)["points"], 60)
+        self.assertEqual(db.get_user(91002)["points"], 60)
+        with db.connect() as conn:
+            row = conn.execute("SELECT uses, max_uses, active FROM redeem_codes WHERE code=?", (code,)).fetchone()
+        self.assertEqual(row["uses"], 2)
+        self.assertEqual(row["max_uses"], 2)
+        self.assertEqual(row["active"], 0)
