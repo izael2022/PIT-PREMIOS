@@ -381,6 +381,11 @@ def submit_task(task_id,user_id,proof=""):
         db.commit()
         return submission_id
 
+def task_activity_count_today(user_id):
+    if isinstance(user_id,bool) or not isinstance(user_id,int) or user_id<=0:raise ValueError("Usuário inválido.")
+    with connect() as db:
+        return db.execute("SELECT COUNT(*) FROM task_submissions WHERE user_id=? AND created_at>=datetime('now','-24 hours')",(user_id,)).fetchone()[0]
+
 def pending_task_submissions():
     with connect() as db:
         return db.execute("SELECT s.*,t.title,t.reward_points,u.first_name,u.username FROM task_submissions s JOIN tasks t ON t.id=s.task_id JOIN users u ON u.user_id=s.user_id WHERE s.status='pending' ORDER BY s.id").fetchall()
