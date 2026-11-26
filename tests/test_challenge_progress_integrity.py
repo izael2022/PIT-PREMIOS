@@ -23,6 +23,10 @@ class ChallengeProgressIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_missing_progress_returns_zero(self):
+        self.assertEqual(systems_extra.challenge_progress(self.path,self.campaign,7),0)
+        self.assertEqual(systems_extra.challenge_progress(self.path,self.campaign,999),0)
+
     def test_event_progress_is_idempotent(self):
         self.assertTrue(systems_extra.record_challenge_progress(self.path,self.campaign,7,2,"evt-1"))
         self.assertFalse(systems_extra.record_challenge_progress(self.path,self.campaign,7,2,"evt-1"))
