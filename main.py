@@ -1419,7 +1419,12 @@ def callback(c,update_id=None):
             extras.initialize(DATABASE_PATH)
             cid=int(data.split(":",1)[1])
             points=extras.claim_campaign(DATABASE_PATH,cid,int(uid),"standard")
-            try:\n                import systems_platform as ps\n                ps.initialize(DATABASE_PATH)\n                if points>0: ps.add_xp(DATABASE_PATH,int(uid),points)\n            except Exception: log.exception("Falha ao registrar XP derivado da recompensa")\n            send(chat,f"🎉 Recompensa resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("📅 Eventos","extras:list")],[btn("🏠 Menu principal","home")]])
+            try:
+                import systems_platform as ps
+                ps.initialize(DATABASE_PATH)
+                if points>0: ps.add_xp(DATABASE_PATH,int(uid),points)
+            except Exception: log.exception("Falha ao registrar XP derivado da recompensa")
+            send(chat,f"🎉 Recompensa resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("📅 Eventos","extras:list")],[btn("🏠 Menu principal","home")]])
         except Exception as exc:
             send(chat,"⚠️ "+escape(str(exc) or "Não foi possível resgatar."),[[btn("📅 Eventos","extras:list")],[btn("🏠 Menu principal","home")]])
         return
