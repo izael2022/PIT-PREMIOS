@@ -118,6 +118,8 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         c.execute("BEGIN IMMEDIATE")
         campaign=c.execute("SELECT * FROM extra_campaigns WHERE id=? AND active=1",(campaign_id,)).fetchone()
         if not campaign: raise ValueError("Campanha inexistente ou inativa.")
+        reward=campaign[7]
+        if not isinstance(reward,int) or isinstance(reward,bool) or reward<0 or reward>10**12: raise ValueError("Recompensa da campanha inválida.")
         if not _active_window(campaign[4],campaign[5]): raise ValueError("Campanha fora do período.")
         if campaign[0] and campaign[1] in ("collective_goal",): 
             total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
@@ -134,8 +136,9 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         c.commit();return points
 
 def contribute_goal(path,campaign_id,user_id,amount):
-    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
-    if not isinstance(amount,int) or amount<=0: raise ValueError("Contribuição deve ser positiva.")
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0: raise ValueError("Campanha inválida.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(amount,int) or isinstance(amount,bool) or amount<=0 or amount>10**12: raise ValueError("Contribuição deve ser positiva e válida.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
         row=c.execute("SELECT kind,active,start_at,end_at,target_value FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
@@ -223,7 +226,7 @@ def update_campaign(path,campaign_id,kind,title,description,start_at,end_at,rewa
     if kind not in allowed: raise ValueError("Tipo de campanha inválido.")
     if not isinstance(title,str) or not title.strip() or len(title)>120: raise ValueError("Título inválido.")
     if not isinstance(description,str): raise ValueError("Descrição inválida.")
-    if not isinstance(reward_points,int) or reward_points<0 or not isinstance(target_value,int) or target_value<0:
+    if not isinstance(reward_points,int) or isinstance(reward_points,bool) or reward_points<0 or reward_points>10**12 or not isinstance(target_value,int) or isinstance(target_value,bool) or target_value<0 or target_value>10**12:
         raise ValueError("Valores precisam ser inteiros não negativos.")
     start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
     if start_utc>=end_utc: raise ValueError("Período inválido.")
