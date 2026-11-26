@@ -145,6 +145,7 @@ def contribute_goal(path,campaign_id,user_id,amount):
         if not row or row[0]!="collective_goal" or not row[1]:raise ValueError("Meta coletiva inválida.")
         if not _active_window(row[2],row[3]):raise ValueError("Meta coletiva fora do período.")
         total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
+        if not isinstance(total,int) or isinstance(total,bool) or total<0 or total>row[4]: raise ValueError("Progresso da meta inconsistente.")
         remaining=int(row[4])-int(total)
         if remaining<=0:raise ValueError("Meta coletiva já atingida.")
         if amount>remaining: raise ValueError("Contribuição excede o restante da meta.")
