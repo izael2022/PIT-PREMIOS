@@ -33,6 +33,7 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertTrue(report["ledger_reconciled"])
 
     def test_reward_stock_purchase_and_approval_flow(self):
+        db.add_points(91001, 200, "Fixture balance for reward order")
         reward_id = db.create_reward("Audit reward", "Isolated test item", 200, stock=1)
         order_id = db.create_reward_order(91001, reward_id)
         self.assertEqual(db.get_user(91001)["points"], 0)
