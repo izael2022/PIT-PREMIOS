@@ -1355,7 +1355,12 @@ def callback(c,update_id=None):
             import systems_extra as extras
             extras.initialize(DATABASE_PATH)
             points=extras.claim_achievement(DATABASE_PATH,key,int(uid))
-            try:\n                import systems_platform as ps\n                ps.initialize(DATABASE_PATH)\n                if points>0: ps.add_xp(DATABASE_PATH,int(uid),points)\n            except Exception: log.exception("Falha ao registrar XP derivado da recompensa")\n            send(chat,f"🏅 Conquista resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
+            try:
+                import systems_platform as ps
+                ps.initialize(DATABASE_PATH)
+                if points>0: ps.add_xp(DATABASE_PATH,int(uid),points)
+            except Exception: log.exception("Falha ao registrar XP derivado da recompensa")
+            send(chat,f"🏅 Conquista resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
         except Exception as exc:
             send(chat,"⚠️ "+escape(str(exc) or "Falha ao resgatar."),[[btn("🏅 Conquistas","extras:achievements")],[btn("🏠 Menu","home")]])
         return
