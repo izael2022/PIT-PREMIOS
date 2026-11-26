@@ -28,7 +28,7 @@ class SeasonRankingIntegrityTest(unittest.TestCase):
 
     def test_limit_clamped(self):
         self.assertEqual(len(systems_extra.season_ranking(self.tmp.name,1,1000)),2)
-        self.assertEqual(len(systems_extra.season_ranking(self.tmp.name,1,0)),2)
+        self.assertEqual(len(systems_extra.season_ranking(self.tmp.name,1,0)),1)
 
     def test_unknown_season_and_invalid_id_rejected(self):
         for sid in (0,-1,999,True):
