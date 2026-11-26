@@ -854,6 +854,8 @@ def _ensure_notification_read_column(db):
     columns={row["name"] for row in db.execute("PRAGMA table_info(notification_events)").fetchall()}
     if "read_at" not in columns:
         db.execute("ALTER TABLE notification_events ADD COLUMN read_at TEXT")
+    # Índice aditivo para acelerar a central e a contagem de avisos não lidos.
+    db.execute("CREATE INDEX IF NOT EXISTS idx_notification_events_unread ON notification_events(user_id,read_at,id DESC)")
 
 def notification_history(uid,limit=10,offset=0):
     limit=max(1,min(int(limit),50)); offset=max(0,int(offset))
