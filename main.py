@@ -1498,8 +1498,8 @@ def process_update(update):
                         except ValueError as e:
                             send(m["chat"]["id"],"⚠️ <b>Não foi possível resgatar este código.</b>\n"+escape(str(e))+"\n\nConfira se digitou corretamente ou se o código ainda possui resgates disponíveis.",[[btn("🎟️ Tentar outro código","user:redeem_code")],[btn("🏠 Menu principal","home")]])
                     elif input_state=="payout_points":
-                        if not value.isdigit():
-                            send(m["chat"]["id"],"Informe somente a quantidade de pontos em números. Exemplo: 10000.")
+                        if not value.isdigit() or len(value)>12:
+                            send(m["chat"]["id"],"Informe uma quantidade válida de pontos, somente números (até 12 dígitos). Exemplo: 10000.")
                         else:
                             pts=int(value); user=db.get_user(uid); balance=int(user["points"] if user else 0)
                             if pts<MIN_PAYOUT_POINTS:
