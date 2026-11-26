@@ -294,6 +294,8 @@ def menu():
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
+        [btn("📢 AVISOS E NOVIDADES","platform:news")],
+        [btn("⭐ MEU NÍVEL E MEDALHAS","platform:level")],
         [btn("🛟 SUPORTE / TICKETS","platform:support")],
         [btn("❓ CENTRAL DE AJUDA","help")]
     ]
@@ -1136,6 +1138,17 @@ def callback(c,update_id=None):
             send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout['points']:,} pontos.")
         else:
             send(chat,"Esse saque não está mais pendente.")
+        return
+    if data=="platform:level":
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH);info=ps.level_info(DATABASE_PATH,uid)
+        with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+            conn.row_factory=__import__("sqlite3").Row
+            rows=conn.execute("SELECT b.title,b.description,ub.earned_at FROM platform_user_badges ub JOIN platform_badges b ON b.badge_key=ub.badge_key WHERE ub.user_id=? ORDER BY ub.earned_at DESC",(uid,)).fetchall()
+        lines=[f"⭐ <b>SEU NÍVEL</b>\\nNível: <b>{info['level']}</b>\\nXP: <b>{info['xp']:,}</b>\\nPróximo nível: <b>{info['next_level_xp']:,} XP</b>","\\n🏅 <b>Medalhas</b>"]
+        lines.extend("🏅 "+escape(r["title"])+" — "+escape(r["description"]) for r in rows[:30])
+        if not rows:lines.append("Nenhuma medalha conquistada ainda.")
+        send(chat,"\\n".join(lines),[[btn("⬅️ Menu","home")]])
         return
     if data=="platform:calendar":
         try:
