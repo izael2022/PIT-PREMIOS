@@ -177,5 +177,30 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertEqual(row["max_uses"], 2)
         self.assertEqual(row["active"], 0)
 
+    def test_account_block_lifecycle_is_audited_and_idempotent(self):
+        blocked = db.block_account(91001, 1, "Audit block reason")
+        self.assertTrue(blocked)
+        record = db.get_account_block(91001)
+        self.assertEqual(record["reason"], "Audit block reason")
+        first = db.unblock_account(91001, 1)
+        second = db.unblock_account(91001, 1)
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertIsNone(db.get_account_block(91001))
+        history = db.account_block_history(91001)
+        self.assertEqual([row["action"] for row in history], ["unblocked", "blocked"])
+
+    def test_blocked_referrer_cannot_receive_referral_reward(self):
+        db.register_user(91002, "blocked_referred", "Blocked Referred", referrer=91001, is_bot=True)
+        with db.connect() as conn:
+            row = conn.execute("SELECT id FROM referral_reviews WHERE referred_user_id=?", (91002,)).fetchone()
+        db.block_account(91001, 1, "Audit block")
+        result = db.review_referral(row["id"], 1, True, 125)
+        self.assertEqual(result, {"blocked_referrer": True, "referrer_id": 91001})
+        self.assertEqual(db.get_user(91001)["points"], 0)
+        with db.connect() as conn:
+            status = conn.execute("SELECT status FROM referral_reviews WHERE id=?", (row["id"],)).fetchone()["status"]
+        self.assertEqual(status, "pending")
+
 if __name__ == "__main__":
     unittest.main()
