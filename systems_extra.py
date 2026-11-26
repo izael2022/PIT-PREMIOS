@@ -253,6 +253,12 @@ def record_challenge_progress(path,campaign_id,user_id,amount,event_key):
         row=c.execute("SELECT kind,active,start_at,end_at,target_value FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
         if not row or row[0]!="challenge" or not row[1]: raise ValueError("Desafio indisponível.")
         if not _active_window(row[2],row[3]): raise ValueError("Desafio fora do período.")
+        current=c.execute("SELECT COALESCE(progress,0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()[0]
+        target=int(row[4])
+        if target<=0: raise ValueError("Meta do desafio inválida.")
+        if current<0 or current>target: raise ValueError("Progresso do desafio inconsistente.")
+        if current>=target: raise ValueError("Meta do desafio já atingida.")
+        if amount>target-current: raise ValueError("Evento excede o restante da meta.")
         try:
             c.execute("INSERT INTO extra_challenge_events(campaign_id,user_id,event_key,amount) VALUES(?,?,?,?)",(campaign_id,user_id,event_key,amount))
         except sqlite3.IntegrityError:
