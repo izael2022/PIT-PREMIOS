@@ -113,7 +113,7 @@ def _award_active_seasons(c, user_id, points):
 
 def set_campaign_user_limit(path,campaign_id,limit_value):
     if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0:raise ValueError("Campanha inválida.")
-    if not isinstance(limit_value,int) or isinstance(limit_value,bool) or limit_value<0 or limit_value>100000:raise ValueError("Limite inválido.")
+    if not isinstance(limit_value,int) or isinstance(limit_value,bool) or limit_value not in (0,1):raise ValueError("O limite da campanha deve ser 0 (desativado) ou 1 (um resgate).")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("INSERT INTO extra_campaign_user_limits(campaign_id,limit_value) VALUES(?,?) ON CONFLICT(campaign_id) DO UPDATE SET limit_value=excluded.limit_value",(campaign_id,limit_value));c.commit()
 
