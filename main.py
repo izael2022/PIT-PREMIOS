@@ -1259,6 +1259,13 @@ def callback(c,update_id=None):
                     target=int(row["target_value"])
                     lines.append(f"🤝 Meta coletiva: <b>{int(total):,}/{target:,}</b>\n")
                     lines.append("🏁 Meta alcançada!" if target>0 and total>=target else "⏳ A comunidade está avançando!")
+                elif row["kind"]=="challenge":
+                    with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                        progress=conn.execute("SELECT COALESCE(progress,0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(row["id"],int(uid))).fetchone()
+                    current=int(progress[0]) if progress else 0
+                    target=int(row["target_value"])
+                    lines.append(f"🎯 Seu progresso: <b>{current:,}/{target:,}</b>\n")
+                    lines.append("🏁 Desafio concluído! Pode resgatar." if target>0 and current>=target else "⏳ Continue participando para completar.")
                 kb.append([btn("🎁 Resgatar #"+str(row["id"]),"extras_claim:"+str(row["id"]))])
             if not visible: lines.append("Nenhum evento, recompensa ou desafio disponível agora.")
             kb.append([btn("⬅️ Menu principal","home")])
