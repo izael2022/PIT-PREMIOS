@@ -39,7 +39,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual(sum(result is not None for result in results), 1)
         self.assertEqual(self.balance(), 5000)
         with db.connect() as conn:
-            rows = conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=1001 AND reason LIKE ?", (f"%#{payout_id}%",)).fetchone()[0]
+            rows = conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=1001 AND reason=?", (f"Estorno do saque #{payout_id}",)).fetchone()[0]
         self.assertEqual(rows, 1)
 
     def test_concurrent_redemption_rejection_refunds_once(self):
