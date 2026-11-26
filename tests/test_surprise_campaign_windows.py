@@ -45,6 +45,23 @@ class SurpriseCampaignWindowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fora do período"):
             systems_extra.claim_campaign(self.path, cid, 123)
 
+    def test_inactive_surprise_cannot_be_claimed(self):
+        cid = self.create(self.now - timedelta(minutes=1), self.now + timedelta(hours=1))
+        self.assertTrue(systems_extra.set_campaign_active(self.path, cid, False))
+        with self.assertRaisesRegex(ValueError, "inexistente ou inativa"):
+            systems_extra.claim_campaign(self.path, cid, 123)
+
+    def test_schedule_requires_timezone(self):
+        with self.assertRaisesRegex(ValueError, "fuso horário"):
+            systems_extra.create_campaign(
+                self.path, "surprise", "Sem fuso", "", "2026-12-01T00:00:00",
+                "2026-12-02T00:00:00", 100, 0, 1
+            )
+
+    def test_schedule_requires_end_after_start(self):
+        with self.assertRaisesRegex(ValueError, "Período inválido"):
+            self.create(self.now, self.now)
+
     def test_claim_allowed_inside_window_and_reward_credited_once(self):
         cid = self.create(self.now - timedelta(minutes=1), self.now + timedelta(minutes=10))
         self.assertEqual(systems_extra.claim_campaign(self.path, cid, 123), 100)
