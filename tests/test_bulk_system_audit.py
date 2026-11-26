@@ -95,6 +95,32 @@ class BulkSystemRegressionAudit(unittest.TestCase):
                 db.create_payout_request(91001, points, "audit@example.com", "EMAIL", 10000)
         self.assertEqual(db.get_user(91001)["points"], 20000)
 
+
+    def test_rejected_reward_order_refunds_once_and_restores_stock(self):
+        db.add_points(91001, 200, "Fixture balance")
+        reward_id = db.create_reward("Rejected audit reward", "Fixture", 200, stock=1)
+        order_id = db.create_reward_order(91001, reward_id)
+        self.assertEqual(db.get_user(91001)["points"], 0)
+        first = db.review_reward_order(order_id, 1, False)
+        second = db.review_reward_order(order_id, 1, False)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 200)
+        reward = next(r for r in db.all_rewards() if r["id"] == reward_id)
+        self.assertEqual(reward["stock"], 1)
+
+    def test_rejected_task_submission_never_credits_points(self):
+        task_id = db.create_task("Rejected audit task", "Fixture", 120, True)
+        submission_id = db.submit_task(task_id, 91001, "test evidence")
+        first = db.review_task_submission(submission_id, 1, False)
+        second = db.review_task_submission(submission_id, 1, False)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 0)
+        with db.connect() as conn:
+            rows = conn.execute("SELECT COUNT(*) FROM task_submission_history WHERE submission_id=?", (submission_id,)).fetchone()[0]
+        self.assertEqual(rows, 1)
+
     def test_notifications_and_maintenance_state_persist(self):
         db.record_notification(91001, "audit", "Audit notification", "Fixture message")
         self.assertEqual(db.notification_count(91001), 1)
