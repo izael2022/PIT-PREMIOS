@@ -284,6 +284,7 @@ def menu():
         [btn("🎮 HISTÓRICO DOS JOGOS","game:history")],
         [btn("📅 EVENTOS E RECOMPENSAS","extras:list")],
         [btn("🏅 CONQUISTAS","extras:achievements")],
+        [btn("🏆 TEMPORADAS","extras:seasons")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR CÓDIGO","user:redeem_code")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
@@ -1128,6 +1129,42 @@ def callback(c,update_id=None):
         raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()
         db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
+        return
+    if data=="extras:seasons":
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                conn.row_factory=__import__("sqlite3").Row
+                seasons=conn.execute("SELECT id,title,start_at,end_at FROM extra_seasons WHERE active=1 ORDER BY start_at DESC LIMIT 20").fetchall()
+            lines=["🏆 <b>TEMPORADAS</b>","Confira as temporadas e seus rankings:\n"]
+            kb=[]
+            for season in seasons:
+                lines.append("🏆 <b>"+escape(season["title"])+"</b>\n"+escape(season["start_at"][:10])+" até "+escape(season["end_at"][:10])+"\n")
+                kb.append([btn("📊 Ranking: "+season["title"][:30],"season_rank:"+str(season["id"]))])
+            if not seasons: lines.append("Nenhuma temporada disponível no momento.")
+            kb.append([btn("⬅️ Menu","home")])
+            send(chat,"\n".join(lines),kb)
+        except Exception:
+            log.exception("Falha ao listar temporadas")
+            send(chat,"Não foi possível carregar temporadas.",back())
+        return
+    if data.startswith("season_rank:"):
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            sid=int(data.split(":",1)[1])
+            ranking_rows=extras.season_ranking(DATABASE_PATH,sid,30)
+            with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                season=conn.execute("SELECT title FROM extra_seasons WHERE id=? AND active=1",(sid,)).fetchone()
+            if not season: raise ValueError("Temporada indisponível.")
+            lines=["🏆 <b>"+escape(season[0])+"</b>","📊 <b>RANKING DA TEMPORADA</b>\n"]
+            for pos,r in enumerate(ranking_rows,1):
+                lines.append(f"{pos}. <code>{r['user_id']}</code> — {int(r['score']):,} pontos")
+            if not ranking_rows: lines.append("Ainda não há pontuações.")
+            send(chat,"\n".join(lines),[[btn("⬅️ Temporadas","extras:seasons")],[btn("🏠 Menu","home")]])
+        except Exception as exc:
+            send(chat,"⚠️ "+escape(str(exc) or "Erro ao carregar ranking."),[[btn("🏆 Temporadas","extras:seasons")]])
         return
     if data=="extras:achievements":
         try:
