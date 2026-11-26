@@ -130,12 +130,12 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         if not isinstance(reward,int) or isinstance(reward,bool) or reward<0 or reward>10**12: raise ValueError("Recompensa da campanha inválida.")
         if not _active_window(campaign[4],campaign[5]): raise ValueError("Campanha fora do período.")
         prior_claim=c.execute("SELECT 1 FROM extra_campaign_claims WHERE campaign_id=? AND user_id=? LIMIT 1",(campaign_id,user_id)).fetchone()
+        if prior_claim:
+            raise ValueError("Recompensa já resgatada.")
         cap=c.execute("SELECT limit_value FROM extra_campaign_user_limits WHERE campaign_id=?",(campaign_id,)).fetchone()
         if cap:
             redeemed=c.execute("SELECT COUNT(*) FROM extra_campaign_claims WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()[0]
             if redeemed>=cap[0]:raise ValueError("Limite de resgate da campanha atingido.")
-        if prior_claim:
-            raise ValueError("Recompensa já resgatada.")
         if campaign[1]=="collective_goal":
             total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
             if total<campaign[8]: raise ValueError("Meta coletiva ainda não alcançada.")
