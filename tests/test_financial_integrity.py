@@ -6,7 +6,8 @@ from pathlib import Path
 
 # database.py imports config.py, which validates these settings at import time.
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
-os.environ.setdefault("ADMIN_IDS", "1")
+os.environ["ADMIN_IDS"] = "1"
+os.environ["BACKUP_ENCRYPTION_KEY"] = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
 
 import database as db
 
