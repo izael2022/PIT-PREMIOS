@@ -228,7 +228,7 @@ class FinancialIntegrityTests(unittest.TestCase):
     def test_payout_reduction_refunds_difference_and_records_history_and_audit(self):
         db.add_points(1001, 30000, "Saldo adicional para teste de redução")
         payout_id = db.create_payout_request(1001, 20000, "teste@example.com", "EMAIL", 10000)
-        result = db.reduce_pending_payout(payout_id, 10000, 1)
+        result = db.reduce_pending_payout(payout_id, 10000, next(iter(db.ADMIN_IDS)))
         self.assertEqual(result["refunded_points"], 10000)
         self.assertEqual(result["amount_cents"], 1000)
         self.assertEqual(self.balance(), 25000)
@@ -239,7 +239,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         self.assertEqual((payout["points"], payout["amount_cents"], payout["status"]), (10000, 1000, "pending"))
         self.assertEqual(history["amount"], 10000)
         self.assertIn(f"#{payout_id}", history["reason"])
-        self.assertEqual((audit["admin_id"], audit["action"]), (1, "payout_reduced"))
+        self.assertEqual((audit["admin_id"], audit["action"]), (next(iter(db.ADMIN_IDS)), "payout_reduced"))
         self.assertIn(f"#{payout_id}", audit["details"])
 
     def test_new_payout_uses_1000_points_per_real(self):
@@ -254,7 +254,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         with db.connect() as conn:
             conn.execute("UPDATE payout_requests SET conversion_version=1,amount_cents=20000 WHERE id=?", (payout_id,))
             conn.commit()
-        result = db.reduce_pending_payout(payout_id, 10000, 1)
+        result = db.reduce_pending_payout(payout_id, 10000, next(iter(db.ADMIN_IDS)))
         self.assertEqual(result["amount_cents"], 10000)
         with db.connect() as conn:
             payout = conn.execute("SELECT points,amount_cents,conversion_version FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
@@ -264,7 +264,7 @@ class FinancialIntegrityTests(unittest.TestCase):
     def test_payout_reduction_cannot_go_below_configured_minimum(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         with self.assertRaisesRegex(ValueError, "inferior ao mínimo"):
-            db.reduce_pending_payout(payout_id, 990, 1, 1000)
+            db.reduce_pending_payout(payout_id, 990, next(iter(db.ADMIN_IDS)), 1000)
         self.assertEqual(self.balance(), 3000)
         with db.connect() as conn:
             payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
@@ -273,7 +273,7 @@ class FinancialIntegrityTests(unittest.TestCase):
     def test_payout_reduction_rejects_non_admin(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         with self.assertRaisesRegex(ValueError, "Apenas administradores"):
-            db.reduce_pending_payout(payout_id, 1000, 999)
+            db.reduce_pending_payout(payout_id, 1000, next((value for value in range(900000, 900010) if value not in db.ADMIN_IDS), 999999))
         self.assertEqual(self.balance(), 3000)
         with db.connect() as conn:
             payout = conn.execute("SELECT points,amount_cents FROM payout_requests WHERE id=?", (payout_id,)).fetchone()
@@ -284,13 +284,13 @@ class FinancialIntegrityTests(unittest.TestCase):
         for invalid in (0, -10, 999, 2000, 2010):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
-                    db.reduce_pending_payout(payout_id, invalid, 1)
+                    db.reduce_pending_payout(payout_id, invalid, next(iter(db.ADMIN_IDS)))
         self.assertEqual(self.balance(), 3000)
 
     def test_payout_reduction_only_works_while_pending(self):
         payout_id = db.create_payout_request(1001, 2000, "teste@example.com", "EMAIL", 1000)
         self.assertIsNotNone(db.review_payout(payout_id, 1, False))
-        self.assertIsNone(db.reduce_pending_payout(payout_id, 1000, 1))
+        self.assertIsNone(db.reduce_pending_payout(payout_id, 1000, next(iter(db.ADMIN_IDS))))
         self.assertEqual(self.balance(), 5000)
 
     def test_concurrent_payout_reduction_refunds_only_once(self):
@@ -298,7 +298,7 @@ class FinancialIntegrityTests(unittest.TestCase):
         payout_id = db.create_payout_request(1001, 20000, "teste@example.com", "EMAIL", 10000)
         def reduce_once():
             try:
-                return db.reduce_pending_payout(payout_id, 10000, 1)
+                return db.reduce_pending_payout(payout_id, 10000, next(iter(db.ADMIN_IDS)))
             except ValueError:
                 return None
 
