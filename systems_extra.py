@@ -89,6 +89,8 @@ def set_campaign_active(path,campaign_id,active):
 
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
     """Idempotent claim; credit and claim record are atomic against users/ledger."""
+    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(claim_key,str) or not claim_key.strip() or len(claim_key)>100: raise ValueError("Chave de resgate inválida.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
         campaign=c.execute("SELECT * FROM extra_campaigns WHERE id=? AND active=1",(campaign_id,)).fetchone()
@@ -108,14 +110,17 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         c.commit();return points
 
 def contribute_goal(path,campaign_id,user_id,amount):
-    if amount<=0: raise ValueError("Contribuição deve ser positiva.")
+    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(amount,int) or amount<=0: raise ValueError("Contribuição deve ser positiva.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
         row=c.execute("SELECT kind,active,start_at,end_at,target_value FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
         if not row or row[0]!="collective_goal" or not row[1]:raise ValueError("Meta coletiva inválida.")
         if not _active_window(row[2],row[3]):raise ValueError("Meta coletiva fora do período.")
         total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
-        if total>=row[4]:raise ValueError("Meta coletiva já atingida.")
+        remaining=int(row[4])-int(total)
+        if remaining<=0:raise ValueError("Meta coletiva já atingida.")
+        if amount>remaining: raise ValueError("Contribuição excede o restante da meta.")
         c.execute("INSERT INTO extra_campaign_progress(campaign_id,user_id,progress) VALUES(?,?,?) ON CONFLICT(campaign_id,user_id) DO UPDATE SET progress=progress+excluded.progress,updated_at=CURRENT_TIMESTAMP",(campaign_id,user_id,amount))
         c.commit()
 
