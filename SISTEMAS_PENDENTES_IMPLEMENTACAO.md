@@ -20,6 +20,21 @@ Este plano é a trilha única para integração do conjunto de módulos. Impleme
 - [ ] Integração com menus/callbacks Telegram; controle de acesso admin e bloqueados.
 - [ ] Testes de regressão, SQLite temporário, compatibilidade e verificação CI.
 
+## Pacote adicional iniciado (commits da auditoria)
+- [x] Engine aditiva de tickets de suporte (abertura, listagem, resposta e fechamento), com testes isolados.
+- [x] Limites configuráveis por escopo e consumo transacional por período, com testes.
+- [x] Revisões antifraude centralizadas (registro e decisão), com testes.
+- [x] XP e níveis derivados (sem alteração de carteira), com testes.
+- [x] Medalhas/conquistas (cadastro e concessão idempotente), com testes.
+- [x] Avisos programados com janela de publicação, com testes.
+- [x] Logs administrativos aditivos, com testes.
+- [x] Notificações novas com expiração e leitura, com testes.
+- [x] Consultas de calendário mensal e janela de evento surpresa.
+- [ ] Integrar todos estes novos endpoints às telas/callbacks do bot, persistência do banco operacional e painel admin.
+- [ ] Histórico financeiro unificado na interface (usar ledger existente, sem duplicar ou alterar dados).
+- [ ] Antifraude automatizado: sinais e revisão; não aplicar bloqueios automáticos sem regras verificadas.
+- [ ] Testar a integração completa no bot e CI antes de marcar pacote como pronto para produção.
+
 ## Regras obrigatórias
 - Não apagar, recriar ou migrar destrutivamente o DB de produção.
 - Nenhum saldo/ponto deve ser creditado fora de transação e registro de ledger existente.
