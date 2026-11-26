@@ -64,8 +64,11 @@ def _active_window(start_at,end_at,now=None):
 def create_campaign(path, kind, title, description, start_at, end_at, reward_points=0, target_value=0, created_by=0):
     allowed={"calendar","event","surprise","challenge","collective_goal","special_mission"}
     if kind not in allowed: raise ValueError("Tipo de campanha inválido.")
-    if not title.strip() or len(title)>120: raise ValueError("Título inválido.")
-    if reward_points<0 or target_value<0: raise ValueError("Valores não podem ser negativos.")
+    if not isinstance(title,str) or not title.strip() or len(title)>120: raise ValueError("Título inválido.")
+    if not isinstance(description,str): raise ValueError("Descrição inválida.")
+    if not isinstance(reward_points,int) or isinstance(reward_points,bool) or not isinstance(target_value,int) or isinstance(target_value,bool): raise ValueError("Recompensa e meta devem ser números inteiros.")
+    if reward_points<0 or target_value<0 or reward_points>10**12 or target_value>10**12: raise ValueError("Valores fora do limite permitido.")
+    if not isinstance(created_by,int) or created_by<0: raise ValueError("Administrador inválido.")
     start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
     if start_utc>=end_utc: raise ValueError("Período inválido.")
     start_at=start_utc.isoformat(); end_at=end_utc.isoformat()
@@ -83,8 +86,10 @@ def list_campaigns(path, kind=None, active_only=True):
         return [dict(x) for x in c.execute(q,args)]
 
 def set_campaign_active(path,campaign_id,active):
+    if not isinstance(campaign_id,int) or campaign_id<=0: raise ValueError("Campanha inválida.")
+    if not isinstance(active,bool): raise ValueError("Status inválido.")
     with sqlite3.connect(path,timeout=30) as c:
-        cur=c.execute("UPDATE extra_campaigns SET active=? WHERE id=?",(int(bool(active)),campaign_id));c.commit()
+        cur=c.execute("UPDATE extra_campaigns SET active=? WHERE id=?",(int(active),campaign_id));c.commit()
         return cur.rowcount==1
 
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
