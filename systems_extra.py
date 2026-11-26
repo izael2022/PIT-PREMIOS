@@ -294,3 +294,33 @@ def challenge_progress(path,campaign_id,user_id):
             raise ValueError("Progresso armazenado inválido.")
         return value
 
+
+def calendar_month(path,year,month,user_id=None):
+    """Return calendar campaigns for a month, optionally with user's claim status."""
+    if not isinstance(year,int) or isinstance(year,bool) or year<2000 or year>2100 or not isinstance(month,int) or isinstance(month,bool) or month<1 or month>12:
+        raise ValueError("Mês inválido.")
+    if user_id is not None and (not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0):raise ValueError("Usuário inválido.")
+    start=f"{year:04d}-{month:02d}-01"
+    end=f"{year+1:04d}-01-01" if month==12 else f"{year:04d}-{month+1:02d}-01"
+    with sqlite3.connect(path,timeout=30) as c:
+        c.row_factory=sqlite3.Row
+        rows=c.execute("SELECT * FROM extra_campaigns WHERE kind='calendar' AND active=1 AND end_at>=? AND start_at<? ORDER BY start_at,id",(start,end)).fetchall()
+        result=[]
+        for r in rows:
+            item=dict(r)
+            if user_id is not None:
+                item["claimed"]=bool(c.execute("SELECT 1 FROM extra_campaign_claims WHERE campaign_id=? AND user_id=? LIMIT 1",(r["id"],user_id)).fetchone())
+            result.append(item)
+        return result
+
+def active_surprises(path,now=None):
+    now=now or _now()
+    with sqlite3.connect(path,timeout=30) as c:
+        c.row_factory=sqlite3.Row
+        rows=c.execute("SELECT * FROM extra_campaigns WHERE kind='surprise' AND active=1 ORDER BY start_at,id").fetchall()
+        return [dict(r) for r in rows if _active_window(r["start_at"],r["end_at"],datetime.fromisoformat(now.replace("Z","+00:00")))]
+
+def claim_calendar_daily(path,campaign_id,user_id,day_key):
+    """Daily-calendar redemption uses the campaign/user uniqueness and a date key."""
+    if not isinstance(day_key,str) or len(day_key)!=10 or day_key[4]!="-":raise ValueError("Data de resgate inválida.")
+    return claim_campaign(path,campaign_id,user_id,"calendar:"+day_key)
