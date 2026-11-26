@@ -76,7 +76,7 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         if not campaign: raise ValueError("Campanha inexistente ou inativa.")
         now=_now()
         # Date strings should be ISO-8601; comparison is standardized to UTC ISO.
-        if now<campaign[3] or now>campaign[4]: raise ValueError("Campanha fora do período.")
+        if now<campaign[4] or now>campaign[5]: raise ValueError("Campanha fora do período.")
         if campaign[0] and campaign[1] in ("collective_goal",): 
             total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
             if total<campaign[8]: raise ValueError("Meta coletiva ainda não alcançada.")
