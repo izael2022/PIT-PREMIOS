@@ -24,7 +24,7 @@ class ExtraSystemsTests(unittest.TestCase):
  def test_achievement_claim_is_once(self):
   systems_extra.create_achievement(self.path,"first","Primeira","",3)
   self.assertEqual(systems_extra.claim_achievement(self.path,"first",7),3)
-  with self.assertRaises(sqlite3.IntegrityError):systems_extra.claim_achievement(self.path,"first",7)
+  with self.assertRaises(ValueError):systems_extra.claim_achievement(self.path,"first",7)
  def test_rejects_naive_datetime(self):
   with self.assertRaises(ValueError):systems_extra.create_campaign(self.path,"event","Inválida","", "2026-11-01T00:00:00", "2026-12-01T00:00:00")
  def test_goal_rejects_contribution_after_target(self):
