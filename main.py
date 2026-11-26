@@ -1110,6 +1110,22 @@ def callback(c,update_id=None):
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
+    if data.startswith("extras_toggle:"):
+        if not admin(uid): return
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            campaign_id=int(data.split(":",1)[1])
+            rows=extras.list_campaigns(DATABASE_PATH,active_only=False)
+            row=next((x for x in rows if x["id"]==campaign_id),None)
+            if row is None:
+                send(chat,"Campanha não encontrada.",[[btn("⬅️ Campanhas","admin:extras")]])
+                return
+            extras.set_campaign_active(DATABASE_PATH,campaign_id,not bool(row["active"]))
+            send(chat,"Status da campanha atualizado.",[[btn("📅 Voltar às campanhas","admin:extras")]])
+        except Exception:
+            log.exception("Falha ao alternar campanha"); send(chat,"Erro ao alterar status da campanha.",[[btn("📅 Campanhas","admin:extras")]])
+        return
     if data.startswith("admin:"):
         if not admin(uid): return
         action=data.split(":",1)[1]
@@ -1121,12 +1137,17 @@ def callback(c,update_id=None):
         elif action=="extras":
             try:
                 import systems_extra as extras
+                extras.initialize(DATABASE_PATH)
                 rows=extras.list_campaigns(DATABASE_PATH,active_only=False)
-                if not rows: send(chat,"Nenhuma campanha registrada no módulo adicional.",admin_menu())
-                else:
-                    lines=["📅 <b>CAMPANHAS DO MÓDULO ADICIONAL</b>"]
-                    for row in rows[:30]: lines.append(f"#{row['id']} — {escape(row['title'])} ({row['kind']}) | {'ATIVA' if row['active'] else 'INATIVA'} | {row['reward_points']} pts")
-                    send(chat,"\\n".join(lines),admin_menu())
+                lines=["📅 <b>GERENCIAMENTO DE CAMPANHAS</b>","Selecione abaixo para ativar ou desativar:"]
+                kb=[]
+                for row in rows[:30]:
+                    status="🟢" if row["active"] else "⚪"
+                    kb.append([btn(f"{status} #{row['id']} {row['title'][:35]}","extras_toggle:"+str(row["id"]))])
+                kb.append([btn("🔄 Atualizar lista","admin:extras")])
+                kb.append([btn("⬅️ Voltar","admin:back")])
+                if not rows: lines.append("Nenhuma campanha cadastrada.")
+                send(chat,"\\n".join(lines),kb)
             except Exception:
                 log.exception("Falha ao listar campanhas adicionais"); send(chat,"Falha ao carregar módulo adicional.",admin_menu())
         elif action=="finance":
