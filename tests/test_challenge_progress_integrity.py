@@ -27,6 +27,17 @@ class ChallengeProgressIntegrityTests(unittest.TestCase):
         self.assertEqual(systems_extra.challenge_progress(self.path,self.campaign,7),0)
         self.assertEqual(systems_extra.challenge_progress(self.path,self.campaign,999),0)
 
+    def test_invalid_progress_read_identifiers_are_rejected(self):
+        for campaign_id,user_id in ((True,7),(0,7),(self.campaign,True),(self.campaign,0)):
+            with self.assertRaises(ValueError):
+                systems_extra.challenge_progress(self.path,campaign_id,user_id)
+
+    def test_corrupt_negative_progress_is_rejected_on_read(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("INSERT INTO extra_campaign_progress(campaign_id,user_id,progress) VALUES(?,?,?)",(self.campaign,7,-1))
+        with self.assertRaises(ValueError):
+            systems_extra.challenge_progress(self.path,self.campaign,7)
+
     def test_event_progress_is_idempotent(self):
         self.assertTrue(systems_extra.record_challenge_progress(self.path,self.campaign,7,2,"evt-1"))
         self.assertFalse(systems_extra.record_challenge_progress(self.path,self.campaign,7,2,"evt-1"))
