@@ -68,7 +68,7 @@ def create_campaign(path, kind, title, description, start_at, end_at, reward_poi
     if not isinstance(description,str): raise ValueError("Descrição inválida.")
     if not isinstance(reward_points,int) or isinstance(reward_points,bool) or not isinstance(target_value,int) or isinstance(target_value,bool): raise ValueError("Recompensa e meta devem ser números inteiros.")
     if reward_points<0 or target_value<0 or reward_points>10**12 or target_value>10**12: raise ValueError("Valores fora do limite permitido.")
-    if not isinstance(created_by,int) or created_by<0: raise ValueError("Administrador inválido.")
+    if not isinstance(created_by,int) or isinstance(created_by,bool) or created_by<0: raise ValueError("Administrador inválido.")
     start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
     if start_utc>=end_utc: raise ValueError("Período inválido.")
     start_at=start_utc.isoformat(); end_at=end_utc.isoformat()
@@ -86,7 +86,7 @@ def list_campaigns(path, kind=None, active_only=True):
         return [dict(x) for x in c.execute(q,args)]
 
 def set_campaign_active(path,campaign_id,active):
-    if not isinstance(campaign_id,int) or campaign_id<=0: raise ValueError("Campanha inválida.")
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0: raise ValueError("Campanha inválida.")
     if not isinstance(active,bool): raise ValueError("Status inválido.")
     with sqlite3.connect(path,timeout=30) as c:
         cur=c.execute("UPDATE extra_campaigns SET active=? WHERE id=?",(int(active),campaign_id));c.commit()
@@ -161,7 +161,7 @@ def create_achievement(path,key,title,description="",reward_points=0):
 
 def claim_achievement(path,key,user_id):
     if not isinstance(key,str) or not key.strip() or len(key)>80: raise ValueError("Conquista inválida.")
-    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0: raise ValueError("Usuário inválido.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
         a=c.execute("SELECT reward_points,active FROM extra_achievements WHERE achievement_key=?",(key,)).fetchone()
@@ -170,7 +170,8 @@ def claim_achievement(path,key,user_id):
             c.execute("INSERT INTO extra_achievement_claims(achievement_key,user_id) VALUES(?,?)",(key,user_id))
         except sqlite3.IntegrityError:
             raise ValueError("Conquista já resgatada.")
-        points=int(a[0])
+        points=a[0]
+        if not isinstance(points,int) or isinstance(points,bool) or points<0 or points>10**12: raise ValueError("Recompensa da conquista inválida.")
         if points:
             cur=c.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
             if cur.rowcount!=1:raise ValueError("Usuário não encontrado.")
