@@ -1246,19 +1246,21 @@ def callback(c,update_id=None):
                     end=__import__("datetime").datetime.fromisoformat(str(row["end_at"]).replace("Z","+00:00"))
                     if start<=now<=end: visible.append(row)
                 except Exception: continue
-            lines=["📅 <b>EVENTOS E RECOMPENSAS</b>","Campanhas disponíveis neste momento:\n"]
+            kind_labels={"calendar":"📅 Calendário mensal","event":"🎉 Evento","surprise":"🎁 Evento surpresa","challenge":"🎯 Desafio","collective_goal":"🤝 Meta coletiva","special_mission":"⭐ Missão especial"}
+            lines=["📅 <b>EVENTOS E RECOMPENSAS</b>","Eventos, calendário e campanhas com período válido:\n"]
             kb=[]
+            visible.sort(key=lambda row:(row["start_at"],row["id"]))
             for row in visible[:25]:
-                lines.append(f"🎁 <b>{escape(row['title'])}</b>\n{escape(row['description'][:250])}\nRecompensa: {int(row['reward_points'])} pontos\n")
+                label=kind_labels.get(row["kind"],"🎁 Campanha")
+                lines.append(f"{label}\n<b>{escape(row['title'])}</b>\n{escape(row['description'][:250])}\n🎁 Recompensa: <b>{int(row['reward_points']):,} pontos</b>\n⏰ Encerramento: {escape(str(row['end_at'])[:16])}\n")
                 if row["kind"]=="collective_goal":
                     with __import__("sqlite3").connect(DATABASE_PATH) as conn:
                         total=conn.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(row["id"],)).fetchone()[0]
                     target=int(row["target_value"])
-                    lines.append(f"🤝 Meta coletiva: <b>{int(total):,}/{target:,}</b>\\n")
+                    lines.append(f"🤝 Meta coletiva: <b>{int(total):,}/{target:,}</b>\n")
                     lines.append("🏁 Meta alcançada!" if target>0 and total>=target else "⏳ A comunidade está avançando!")
-
                 kb.append([btn("🎁 Resgatar #"+str(row["id"]),"extras_claim:"+str(row["id"]))])
-            if not visible: lines.append("Nenhuma campanha disponível agora.")
+            if not visible: lines.append("Nenhum evento, recompensa ou desafio disponível agora.")
             kb.append([btn("⬅️ Menu principal","home")])
             send(chat,"\n".join(lines),kb)
         except Exception:
