@@ -25,6 +25,12 @@ class ExtraSystemsTests(unittest.TestCase):
   systems_extra.create_achievement(self.path,"first","Primeira","",3)
   self.assertEqual(systems_extra.claim_achievement(self.path,"first",7),3)
   with self.assertRaises(sqlite3.IntegrityError):systems_extra.claim_achievement(self.path,"first",7)
+ def test_rejects_naive_datetime(self):
+  with self.assertRaises(ValueError):systems_extra.create_campaign(self.path,"event","Inválida","", "2026-11-01T00:00:00", "2026-12-01T00:00:00")
+ def test_goal_rejects_contribution_after_target(self):
+  cid=systems_extra.create_campaign(self.path,"collective_goal","Meta","",self.start,self.end,10,2)
+  systems_extra.contribute_goal(self.path,cid,7,2)
+  with self.assertRaises(ValueError):systems_extra.contribute_goal(self.path,cid,7,1)
  def test_season_ranking(self):
   sid=systems_extra.create_season(self.path,"Temporada",self.start,self.end)
   systems_extra.add_season_score(self.path,sid,7,10);systems_extra.add_season_score(self.path,sid,7,2)
