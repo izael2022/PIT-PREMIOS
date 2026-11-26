@@ -1488,8 +1488,13 @@ def redeem_code(code,user_id):
 
 def set_user_input_state(user_id,state):
     allowed=("redeem_code","payout_points")
-    valid_payout=(state.startswith("payout_confirm:") and state.split(":",1)[1].isdigit())
-    valid_extra=(state.startswith("extra_create:") and len(state)<=12000 and state.count(":")==2)
+    valid_payout=(isinstance(state,str) and state.startswith("payout_confirm:") and state.split(":",1)[1].isdigit())
+    valid_extra=False
+    if isinstance(state,str) and state.startswith("extra_create:") and len(state)<=12000 and state.count(":")==2:
+        _,stage,encoded=state.split(":",2)
+        valid_stages={"title","description","start","end","reward","target"}
+        valid_encoded=bool(encoded) and all(ch.isalnum() or ch in "-_=" for ch in encoded)
+        valid_extra=stage in valid_stages and valid_encoded
     if state not in allowed and not valid_payout and not valid_extra:
         raise ValueError("Estado de entrada inválido.")
     with connect() as db:
