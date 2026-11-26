@@ -74,6 +74,27 @@ class BulkSystemRegressionAudit(unittest.TestCase):
             db.redeem_code(code, 91001)
         self.assertEqual(db.get_user(91001)["points"], 80)
 
+
+    def test_payout_cancel_refunds_once_and_pending_duplicate_is_blocked(self):
+        db.add_points(91001, 20000, "Payout fixture")
+        payout_id = db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000)
+        self.assertEqual(db.get_user(91001)["points"], 10000)
+        with self.assertRaises(ValueError):
+            db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000)
+        first = db.cancel_payout_request(91001, payout_id)
+        second = db.cancel_payout_request(91001, payout_id)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 20000)
+
+    def test_payout_invalid_amounts_do_not_mutate_balance(self):
+        db.add_points(91001, 20000, "Payout validation fixture")
+        invalid = [9999, 10001, 0, -100]
+        for points in invalid:
+            with self.assertRaises(ValueError):
+                db.create_payout_request(91001, points, "audit@example.com", "EMAIL", 10000)
+        self.assertEqual(db.get_user(91001)["points"], 20000)
+
     def test_notifications_and_maintenance_state_persist(self):
         db.record_notification(91001, "audit", "Audit notification", "Fixture message")
         self.assertEqual(db.notification_count(91001), 1)
