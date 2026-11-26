@@ -1,0 +1,88 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("BOT_TOKEN", "123456:test-token")
+os.environ.setdefault("ADMIN_IDS", "1")
+os.environ.setdefault("BACKUP_ENCRYPTION_KEY", "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=")
+
+import database as db
+
+
+class BulkSystemRegressionAudit(unittest.TestCase):
+    """Cross-system regression checks in isolated SQLite fixtures."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DATABASE_PATH = Path(self.tmp.name) / "bulk_audit.sqlite"
+        db.init_db()
+        db.register_user(91001, "audit_user", "Audit User")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_points_ledger_reconciles_after_multiple_reward_sources(self):
+        db.add_points(91001, 100, "Audit credit")
+        ok, streak, earned = db.daily_claim(91001, [50, 75])
+        self.assertTrue(ok)
+        self.assertEqual(earned, 50)
+        report = db.financial_dashboard()
+        self.assertEqual(report["wallet_balance_points"], 150)
+        self.assertEqual(report["ledger_net_points"], 150)
+        self.assertTrue(report["ledger_reconciled"])
+
+    def test_reward_stock_purchase_and_approval_flow(self):
+        reward_id = db.create_reward("Audit reward", "Isolated test item", 200, stock=1)
+        order_id = db.create_reward_order(91001, reward_id)
+        self.assertEqual(db.get_user(91001)["points"], 0)
+        reviewed = db.review_reward_order(order_id, 1, True)
+        self.assertIsNotNone(reviewed)
+        reward = next(r for r in db.all_rewards() if r["id"] == reward_id)
+        self.assertEqual(reward["stock"], 0)
+        self.assertEqual(db.get_user(91001)["points"], 0)
+
+    def test_referral_review_is_one_time_and_ledgered(self):
+        db.register_user(91002, "referred", "Referred", referrer=91001, is_bot=True)
+        with db.connect() as conn:
+            row = conn.execute("SELECT id FROM referral_reviews WHERE referred_user_id=?", (91002,)).fetchone()
+        first = db.review_referral(row["id"], 1, True, 125)
+        second = db.review_referral(row["id"], 1, True, 125)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 125)
+        report = db.financial_dashboard()
+        self.assertEqual(report["ledger_difference"], 0)
+
+    def test_task_submission_approval_is_archived_and_awarded(self):
+        task_id = db.create_task("Bulk audit task", "Proof required", 90, True)
+        submission_id = db.submit_task(task_id, 91001, "audit proof")
+        first = db.review_task_submission(submission_id, 1, True)
+        second = db.review_task_submission(submission_id, 1, True)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 90)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_earnings WHERE user_id=91001 AND source='task'").fetchone()[0], 1)
+
+    def test_redeem_code_rejects_repeated_claim(self):
+        code = db.create_redeem_code(80, 1, 1)
+        result = db.redeem_code(code, 91001)
+        self.assertEqual(result["points"], 80)
+        with self.assertRaises(ValueError):
+            db.redeem_code(code, 91001)
+        self.assertEqual(db.get_user(91001)["points"], 80)
+
+    def test_notifications_and_maintenance_state_persist(self):
+        db.record_notification(91001, "audit", "Audit notification", "Fixture message")
+        self.assertEqual(db.notification_count(91001), 1)
+        db.set_notifications(91001, False)
+        self.assertFalse(db.notifications_enabled(91001))
+        db.set_maintenance_mode(True)
+        self.assertTrue(db.maintenance_mode_enabled())
+        db.set_maintenance_mode(False)
+        self.assertFalse(db.maintenance_mode_enabled())
+
+
+if __name__ == "__main__":
+    unittest.main()
