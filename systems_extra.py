@@ -121,9 +121,12 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         reward=campaign[7]
         if not isinstance(reward,int) or isinstance(reward,bool) or reward<0 or reward>10**12: raise ValueError("Recompensa da campanha inválida.")
         if not _active_window(campaign[4],campaign[5]): raise ValueError("Campanha fora do período.")
-        if campaign[0] and campaign[1] in ("collective_goal",): 
+        if campaign[1]=="collective_goal":
             total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
             if total<campaign[8]: raise ValueError("Meta coletiva ainda não alcançada.")
+        elif campaign[1]=="challenge":
+            progress=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()[0]
+            if progress<campaign[8]: raise ValueError("Desafio ainda não concluído.")
         try:
             c.execute("INSERT INTO extra_campaign_claims(campaign_id,user_id,claim_key,points) VALUES(?,?,?,?)",(campaign_id,user_id,claim_key,campaign[7]))
         except sqlite3.IntegrityError: raise ValueError("Recompensa já resgatada.")
@@ -237,3 +240,29 @@ def update_campaign(path,campaign_id,kind,title,description,start_at,end_at,rewa
             (kind,title.strip(),description[:2000],start_utc.isoformat(),end_utc.isoformat(),reward_points,target_value,campaign_id))
         c.commit()
         return cur.rowcount==1
+
+def record_challenge_progress(path,campaign_id,user_id,amount,event_key):
+    """Idempotently record challenge progress from a verified source event."""
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0: raise ValueError("Desafio inválido.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0: raise ValueError("Usuário inválido.")
+    if not isinstance(amount,int) or isinstance(amount,bool) or amount<=0 or amount>10**12: raise ValueError("Progresso inválido.")
+    if not isinstance(event_key,str) or not event_key.strip() or len(event_key)>160: raise ValueError("Identificador do evento inválido.")
+    with sqlite3.connect(path,timeout=30) as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute("CREATE TABLE IF NOT EXISTS extra_challenge_events (campaign_id INTEGER NOT NULL,user_id INTEGER NOT NULL,event_key TEXT NOT NULL,amount INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(campaign_id,user_id,event_key))")
+        row=c.execute("SELECT kind,active,start_at,end_at,target_value FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
+        if not row or row[0]!="challenge" or not row[1]: raise ValueError("Desafio indisponível.")
+        if not _active_window(row[2],row[3]): raise ValueError("Desafio fora do período.")
+        try:
+            c.execute("INSERT INTO extra_challenge_events(campaign_id,user_id,event_key,amount) VALUES(?,?,?,?)",(campaign_id,user_id,event_key,amount))
+        except sqlite3.IntegrityError:
+            c.rollback(); return False
+        c.execute("INSERT INTO extra_campaign_progress(campaign_id,user_id,progress) VALUES(?,?,?) ON CONFLICT(campaign_id,user_id) DO UPDATE SET progress=progress+excluded.progress,updated_at=CURRENT_TIMESTAMP",(campaign_id,user_id,amount))
+        c.commit()
+        return True
+
+def challenge_progress(path,campaign_id,user_id):
+    with sqlite3.connect(path,timeout=30) as c:
+        row=c.execute("SELECT COALESCE(progress,0) FROM extra_campaign_progress WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()
+        return int(row[0]) if row else 0
+
