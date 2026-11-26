@@ -202,5 +202,25 @@ class BulkSystemRegressionAudit(unittest.TestCase):
             status = conn.execute("SELECT status FROM referral_reviews WHERE id=?", (row["id"],)).fetchone()["status"]
         self.assertEqual(status, "pending")
 
+    def test_admin_points_adjustment_update_id_prevents_duplicate_credit(self):
+        first = db.add_points(91001, 250, "Audit idempotent adjustment", update_id=880001)
+        second = db.add_points(91001, 250, "Audit idempotent adjustment", update_id=880001)
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(db.get_user(91001)["points"], 250)
+        with db.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=? AND reason=?", (91001, "Audit idempotent adjustment")).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_payout_create_update_id_returns_same_request_without_double_debit(self):
+        db.add_points(91001, 20000, "Payout idempotency fixture")
+        first = db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000, update_id=880002)
+        second = db.create_payout_request(91001, 10000, "audit@example.com", "EMAIL", 10000, update_id=880002)
+        self.assertEqual(first, second)
+        self.assertEqual(db.get_user(91001)["points"], 10000)
+        with db.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM payout_requests WHERE user_id=?", (91001,)).fetchone()[0]
+        self.assertEqual(count, 1)
+
 if __name__ == "__main__":
     unittest.main()
