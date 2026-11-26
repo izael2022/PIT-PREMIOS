@@ -222,5 +222,34 @@ class BulkSystemRegressionAudit(unittest.TestCase):
             count = conn.execute("SELECT COUNT(*) FROM payout_requests WHERE user_id=?", (91001,)).fetchone()[0]
         self.assertEqual(count, 1)
 
+
+    def test_durable_queue_deduplicates_updates_and_preserves_payload(self):
+        update = {"update_id": 880003, "message": {"text": "isolated audit"}}
+        self.assertTrue(db.enqueue_update(update))
+        self.assertFalse(db.enqueue_update(update))
+        pending = db.pending_updates()
+        self.assertEqual([item for item in pending if item.get("update_id") == 880003], [update])
+
+    def test_processed_update_is_marked_and_not_repeated(self):
+        update_id = 880004
+        self.assertFalse(db.update_was_processed(update_id))
+        db.enqueue_update({"update_id": update_id, "fixture": True})
+        db.mark_update_processed(update_id)
+        db.mark_update_processed(update_id)
+        self.assertTrue(db.update_was_processed(update_id))
+        with db.connect() as conn:
+            row = conn.execute("SELECT status FROM durable_updates WHERE update_id=?", (update_id,)).fetchone()
+            count = conn.execute("SELECT COUNT(*) FROM processed_updates WHERE update_id=?", (update_id,)).fetchone()[0]
+        self.assertEqual(row["status"], "completed")
+        self.assertEqual(count, 1)
+        self.assertNotIn(update_id, [item.get("update_id") for item in db.pending_updates()])
+
+    def test_health_snapshot_reports_database_integrity_and_pending_queue(self):
+        db.enqueue_update({"update_id": 880005, "fixture": "pending"})
+        snapshot = db.health_snapshot()
+        self.assertEqual(snapshot["database_integrity"], "ok")
+        self.assertEqual(snapshot["pending_updates"], 1)
+        self.assertIsNotNone(snapshot["oldest_pending_at"])
+
 if __name__ == "__main__":
     unittest.main()
