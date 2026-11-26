@@ -42,6 +42,18 @@ class PrivacyAndResilienceTests(unittest.TestCase):
         self.assertEqual([row["title"] for row in own], ["Own notice"])
         self.assertEqual([row["title"] for row in other], ["Other notice"])
 
+
+    def test_daily_game_history_and_status_are_user_isolated(self):
+        db.register_user(43, "other", "Other User")
+        db.play_daily_game(42, "chest", 5)
+        db.play_daily_game(43, "roulette", 10)
+        own_history = db.daily_game_history(42)
+        other_history = db.daily_game_history(43)
+        self.assertEqual([row["game"] for row in own_history], ["chest"])
+        self.assertEqual([row["game"] for row in other_history], ["roulette"])
+        self.assertEqual(db.game_status(42), {"chest": 5})
+        self.assertEqual(db.game_status(43), {"roulette": 10})
+
     def test_pix_key_validation(self):
         self.assertTrue(bot._valid_pix_key("CPF", "529.982.247-25"))
         self.assertFalse(bot._valid_pix_key("CPF", "111.111.111-11"))
