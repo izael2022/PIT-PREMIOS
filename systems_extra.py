@@ -44,12 +44,31 @@ def initialize(path):
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
+def _parse_utc(value):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Data inválida.")
+    try:
+        parsed=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
+    except ValueError as exc:
+        raise ValueError("Data inválida: use ISO-8601.") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("A data precisa informar fuso horário.")
+    return parsed.astimezone(timezone.utc)
+
+def _active_window(start_at,end_at,now=None):
+    start=_parse_utc(start_at); end=_parse_utc(end_at)
+    if start>=end: raise ValueError("Período inválido.")
+    now=now or datetime.now(timezone.utc)
+    return start<=now<=end
+
 def create_campaign(path, kind, title, description, start_at, end_at, reward_points=0, target_value=0, created_by=0):
     allowed={"calendar","event","surprise","challenge","collective_goal","special_mission"}
     if kind not in allowed: raise ValueError("Tipo de campanha inválido.")
     if not title.strip() or len(title)>120: raise ValueError("Título inválido.")
     if reward_points<0 or target_value<0: raise ValueError("Valores não podem ser negativos.")
-    if start_at>=end_at: raise ValueError("Período inválido.")
+    start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
+    if start_utc>=end_utc: raise ValueError("Período inválido.")
+    start_at=start_utc.isoformat(); end_at=end_utc.isoformat()
     with sqlite3.connect(path,timeout=30) as c:
         cur=c.execute("INSERT INTO extra_campaigns(kind,title,description,start_at,end_at,reward_points,target_value,created_by) VALUES(?,?,?,?,?,?,?,?)",(kind,title.strip(),description[:2000],start_at,end_at,reward_points,target_value,created_by))
         c.commit(); return cur.lastrowid
@@ -74,9 +93,7 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         c.execute("BEGIN IMMEDIATE")
         campaign=c.execute("SELECT * FROM extra_campaigns WHERE id=? AND active=1",(campaign_id,)).fetchone()
         if not campaign: raise ValueError("Campanha inexistente ou inativa.")
-        now=_now()
-        # Date strings should be ISO-8601; comparison is standardized to UTC ISO.
-        if now<campaign[4] or now>campaign[5]: raise ValueError("Campanha fora do período.")
+        if not _active_window(campaign[4],campaign[5]): raise ValueError("Campanha fora do período.")
         if campaign[0] and campaign[1] in ("collective_goal",): 
             total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
             if total<campaign[8]: raise ValueError("Meta coletiva ainda não alcançada.")
@@ -94,8 +111,11 @@ def contribute_goal(path,campaign_id,user_id,amount):
     if amount<=0: raise ValueError("Contribuição deve ser positiva.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
-        row=c.execute("SELECT kind,active FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
+        row=c.execute("SELECT kind,active,start_at,end_at,target_value FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
         if not row or row[0]!="collective_goal" or not row[1]:raise ValueError("Meta coletiva inválida.")
+        if not _active_window(row[2],row[3]):raise ValueError("Meta coletiva fora do período.")
+        total=c.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(campaign_id,)).fetchone()[0]
+        if total>=row[4]:raise ValueError("Meta coletiva já atingida.")
         c.execute("INSERT INTO extra_campaign_progress(campaign_id,user_id,progress) VALUES(?,?,?) ON CONFLICT(campaign_id,user_id) DO UPDATE SET progress=progress+excluded.progress,updated_at=CURRENT_TIMESTAMP",(campaign_id,user_id,amount))
         c.commit()
 
@@ -118,7 +138,10 @@ def claim_achievement(path,key,user_id):
         c.commit();return points
 
 def create_season(path,title,start_at,end_at,created_by=0):
-    if not title.strip() or start_at>=end_at:raise ValueError("Temporada inválida.")
+    if not title.strip():raise ValueError("Temporada inválida.")
+    start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
+    if start_utc>=end_utc:raise ValueError("Temporada inválida.")
+    start_at=start_utc.isoformat(); end_at=end_utc.isoformat()
     with sqlite3.connect(path,timeout=30) as c:
         cur=c.execute("INSERT INTO extra_seasons(title,start_at,end_at,created_by) VALUES(?,?,?,?)",(title[:120],start_at,end_at,created_by));c.commit();return cur.lastrowid
 
