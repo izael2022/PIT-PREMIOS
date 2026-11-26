@@ -282,6 +282,7 @@ def menu():
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🎮 HISTÓRICO DOS JOGOS","game:history")],
+        [btn("📅 CALENDÁRIO DO MÊS","platform:calendar")],
         [btn("📅 EVENTOS E RECOMPENSAS","extras:list")],
         [btn("🏅 CONQUISTAS","extras:achievements")],
         [btn("🏆 TEMPORADAS","extras:seasons")],
@@ -1135,6 +1136,30 @@ def callback(c,update_id=None):
             send(chat,f"Para diminuir o saque #{payout_id}, envie: /diminuirsaque {payout_id} NOVO_TOTAL_DE_PONTOS. Valor atual: {payout['points']:,} pontos.")
         else:
             send(chat,"Esse saque não está mais pendente.")
+        return
+    if data=="platform:calendar":
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            from datetime import datetime,timezone
+            now=datetime.now(timezone.utc)
+            rows=extras.calendar_month(DATABASE_PATH,now.year,now.month,uid)
+            lines=["📅 <b>CALENDÁRIO MENSAL</b>",now.strftime("%m/%Y"),"Campanhas e recompensas programadas:"]
+            kb=[]
+            for r in rows[:20]:
+                lines.append(f"\\n📅 {escape(str(r['start_at'])[:10])} — <b>{escape(r['title'])}</b>\\n{escape(r['description'][:150])}\\n"+("✅ Resgatado" if r.get("claimed") else f"🎁 {int(r['reward_points']):,} pontos"))
+                if not r.get("claimed"):kb.append([btn("Resgatar #"+str(r["id"]),"extras_claim:"+str(r["id"]))])
+            if not rows:lines.append("\\nNenhuma recompensa mensal programada.")
+            kb.append([btn("⬅️ Eventos","extras:list")]);kb.append([btn("🏠 Menu","home")])
+            send(chat,"\\n".join(lines),kb)
+        except Exception as exc:send(chat,"Falha no calendário: "+escape(str(exc)))
+        return
+    if data=="platform:news":
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH);rows=ps.active_announcements(DATABASE_PATH)
+        lines=["📢 <b>AVISOS E NOVIDADES</b>"]
+        for r in rows[:15]:lines.append(f"\\n<b>{escape(r['title'])}</b>\\n{escape(r['message'][:1000])}")
+        send(chat,"\\n".join(lines) if rows else "Nenhum aviso publicado.",[[btn("⬅️ Menu","home")]])
         return
     if data=="platform:support":
         import systems_platform as ps
