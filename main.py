@@ -1118,7 +1118,8 @@ def callback(c,update_id=None):
         if not admin(uid): return
         kind=data.split(":",1)[1]
         if kind not in {"calendar","event","surprise","challenge","collective_goal","special_mission"}: return
-        import base64\n        raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()\n        db.set_user_input_state(uid,"extra_create:title:"+raw)
+        import base64
+        raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()\n        db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
         return
     if data.startswith("extras_toggle:"):
