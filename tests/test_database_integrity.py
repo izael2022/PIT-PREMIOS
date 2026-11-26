@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("BOT_TOKEN", "test-token-not-valid")
-os.environ.setdefault("ADMIN_IDS", "123456789")
+os.environ["ADMIN_IDS"] = "1"\nos.environ["BACKUP_ENCRYPTION_KEY"] = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
 
 import database
 
@@ -179,7 +179,7 @@ class IsolatedDatabaseSchemaTests(unittest.TestCase):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
             self.assertEqual(conn.execute("SELECT status FROM task_submissions WHERE id=1").fetchone()[0], "pending")
             self.assertEqual(conn.execute("SELECT proof FROM task_submissions WHERE id=1").fetchone()[0], "corrected proof")
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM task_submission_history WHERE submission_id=1"), 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM task_submission_history WHERE submission_id=1").fetchone()[0], 1)
 
     def test_approved_task_cannot_be_resubmitted(self):
         with sqlite3.connect(database.DATABASE_PATH) as conn:
