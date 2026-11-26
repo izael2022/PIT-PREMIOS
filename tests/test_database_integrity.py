@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("BOT_TOKEN", "test-token-not-valid")
-os.environ["ADMIN_IDS"] = "1"\nos.environ["BACKUP_ENCRYPTION_KEY"] = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
+os.environ["ADMIN_IDS"] = "1"
+os.environ["BACKUP_ENCRYPTION_KEY"] = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
 
 import database
 
