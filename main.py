@@ -1128,6 +1128,42 @@ def callback(c,update_id=None):
         db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
         return
+    if data=="extras:list":
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            rows=extras.list_campaigns(DATABASE_PATH,active_only=True)
+            now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            visible=[]
+            for row in rows:
+                try:
+                    start=__import__("datetime").datetime.fromisoformat(str(row["start_at"]).replace("Z","+00:00"))
+                    end=__import__("datetime").datetime.fromisoformat(str(row["end_at"]).replace("Z","+00:00"))
+                    if start<=now<=end: visible.append(row)
+                except Exception: continue
+            lines=["📅 <b>EVENTOS E RECOMPENSAS</b>","Campanhas disponíveis neste momento:\n"]
+            kb=[]
+            for row in visible[:25]:
+                lines.append(f"🎁 <b>{escape(row['title'])}</b>\n{escape(row['description'][:250])}\nRecompensa: {int(row['reward_points'])} pontos\n")
+                kb.append([btn("🎁 Resgatar #"+str(row["id"]),"extras_claim:"+str(row["id"]))])
+            if not visible: lines.append("Nenhuma campanha disponível agora.")
+            kb.append([btn("⬅️ Menu principal","home")])
+            send(chat,"\n".join(lines),kb)
+        except Exception:
+            log.exception("Falha ao mostrar campanhas ao usuário")
+            send(chat,"Não foi possível carregar eventos agora.",back())
+        return
+    if data.startswith("extras_claim:"):
+        if not uid: return
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            cid=int(data.split(":",1)[1])
+            points=extras.claim_campaign(DATABASE_PATH,cid,int(uid),"standard")
+            send(chat,f"🎉 Recompensa resgatada! Você recebeu <b>{points:,} pontos</b>.",[[btn("📅 Eventos","extras:list")],[btn("🏠 Menu principal","home")]])
+        except Exception as exc:
+            send(chat,"⚠️ "+escape(str(exc) or "Não foi possível resgatar."),[[btn("📅 Eventos","extras:list")],[btn("🏠 Menu principal","home")]])
+        return
     if data.startswith("extras_toggle:"):
         if not admin(uid): return
         try:
