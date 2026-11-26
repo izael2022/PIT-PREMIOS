@@ -772,7 +772,7 @@ def command(m,update_id=None):
     if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
         try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
         except Exception: log.exception("Falha ao registrar auditoria administrativa")
-    if cmd=="/manutencao" and admin(uid):
+    if cmd=="/cancelar":\n        if uid:\n            db.clear_user_input_state(uid)\n        send(chat,"❌ Operação cancelada. Você pode voltar ao menu principal.",[[btn("🏠 Menu principal","home")]])\n        return\n    if cmd=="/manutencao" and admin(uid):
         state=(len(p)>1 and p[1].lower() in ("on","1","ativar","ativa"))
         db.set_maintenance_mode(state)
         send(chat,"🛠️ Modo de manutenção "+("ATIVADO" if state else "DESATIVADO")+"." )
