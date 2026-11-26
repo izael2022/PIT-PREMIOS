@@ -2031,9 +2031,7 @@ def process_update(update):
                             from datetime import datetime,timezone
                             period=datetime.now(timezone.utc).date().isoformat()
                             if not ps.consume_activity_limits(DATABASE_PATH,int(uid),int(task_id),period,1):
-                                send(m["chat"]["id"],"⛔ <b>Limite de atividade atingido.</b> Tente novamente no próximo período.")
-                                db.clear_pending_task_proof(uid)
-                                continue
+                                raise ValueError("Limite de atividade atingido. Tente novamente no próximo período.")
                             submission_id=db.submit_task(task_id,uid,proof)
                             try:
                                 count=db.task_activity_count_today(uid)
