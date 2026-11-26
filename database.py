@@ -592,6 +592,17 @@ def history_count(uid):
         row=db.execute("SELECT COUNT(*) AS total FROM point_history WHERE user_id=?",(int(uid),)).fetchone()
         return int(row["total"])
 def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False,welcome_reward=0):
+    # Validacao preventiva antes de abrir transacao ou gravar dados.
+    if isinstance(uid, bool) or not isinstance(uid, int) or uid <= 0:
+        raise ValueError("ID do usuario invalido.")
+    if referrer is not None and (isinstance(referrer, bool) or not isinstance(referrer, int) or referrer <= 0):
+        referrer = None
+    if isinstance(referral_reward, bool) or not isinstance(referral_reward, int) or referral_reward < 0:
+        raise ValueError("Recompensa de indicacao invalida.")
+    if isinstance(welcome_reward, bool) or not isinstance(welcome_reward, int) or welcome_reward < 0:
+        raise ValueError("Bonus de boas-vindas invalido.")
+    if not isinstance(is_bot, bool):
+        raise ValueError("Indicador de bot invalido.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM users WHERE user_id=?",(uid,)).fetchone():
