@@ -135,6 +135,8 @@ def create_achievement(path,key,title,description="",reward_points=0):
         c.execute("INSERT INTO extra_achievements(achievement_key,title,description,reward_points) VALUES(?,?,?,?) ON CONFLICT(achievement_key) DO UPDATE SET title=excluded.title,description=excluded.description,reward_points=excluded.reward_points",(key,title[:120],description[:1000],reward_points));c.commit()
 
 def claim_achievement(path,key,user_id):
+    if not isinstance(key,str) or not key.strip() or len(key)>80: raise ValueError("Conquista inválida.")
+    if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
     with sqlite3.connect(path,timeout=30) as c:
         c.execute("BEGIN IMMEDIATE")
         a=c.execute("SELECT reward_points,active FROM extra_achievements WHERE achievement_key=?",(key,)).fetchone()
