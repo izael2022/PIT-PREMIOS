@@ -108,6 +108,13 @@ def flag_user(path,user_id,category,details):
     with sqlite3.connect(path,timeout=30) as c:
         cur=c.execute("INSERT INTO platform_fraud_reviews(user_id,category,details) VALUES(?,?,?)",(user_id,category.strip(),details.strip()));c.commit();return cur.lastrowid
 
+def fraud_reviews(path,status="pending",limit=50):
+    if status not in ("pending","approved","rejected","blocked"):raise ValueError("Status inválido.")
+    limit=max(1,min(int(limit),100))
+    with sqlite3.connect(path,timeout=30) as c:
+        c.row_factory=sqlite3.Row
+        return [dict(r) for r in c.execute("SELECT * FROM platform_fraud_reviews WHERE status=? ORDER BY id DESC LIMIT ?",(status,limit))]
+
 def review_flag(path,review_id,admin_id,status):
     _valid_id(review_id,"Revisão");_valid_id(admin_id,"Administrador")
     if status not in ("approved","rejected","blocked"):raise ValueError("Decisão inválida.")
