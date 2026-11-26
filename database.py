@@ -811,17 +811,40 @@ def daily_game_history(uid,limit=10):
     with connect() as db:
         return db.execute("SELECT game,points,played_on,created_at FROM daily_games WHERE user_id=? ORDER BY played_on DESC,id DESC LIMIT ?",(int(uid),limit)).fetchall()
 
+def _ensure_notification_read_column(db):
+    columns={row["name"] for row in db.execute("PRAGMA table_info(notification_events)").fetchall()}
+    if "read_at" not in columns:
+        db.execute("ALTER TABLE notification_events ADD COLUMN read_at TEXT")
+
 def notification_history(uid,limit=10,offset=0):
     limit=max(1,min(int(limit),50)); offset=max(0,int(offset))
     with connect() as db:
-        return db.execute("SELECT category,title,message,created_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
+        _ensure_notification_read_column(db)
+        return db.execute("SELECT category,title,message,created_at,read_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
 def notification_count(uid):
     with connect() as db:
         row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=?",(int(uid),)).fetchone()
         return int(row["total"])
+def notification_unread_count(uid):
+    with connect() as db:
+        _ensure_notification_read_column(db)
+        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=? AND read_at IS NULL",(int(uid),)).fetchone()
+        return int(row["total"])
+def mark_notifications_read(uid,notification_ids=None):
+    with connect() as db:
+        _ensure_notification_read_column(db)
+        if notification_ids is None:
+            db.execute("UPDATE notification_events SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL",(int(uid),))
+        else:
+            ids=[int(i) for i in notification_ids if int(i)>0][:100]
+            if ids:
+                placeholders=",".join("?" for _ in ids)
+                db.execute(f"UPDATE notification_events SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND id IN ({placeholders}) AND read_at IS NULL",(int(uid),*ids))
+        db.commit()
 def record_notification(uid,category,title,message):
     with connect() as db:
+        _ensure_notification_read_column(db)
         db.execute("INSERT INTO notification_events(user_id,category,title,message) VALUES(?,?,?,?)",(uid,category,title,message))
         db.commit()
 
