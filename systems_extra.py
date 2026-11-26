@@ -177,9 +177,22 @@ def create_season(path,title,start_at,end_at,created_by=0):
         cur=c.execute("INSERT INTO extra_seasons(title,start_at,end_at,created_by) VALUES(?,?,?,?)",(title[:120],start_at,end_at,created_by));c.commit();return cur.lastrowid
 
 def add_season_score(path,season_id,user_id,score):
-    if score<=0:raise ValueError("Pontuação inválida.")
+    """Safely add score only for an existing, active, currently valid season."""
+    if not isinstance(season_id,int) or isinstance(season_id,bool) or season_id<=0:
+        raise ValueError("Temporada inválida.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0:
+        raise ValueError("Usuário inválido.")
+    if not isinstance(score,int) or isinstance(score,bool) or score<=0 or score>10**12:
+        raise ValueError("Pontuação inválida.")
     with sqlite3.connect(path,timeout=30) as c:
-        c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season_id,user_id,score));c.commit()
+        c.execute("BEGIN IMMEDIATE")
+        row=c.execute("SELECT start_at,end_at,active FROM extra_seasons WHERE id=?",(season_id,)).fetchone()
+        if not row or not row[2]:
+            raise ValueError("Temporada inexistente ou inativa.")
+        if not _active_window(row[0],row[1]):
+            raise ValueError("Temporada fora do período.")
+        c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season_id,user_id,score))
+        c.commit()
 
 def season_ranking(path,season_id,limit=50):
     limit=max(1,min(int(limit),100))
