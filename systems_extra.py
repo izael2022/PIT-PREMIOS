@@ -195,10 +195,20 @@ def add_season_score(path,season_id,user_id,score):
         c.commit()
 
 def season_ranking(path,season_id,limit=50):
-    limit=max(1,min(int(limit),100))
+    if not isinstance(season_id,int) or isinstance(season_id,bool) or season_id<=0:
+        raise ValueError("Temporada inválida.")
+    try:
+        limit=int(limit)
+    except (TypeError,ValueError):
+        limit=50
+    limit=max(1,min(limit,100))
     with sqlite3.connect(path,timeout=30) as c:
         c.row_factory=sqlite3.Row
-        return [dict(r) for r in c.execute("SELECT user_id,score FROM extra_season_scores WHERE season_id=? ORDER BY score DESC,user_id ASC LIMIT ?",(season_id,limit))]
+        season=c.execute("SELECT id FROM extra_seasons WHERE id=?",(season_id,)).fetchone()
+        if not season:
+            raise ValueError("Temporada inexistente.")
+        # Filter invalid scores and user IDs; tie-break deterministically by user ID.
+        return [dict(r) for r in c.execute("SELECT user_id,score FROM extra_season_scores WHERE season_id=? AND user_id>0 AND score>0 ORDER BY score DESC,user_id ASC LIMIT ?",(season_id,limit))]
 
 def update_campaign(path,campaign_id,kind,title,description,start_at,end_at,reward_points=0,target_value=0):
     """Update campaign metadata without touching claims, progress, wallets, or users."""
