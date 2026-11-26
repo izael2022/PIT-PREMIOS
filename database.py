@@ -483,14 +483,26 @@ def pending_reward_orders():
         return db.execute("SELECT o.*,r.title,u.first_name,u.username FROM reward_orders o JOIN rewards r ON r.id=o.reward_id JOIN users u ON u.user_id=o.user_id WHERE o.status='pending' ORDER BY o.id").fetchall()
 
 def review_reward_order(order_id,admin_id,approve):
+    if not isinstance(order_id,int) or isinstance(order_id,bool) or order_id<=0:
+        raise ValueError("Pedido inválido.")
+    if not isinstance(admin_id,int) or isinstance(admin_id,bool) or admin_id<=0:
+        raise ValueError("Administrador inválido.")
+    if not isinstance(approve,bool):
+        raise ValueError("Decisão inválida.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row=db.execute("SELECT * FROM reward_orders WHERE id=? AND status='pending'",(order_id,)).fetchone()
         if not row: db.rollback(); return None
         status='approved' if approve else 'rejected'
-        db.execute("UPDATE reward_orders SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",(status,admin_id,order_id))
+        cur=db.execute("UPDATE reward_orders SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",(status,admin_id,order_id))
+        if cur.rowcount != 1:
+            db.rollback()
+            return None
         if not approve:
-            db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],row["user_id"]))
+            cur=db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],row["user_id"]))
+            if cur.rowcount != 1:
+                db.rollback()
+                raise ValueError("Usuário não encontrado para estorno.")
             db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(row["user_id"],row["points_spent"],f"Estorno recompensa #{order_id}"))
             db.execute("UPDATE rewards SET stock=stock+1 WHERE id=? AND stock>=0",(row["reward_id"],))
         db.commit(); return dict(row)
