@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS extra_season_scores(
  season_id INTEGER NOT NULL,user_id INTEGER NOT NULL,score INTEGER NOT NULL DEFAULT 0,
  PRIMARY KEY(season_id,user_id));
 CREATE TABLE IF NOT EXISTS extra_calendar_daily_limits(user_id INTEGER PRIMARY KEY,limit_value INTEGER NOT NULL CHECK(limit_value>=0));
+CREATE TABLE IF NOT EXISTS extra_campaign_user_limits(campaign_id INTEGER PRIMARY KEY,limit_value INTEGER NOT NULL CHECK(limit_value>=0));
 """
 def initialize(path):
     with sqlite3.connect(path, timeout=30) as c:
@@ -110,6 +111,12 @@ def _award_active_seasons(c, user_id, points):
             continue
         c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season_id,user_id,points))
 
+def set_campaign_user_limit(path,campaign_id,limit_value):
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0:raise ValueError("Campanha inválida.")
+    if not isinstance(limit_value,int) or isinstance(limit_value,bool) or limit_value<0 or limit_value>100000:raise ValueError("Limite inválido.")
+    with sqlite3.connect(path,timeout=30) as c:
+        c.execute("INSERT INTO extra_campaign_user_limits(campaign_id,limit_value) VALUES(?,?) ON CONFLICT(campaign_id) DO UPDATE SET limit_value=excluded.limit_value",(campaign_id,limit_value));c.commit()
+
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
     """Idempotent claim; credit and claim record are atomic against users/ledger."""
     if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0: raise ValueError("Campanha inválida.")
@@ -123,6 +130,10 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
         if not isinstance(reward,int) or isinstance(reward,bool) or reward<0 or reward>10**12: raise ValueError("Recompensa da campanha inválida.")
         if not _active_window(campaign[4],campaign[5]): raise ValueError("Campanha fora do período.")
         prior_claim=c.execute("SELECT 1 FROM extra_campaign_claims WHERE campaign_id=? AND user_id=? LIMIT 1",(campaign_id,user_id)).fetchone()
+        cap=c.execute("SELECT limit_value FROM extra_campaign_user_limits WHERE campaign_id=?",(campaign_id,)).fetchone()
+        if cap:
+            redeemed=c.execute("SELECT COUNT(*) FROM extra_campaign_claims WHERE campaign_id=? AND user_id=?",(campaign_id,user_id)).fetchone()[0]
+            if redeemed>=cap[0]:raise ValueError("Limite de resgate da campanha atingido.")
         if prior_claim:
             raise ValueError("Recompensa já resgatada.")
         if campaign[1]=="collective_goal":
