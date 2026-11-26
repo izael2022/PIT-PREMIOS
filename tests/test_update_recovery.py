@@ -38,14 +38,14 @@ class DurableUpdateQueueTests(unittest.TestCase):
         self.assertEqual(db.pending_updates(), [])
 
     def test_concurrent_duplicate_delivery_is_persisted_only_once(self):
-        update = {\"update_id\": 88005, \"message\": {\"message_id\": 7, \"text\": \"/start\"}}
+        update = {"update_id": 88005, "message": {"message_id": 7, "text": "/start"}}
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(lambda _: db.enqueue_update(update), range(8)))
         self.assertEqual(sum(results), 1)
         self.assertEqual(db.pending_updates(), [update])
 
     def test_pending_updates_respect_batch_limit_and_cursor(self):
-        updates = [{\"update_id\": 88010+i, \"message\": {\"message_id\": i, \"text\": \"/start\"}} for i in range(4)]
+        updates = [{"update_id": 88010+i, "message": {"message_id": i, "text": "/start"}} for i in range(4)]
         for update in updates:
             db.enqueue_update(update)
         self.assertEqual(db.pending_updates(limit=2), updates[:2])
