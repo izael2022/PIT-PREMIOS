@@ -206,6 +206,14 @@ def add_season_score(path,season_id,user_id,score):
             raise ValueError("Temporada inexistente ou inativa.")
         if not _active_window(row[0],row[1]):
             raise ValueError("Temporada fora do período.")
+        current=c.execute("SELECT score FROM extra_season_scores WHERE season_id=? AND user_id=?",(season_id,user_id)).fetchone()
+        current_score=current[0] if current else 0
+        if isinstance(current_score,bool) or not isinstance(current_score,int) or current_score<0 or current_score>10**12:
+            c.rollback()
+            raise ValueError("Pontuação atual inválida.")
+        if current_score+score>10**12:
+            c.rollback()
+            raise ValueError("Limite máximo de pontuação da temporada excedido.")
         c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season_id,user_id,score))
         c.commit()
 
