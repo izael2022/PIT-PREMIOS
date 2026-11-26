@@ -645,13 +645,13 @@ def history(chat,uid,page=0):
         amount=int(r["amount"]); sign="+" if amount>0 else ""
         icon="🟢" if amount>0 else ("🔴" if amount<0 else "🔵")
         value=(f"{sign}{amount:,} pontos" if amount else "Confirmação — sem alteração no saldo")
-        lines.append(f"{icon} <b>{value}</b>\\n{escape(r['reason'][:100])}\\n<i>{r['created_at']}</i>")
+        lines.append(f"{icon} <b>{value}</b>\n{escape(r['reason'][:100])}\n<i>{r['created_at']}</i>")
     kb=[]
     if page>0: kb.append(btn("⬅️ Anterior","history:"+str(page-1)))
     if page+1<pages: kb.append(btn("Próxima ➡️","history:"+str(page+1)))
     keyboard=[kb] if kb else []
     keyboard.append([btn("⬅️ Menu principal","home")])
-    send(chat,"\\n".join(lines),keyboard)
+    send(chat,"\n".join(lines),keyboard)
 def redeem_help(chat):
     send(chat,"🎟️ <b>CENTRAL DE RESGATES</b>\n━━━━━━━━━━━━━━━━━━\nMínimo: <b>"+str(MIN_REDEEM_POINTS)+" pontos</b>\nEnvie: <code>/resgatar PONTOS DESCRIÇÃO</code>\nExemplo: <code>/resgatar 100 Pix de R$ 5</code>",back())
 
