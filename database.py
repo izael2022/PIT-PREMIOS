@@ -857,26 +857,29 @@ def daily_game_history(uid,limit=10):
 
 def _ensure_notification_read_column(db):
     columns={row["name"] for row in db.execute("PRAGMA table_info(notification_events)").fetchall()}
-    if "read_at" not in columns:
-        db.execute("ALTER TABLE notification_events ADD COLUMN read_at TEXT")
-    # Índice aditivo para acelerar a central e a contagem de avisos não lidos.
+    if "read_at" not in columns: db.execute("ALTER TABLE notification_events ADD COLUMN read_at TEXT")
+    if "expires_at" not in columns: db.execute("ALTER TABLE notification_events ADD COLUMN expires_at TEXT")
+    if "event_key" not in columns: db.execute("ALTER TABLE notification_events ADD COLUMN event_key TEXT")
     db.execute("CREATE INDEX IF NOT EXISTS idx_notification_events_unread ON notification_events(user_id,read_at,id DESC)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_events_dedupe ON notification_events(user_id,event_key) WHERE event_key IS NOT NULL")
 
 def notification_history(uid,limit=10,offset=0):
     limit=max(1,min(int(limit),50)); offset=max(0,int(offset))
     with connect() as db:
         _ensure_notification_read_column(db)
-        return db.execute("SELECT category,title,message,created_at,read_at FROM notification_events WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
+        return db.execute("SELECT category,title,message,created_at,read_at FROM notification_events WHERE user_id=? AND (expires_at IS NULL OR expires_at>=CURRENT_TIMESTAMP) ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
 def notification_count(uid):
     with connect() as db:
-        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=?",(int(uid),)).fetchone()
+        _ensure_notification_read_column(db)
+        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=? AND (expires_at IS NULL OR expires_at>=CURRENT_TIMESTAMP)",(int(uid),)).fetchone()
         return int(row["total"])
 def notification_unread_count(uid):
     with connect() as db:
         _ensure_notification_read_column(db)
-        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=? AND read_at IS NULL",(int(uid),)).fetchone()
+        row=db.execute("SELECT COUNT(*) AS total FROM notification_events WHERE user_id=? AND read_at IS NULL AND (expires_at IS NULL OR expires_at>=CURRENT_TIMESTAMP)",(int(uid),)).fetchone()
         return int(row["total"])
+
 def mark_notifications_read(uid,notification_ids=None):
     with connect() as db:
         _ensure_notification_read_column(db)
@@ -888,10 +891,14 @@ def mark_notifications_read(uid,notification_ids=None):
                 placeholders=",".join("?" for _ in ids)
                 db.execute(f"UPDATE notification_events SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND id IN ({placeholders}) AND read_at IS NULL",(int(uid),*ids))
         db.commit()
-def record_notification(uid,category,title,message):
+def record_notification(uid,category,title,message,expires_at=None,event_key=None):
+    if event_key is not None and (not isinstance(event_key,str) or not event_key.strip() or len(event_key)>180): raise ValueError("Chave de notificação inválida.")
     with connect() as db:
         _ensure_notification_read_column(db)
-        db.execute("INSERT INTO notification_events(user_id,category,title,message) VALUES(?,?,?,?)",(uid,category,title,message))
+        if event_key:
+            db.execute("INSERT OR IGNORE INTO notification_events(user_id,category,title,message,expires_at,event_key) VALUES(?,?,?,?,?,?)",(int(uid),category,title,message,expires_at,event_key))
+        else:
+            db.execute("INSERT INTO notification_events(user_id,category,title,message,expires_at) VALUES(?,?,?,?,?)",(int(uid),category,title,message,expires_at))
         db.commit()
 
 def financial_dashboard():
