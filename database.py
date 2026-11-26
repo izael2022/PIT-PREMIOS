@@ -508,6 +508,10 @@ def review_reward_order(order_id,admin_id,approve):
         db.commit(); return dict(row)
 
 def cancel_reward_order(user_id,order_id):
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0:
+        raise ValueError("Usuário inválido.")
+    if not isinstance(order_id,int) or isinstance(order_id,bool) or order_id<=0:
+        raise ValueError("Pedido inválido.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row=db.execute("SELECT * FROM reward_orders WHERE id=? AND user_id=? AND status='pending'",(order_id,user_id)).fetchone()
@@ -518,7 +522,10 @@ def cancel_reward_order(user_id,order_id):
         if cur.rowcount != 1:
             db.rollback()
             return None
-        db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],user_id))
+        cur=db.execute("UPDATE users SET points=points+? WHERE user_id=?",(row["points_spent"],user_id))
+        if cur.rowcount != 1:
+            db.rollback()
+            raise ValueError("Usuário não encontrado para estorno.")
         db.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,row["points_spent"],f"Cancelamento do pedido da loja #{order_id}"))
         db.execute("UPDATE rewards SET stock=stock+1 WHERE id=? AND stock>=0",(row["reward_id"],))
         db.commit()
