@@ -311,6 +311,7 @@ def admin_menu():
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
             [btn("📅 Gerenciar campanhas","admin:extras")],
+            [btn("🏆 Gerenciar temporadas","admin:seasons")],
             [btn("⬅️ Fechar painel","home")]]
 
 def admin_health_report(chat):
@@ -774,6 +775,22 @@ def command(m,update_id=None):
     if uid in ADMIN_IDS and cmd not in ("/admin","/stats"):
         try: db.log_admin_action(uid,cmd," ".join(p[1:])[:300])
         except Exception: log.exception("Falha ao registrar auditoria administrativa")
+    if cmd=="/criartemporada" and admin(uid):
+        raw=t.split(maxsplit=1)
+        if len(raw)<2 or "|" not in raw[1]:
+            send(chat,"Use: /criartemporada TÍTULO | INÍCIO ISO-8601 | FIM ISO-8601\\nExemplo: /criartemporada Temporada 1 | 2026-12-01T00:00:00-03:00 | 2026-12-31T23:59:00-03:00")
+            return
+        parts=[x.strip() for x in raw[1].split("|",2)]
+        if len(parts)!=3:
+            send(chat,"Formato inválido. Use título | início | fim."); return
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            sid=extras.create_season(DATABASE_PATH,parts[0],parts[1],parts[2],uid)
+            send(chat,f"✅ Temporada #{sid} criada: <b>{escape(parts[0])}</b>.",[[btn("🏆 Gerenciar temporadas","admin:seasons")],[btn("⬅️ Painel admin","admin:back")]])
+        except Exception as exc:
+            send(chat,"Não foi possível criar a temporada: "+escape(str(exc)))
+        return
     if cmd=="/cancelar":
         if uid:
             db.clear_user_input_state(uid)
@@ -1129,6 +1146,24 @@ def callback(c,update_id=None):
         raw=base64.urlsafe_b64encode(json.dumps({"kind":kind},ensure_ascii=False).encode()).decode()
         db.set_user_input_state(uid,"extra_create:title:"+raw)
         send(chat,"Envie o título da campanha (ou /cancelar):")
+        return
+    if data=="admin:seasons":
+        if not admin(uid): return
+        try:
+            import systems_extra as extras
+            extras.initialize(DATABASE_PATH)
+            with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                conn.row_factory=__import__("sqlite3").Row
+                rows=conn.execute("SELECT id,title,start_at,end_at,active FROM extra_seasons ORDER BY id DESC LIMIT 30").fetchall()
+            lines=["🏆 <b>GERENCIAR TEMPORADAS</b>",""]
+            for row in rows:
+                lines.append(f"#{row['id']} — <b>{escape(row['title'])}</b>\\n{escape(row['start_at'][:10])} até {escape(row['end_at'][:10])} | "+("Ativa" if row['active'] else "Inativa"))
+            if not rows: lines.append("Nenhuma temporada cadastrada.")
+            lines.append("\\nPara criar, use /criartemporada TÍTULO | INÍCIO ISO-8601 | FIM ISO-8601.")
+            send(chat,"\\n".join(lines),[[btn("📊 Ranking","extras:seasons")],[btn("⬅️ Painel admin","admin:back")]])
+        except Exception:
+            log.exception("Falha ao abrir gerenciamento de temporadas")
+            send(chat,"Erro ao carregar temporadas.",back())
         return
     if data=="extras:seasons":
         try:
