@@ -2027,6 +2027,13 @@ def process_update(update):
                             photo=m.get("photo")
                             proof="photo:"+photo[-1]["file_id"] if photo else (m.get("text") or "").strip()
                             submission_id=db.submit_task(task_id,uid,proof)
+                            try:
+                                count=db.task_activity_count_today(uid)
+                                if count>=6:
+                                    import systems_platform as ps
+                                    ps.initialize(DATABASE_PATH)
+                                    ps.flag_user(DATABASE_PATH,uid,"mission_activity_volume",f"{count} submissões de missão nas últimas 24 horas; revisão preventiva sem bloqueio automático.")
+                            except Exception: log.exception("Falha ao registrar sinal antifraude de atividade em missões")
                             db.clear_pending_task_proof(uid)
                             send(m["chat"]["id"],"✅ <b>COMPROVAÇÃO ENVIADA!</b>\n\nSua tarefa foi registrada e está aguardando análise da equipe. Você pode acompanhar o resultado em 📨 Minhas tarefas enviadas.",[[btn("📨 Minhas tarefas enviadas","mytasks")],[btn("⬅️ Menu principal","home")]])
                             for aid in ADMIN_IDS:
