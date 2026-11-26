@@ -7,6 +7,10 @@ class NotificationPersistenceTests(unittest.TestCase):
  def setUp(self):
   fd,self.path=tempfile.mkstemp(suffix=".sqlite");os.close(fd)
   self.original=db.DATABASE_PATH;db.DATABASE_PATH=Path(self.path);db.init_db()
+  with db.connect() as conn:
+   conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(501,'Test',0)")
+   conn.execute("INSERT INTO users(user_id,first_name,points) VALUES(502,'Test',0)")
+   conn.commit()
  def tearDown(self):
   db.DATABASE_PATH=self.original
   for suffix in ("","-wal","-shm"):
