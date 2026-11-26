@@ -26,6 +26,34 @@ class FinancialIntegrityTests(unittest.TestCase):
     def balance(self):
         return db.get_user(1001)["points"]
 
+
+    def test_concurrent_payout_rejection_refunds_once(self):
+        payout_id = db.create_payout_request(1001, 1000, "teste@example.com", "EMAIL", 1000)
+        def reject():
+            try:
+                return db.review_payout(payout_id, next(iter(db.ADMIN_IDS)), False)
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: reject(), range(2)))
+        self.assertEqual(sum(result is not None for result in results), 1)
+        self.assertEqual(self.balance(), 5000)
+        with db.connect() as conn:
+            rows = conn.execute("SELECT COUNT(*) FROM point_history WHERE user_id=1001 AND reason LIKE ?", (f"%#{payout_id}%",)).fetchone()[0]
+        self.assertEqual(rows, 1)
+
+    def test_concurrent_redemption_rejection_refunds_once(self):
+        redemption_id = db.create_redemption(1001, 500, "Prêmio concorrente")
+        def reject():
+            try:
+                return db.review_redemption(redemption_id, next(iter(db.ADMIN_IDS)), False)
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: reject(), range(2)))
+        self.assertEqual(sum(result is not None for result in results), 1)
+        self.assertEqual(self.balance(), 5000)
+
     def test_payout_cancel_refunds_only_once(self):
         payout_id = db.create_payout_request(1001, 1000, "teste@example.com", "EMAIL", 1000)
         self.assertEqual(self.balance(), 4000)
