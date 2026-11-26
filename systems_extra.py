@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS extra_seasons(
 CREATE TABLE IF NOT EXISTS extra_season_scores(
  season_id INTEGER NOT NULL,user_id INTEGER NOT NULL,score INTEGER NOT NULL DEFAULT 0,
  PRIMARY KEY(season_id,user_id));
+CREATE TABLE IF NOT EXISTS extra_calendar_daily_limits(user_id INTEGER PRIMARY KEY,limit_value INTEGER NOT NULL CHECK(limit_value>=0));
 """
 def initialize(path):
     with sqlite3.connect(path, timeout=30) as c:
@@ -320,7 +321,38 @@ def active_surprises(path,now=None):
         rows=c.execute("SELECT * FROM extra_campaigns WHERE kind='surprise' AND active=1 ORDER BY start_at,id").fetchall()
         return [dict(r) for r in rows if _active_window(r["start_at"],r["end_at"],datetime.fromisoformat(now.replace("Z","+00:00")))]
 
+def set_calendar_daily_limit(path,user_id,limit_value):
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0:raise ValueError("Usuário inválido.")
+    if not isinstance(limit_value,int) or isinstance(limit_value,bool) or limit_value<0 or limit_value>100:raise ValueError("Limite inválido.")
+    with sqlite3.connect(path,timeout=30) as c:
+        c.execute("INSERT INTO extra_calendar_daily_limits(user_id,limit_value) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET limit_value=excluded.limit_value",(user_id,limit_value))
+        c.commit()
+
 def claim_calendar_daily(path,campaign_id,user_id,day_key):
-    """Daily-calendar redemption uses the campaign/user uniqueness and a date key."""
-    if not isinstance(day_key,str) or len(day_key)!=10 or day_key[4]!="-":raise ValueError("Data de resgate inválida.")
-    return claim_campaign(path,campaign_id,user_id,"calendar:"+day_key)
+    """Calendar reward claim is atomic, date-keyed, and respects configured daily caps."""
+    if not isinstance(campaign_id,int) or isinstance(campaign_id,bool) or campaign_id<=0:raise ValueError("Campanha inválida.")
+    if not isinstance(user_id,int) or isinstance(user_id,bool) or user_id<=0:raise ValueError("Usuário inválido.")
+    if not isinstance(day_key,str) or len(day_key)!=10 or day_key[4:5]!="-":raise ValueError("Data de resgate inválida.")
+    try: datetime.strptime(day_key,"%Y-%m-%d")
+    except ValueError as exc: raise ValueError("Data de resgate inválida.") from exc
+    claim_key="calendar:"+day_key
+    with sqlite3.connect(path,timeout=30) as c:
+        c.execute("BEGIN IMMEDIATE")
+        campaign=c.execute("SELECT kind,active,start_at,end_at,reward_points FROM extra_campaigns WHERE id=?",(campaign_id,)).fetchone()
+        if not campaign or campaign[0]!="calendar" or not campaign[1]:raise ValueError("Recompensa do calendário indisponível.")
+        if not _active_window(campaign[2],campaign[3]):raise ValueError("Campanha fora do período.")
+        if c.execute("SELECT 1 FROM extra_campaign_claims WHERE campaign_id=? AND user_id=? AND claim_key=?",(campaign_id,user_id,claim_key)).fetchone():
+            raise ValueError("Recompensa já resgatada neste dia.")
+        limit=c.execute("SELECT limit_value FROM extra_calendar_daily_limits WHERE user_id=?",(user_id,)).fetchone()
+        if limit:
+            used=c.execute("SELECT COUNT(*) FROM extra_campaign_claims WHERE user_id=? AND claim_key LIKE 'calendar:%' AND substr(claim_key,10,10)=?",(user_id,day_key)).fetchone()[0]
+            if used>=limit[0]:raise ValueError("Limite diário do calendário atingido.")
+        points=campaign[4]
+        if not isinstance(points,int) or isinstance(points,bool) or points<0 or points>10**12:raise ValueError("Recompensa inválida.")
+        c.execute("INSERT INTO extra_campaign_claims(campaign_id,user_id,claim_key,points) VALUES(?,?,?,?)",(campaign_id,user_id,claim_key,points))
+        if points:
+            cur=c.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
+            if cur.rowcount!=1:raise ValueError("Usuário não encontrado.")
+            c.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,points,f"Calendário #{campaign_id}"))
+            _award_active_seasons(c,user_id,points)
+        c.commit();return points
