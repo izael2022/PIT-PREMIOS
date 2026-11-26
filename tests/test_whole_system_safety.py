@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
-os.environ.setdefault("ADMIN_IDS", "1")
+os.environ["ADMIN_IDS"] = "1"
 
 import database as db
 import main
@@ -42,8 +42,8 @@ class WholeSystemSafetyRegressionTests(unittest.TestCase):
         self.assertEqual(db.game_status(7001), {})
 
     def test_admin_panel_navigation_marks_previous_screen_for_deletion(self):
-        self.assertTrue(main._should_delete_callback_message("admin:stats", 1))
-        self.assertTrue(main._should_delete_callback_message("admin:back", 1))
+        self.assertTrue(main._should_delete_callback_message("admin:stats", next(iter(main.ADMIN_IDS))))
+        self.assertTrue(main._should_delete_callback_message("admin:back", next(iter(main.ADMIN_IDS))))
 
     def test_non_admin_and_review_cards_are_not_marked_for_deletion(self):
         self.assertFalse(main._should_delete_callback_message("admin:stats", 7001))
