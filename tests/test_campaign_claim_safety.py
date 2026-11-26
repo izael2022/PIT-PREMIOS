@@ -28,6 +28,13 @@ class ExtraCampaignSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             systems_extra.contribute_goal(self.path,cid,7,1)
 
+    def test_bool_campaign_and_contribution_inputs_rejected(self):
+        cid=systems_extra.create_campaign(self.path,"collective_goal","Meta","",self.start,self.end,0,5,1)
+        for bad in (True,0,-1):
+            with self.assertRaises(ValueError): systems_extra.contribute_goal(self.path,bad,7,1)
+        for bad in (True,10**13):
+            with self.assertRaises(ValueError): systems_extra.contribute_goal(self.path,cid,7,bad)
+
     def test_invalid_contribution_inputs_rejected(self):
         cid=systems_extra.create_campaign(self.path,"collective_goal","Meta","",self.start,self.end,0,5,1)
         for amount in (0,-1,1.5):
@@ -35,6 +42,12 @@ class ExtraCampaignSafetyTests(unittest.TestCase):
                 systems_extra.contribute_goal(self.path,cid,7,amount)
         with self.assertRaises(ValueError):
             systems_extra.contribute_goal(self.path,cid,-7,1)
+
+    def test_corrupted_campaign_reward_is_rejected_without_credit(self):
+        cid=systems_extra.create_campaign(self.path,"event","Evento","",self.start,self.end,100,0,1)
+        with sqlite3.connect(self.path) as conn: conn.execute("UPDATE extra_campaigns SET reward_points=-5 WHERE id=?",(cid,))
+        with self.assertRaises(ValueError): systems_extra.claim_campaign(self.path,cid,7)
+        with sqlite3.connect(self.path) as conn: self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=7").fetchone()[0],0)
 
     def test_campaign_claim_is_idempotent(self):
         cid=systems_extra.create_campaign(self.path,"event","Evento","",self.start,self.end,100,0,1)
