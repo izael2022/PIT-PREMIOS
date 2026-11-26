@@ -92,6 +92,15 @@ def set_campaign_active(path,campaign_id,active):
         cur=c.execute("UPDATE extra_campaigns SET active=? WHERE id=?",(int(active),campaign_id));c.commit()
         return cur.rowcount==1
 
+def _award_active_seasons(c, user_id, points):
+    """Add reward points to currently active seasons, in the same transaction."""
+    if points<=0:
+        return
+    now=datetime.now(timezone.utc).isoformat()
+    seasons=c.execute("SELECT id FROM extra_seasons WHERE active=1 AND start_at<=? AND end_at>=?",(now,now)).fetchall()
+    for season in seasons:
+        c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season[0],user_id,int(points)))
+
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
     """Idempotent claim; credit and claim record are atomic against users/ledger."""
     if not isinstance(user_id,int) or user_id<=0: raise ValueError("Usuário inválido.")
@@ -112,6 +121,7 @@ def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
             cur=c.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
             if cur.rowcount!=1: raise ValueError("Usuário não encontrado.")
             c.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,points,f"Campanha #{campaign_id}"))
+            _award_active_seasons(c,user_id,points)
         c.commit();return points
 
 def contribute_goal(path,campaign_id,user_id,amount):
@@ -147,6 +157,7 @@ def claim_achievement(path,key,user_id):
             cur=c.execute("UPDATE users SET points=points+? WHERE user_id=?",(points,user_id))
             if cur.rowcount!=1:raise ValueError("Usuário não encontrado.")
             c.execute("INSERT INTO point_history(user_id,amount,reason) VALUES(?,?,?)",(user_id,points,f"Conquista {key}"))
+            _award_active_seasons(c,user_id,points)
         c.commit();return points
 
 def create_season(path,title,start_at,end_at,created_by=0):
