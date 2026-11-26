@@ -1249,7 +1249,7 @@ def callback(c,update_id=None):
     elif data=="game:scratch":
         if "scratch" in db.game_status(uid):
             send(chat,"⏳ Você já participou da Raspadinha Virtual hoje. Volte amanhã!",back()); return
-        send(chat,"🎟️ <b>RASPADINHA VIRTUAL</b>\n━━━━━━━━━━━━━━━━━━\nEsta é uma participação promocional gratuita. Toque no botão para revelar o resultado. Uma tentativa por dia; não é necessário pagar nem apostar.",[[btn("✨ RASPAR E REVELAR","game:scratch:reveal")],[btn("⬅️ Menu principal","home")]])
+        send(chat,"🎟️ <b>RASPADINHA VIRTUAL</b>\n━━━━━━━━━━━━━━━━━━\nEsta é uma participação promocional gratuita. Toque no botão para revelar o resultado. Uma tentativa por dia; não é necessário pagar nem apostar.\n\n<b>Probabilidades:</b> 0 pontos (25%), 2 (22%), 3 (18%), 5 (14%), 8 (10%), 10 (6%), 15 (4%) ou 25 (1%).",[[btn("✨ RASPAR E REVELAR","game:scratch:reveal")],[btn("⬅️ Menu principal","home")]])
     elif data=="game:scratch:reveal":
         if "scratch" in db.game_status(uid):
             send(chat,"⏳ Você já participou da Raspadinha Virtual hoje. Volte amanhã!",back()); return
@@ -1264,7 +1264,7 @@ def callback(c,update_id=None):
     elif data=="game:chest":
         if "chest" in db.game_status(uid):
             send(chat,"⏳ Você já abriu o Baú Surpresa hoje. Volte amanhã!",back()); return
-        send(chat,"🎁 <b>BAÚ SURPRESA</b>\n━━━━━━━━━━━━━━━━━━\nAbra gratuitamente seu baú diário e descubra seu resultado. Uma tentativa por dia.",[[btn("🔓 ABRIR BAÚ","game:chest:open")],[btn("⬅️ Menu principal","home")]])
+        send(chat,"🎁 <b>BAÚ SURPRESA</b>\n━━━━━━━━━━━━━━━━━━\nAbra gratuitamente seu baú diário e descubra seu resultado. Uma tentativa por dia.\n\n<b>Probabilidades:</b> 0 pontos (25%), 2 (25%), 3 (20%), 5 (15%), 8 (8%), 10 (4%), 15 (2%) ou 20 (1%).",[[btn("🔓 ABRIR BAÚ","game:chest:open")],[btn("⬅️ Menu principal","home")]])
     elif data=="game:chest:open":
         if "chest" in db.game_status(uid):
             send(chat,"⏳ Você já abriu o Baú Surpresa hoje. Volte amanhã!",back()); return
@@ -1278,7 +1278,7 @@ def callback(c,update_id=None):
     elif data=="game:roulette":
         if "roulette" in db.game_status(uid):
             send(chat,"⏳ Você já girou a Roleta hoje. Volte amanhã!",back()); return
-        send(chat,"🎡 <b>ROLETa DE PONTOS</b>\n━━━━━━━━━━━━━━━━━━\nGiro promocional gratuito. Uma tentativa por dia, sem compra ou aposta.",[[btn("🎡 GIRAR","game:roulette:spin")],[btn("⬅️ Menu principal","home")]])
+        send(chat,"🎡 <b>ROLETa DE PONTOS</b>\n━━━━━━━━━━━━━━━━━━\nGiro promocional gratuito. Uma tentativa por dia, sem compra ou aposta.\n\n<b>Probabilidades:</b> 0 pontos (25%), 2 (20%), 5 (18%), 8 (14%), 10 (10%), 15 (7%), 20 (4%) ou 30 (2%).",[[btn("🎡 GIRAR","game:roulette:spin")],[btn("⬅️ Menu principal","home")]])
     elif data=="game:roulette:spin":
         if "roulette" in db.game_status(uid):
             send(chat,"⏳ Você já girou a Roleta hoje. Volte amanhã!",back()); return
