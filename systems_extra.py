@@ -93,13 +93,21 @@ def set_campaign_active(path,campaign_id,active):
         return cur.rowcount==1
 
 def _award_active_seasons(c, user_id, points):
-    """Add reward points to currently active seasons, in the same transaction."""
-    if points<=0:
+    """Add reward points to active seasons after timezone-normalized validation."""
+    if not isinstance(points, int) or isinstance(points, bool) or points<=0:
         return
-    now=datetime.now(timezone.utc).isoformat()
-    seasons=c.execute("SELECT id FROM extra_seasons WHERE active=1 AND start_at<=? AND end_at>=?",(now,now)).fetchall()
-    for season in seasons:
-        c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season[0],user_id,int(points)))
+    now=datetime.now(timezone.utc)
+    seasons=c.execute("SELECT id,start_at,end_at FROM extra_seasons WHERE active=1").fetchall()
+    for season_id,start_at,end_at in seasons:
+        try:
+            start=_parse_utc(start_at)
+            end=_parse_utc(end_at)
+            if start>=end or not (start<=now<=end):
+                continue
+        except (ValueError,TypeError):
+            # Invalid season dates cannot receive score.
+            continue
+        c.execute("INSERT INTO extra_season_scores(season_id,user_id,score) VALUES(?,?,?) ON CONFLICT(season_id,user_id) DO UPDATE SET score=score+excluded.score",(season_id,user_id,points))
 
 def claim_campaign(path,campaign_id,user_id,claim_key="standard"):
     """Idempotent claim; credit and claim record are atomic against users/ledger."""
