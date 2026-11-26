@@ -155,3 +155,19 @@ def season_ranking(path,season_id,limit=50):
     with sqlite3.connect(path,timeout=30) as c:
         c.row_factory=sqlite3.Row
         return [dict(r) for r in c.execute("SELECT user_id,score FROM extra_season_scores WHERE season_id=? ORDER BY score DESC,user_id ASC LIMIT ?",(season_id,limit))]
+
+def update_campaign(path,campaign_id,kind,title,description,start_at,end_at,reward_points=0,target_value=0):
+    """Update campaign metadata without touching claims, progress, wallets, or users."""
+    allowed={"calendar","event","surprise","challenge","collective_goal","special_mission"}
+    if kind not in allowed: raise ValueError("Tipo de campanha inválido.")
+    if not isinstance(title,str) or not title.strip() or len(title)>120: raise ValueError("Título inválido.")
+    if not isinstance(description,str): raise ValueError("Descrição inválida.")
+    if not isinstance(reward_points,int) or reward_points<0 or not isinstance(target_value,int) or target_value<0:
+        raise ValueError("Valores precisam ser inteiros não negativos.")
+    start_utc=_parse_utc(start_at); end_utc=_parse_utc(end_at)
+    if start_utc>=end_utc: raise ValueError("Período inválido.")
+    with sqlite3.connect(path,timeout=30) as c:
+        cur=c.execute("UPDATE extra_campaigns SET kind=?,title=?,description=?,start_at=?,end_at=?,reward_points=?,target_value=? WHERE id=?",
+            (kind,title.strip(),description[:2000],start_utc.isoformat(),end_utc.isoformat(),reward_points,target_value,campaign_id))
+        c.commit()
+        return cur.rowcount==1
