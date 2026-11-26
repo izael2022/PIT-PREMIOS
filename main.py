@@ -293,6 +293,7 @@ def menu():
         [btn("🔐 MINHA CHAVE PIX","pixprofile")],
         [btn("📋 TAREFAS DISPONÍVEIS","tasks"),btn("📨 MINHAS TAREFAS","mytasks")],
         [btn("📜 EXTRATO","history"),btn("🔔 NOTIFICAÇÕES","notifications")],
+        [btn("🛟 SUPORTE / TICKETS","platform:support")],
         [btn("❓ CENTRAL DE AJUDA","help")]
     ]
 def back(): return [[btn("⬅️ Menu principal","home")]]
@@ -310,6 +311,7 @@ def admin_menu():
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
+            [btn("🧩 Sistemas adicionais","platform:admin")],
             [btn("📅 Gerenciar campanhas","admin:extras")],
             [btn("🏆 Gerenciar temporadas","admin:seasons")],
             [btn("⬅️ Fechar painel","home")]]
@@ -1134,6 +1136,84 @@ def callback(c,update_id=None):
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
+    if data=="platform:support":
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH)
+        rows=ps.ticket_list(DATABASE_PATH,user_id=uid,limit=8)
+        lines=["🛟 <b>SUPORTE E TICKETS</b>","Abra atendimento e acompanhe suas solicitações."]
+        kb=[[btn("➕ Abrir atendimento","platform:ticket:new")]]
+        for r in rows:
+            lines.append(f"\\n#{r['id']} • {escape(r['subject'])} • {r['status']}")
+            kb.append([btn("Ver #"+str(r["id"]),"platform:ticket:view:"+str(r["id"]))])
+        kb.append([btn("⬅️ Menu","home")])
+        send(chat,"\\n".join(lines),kb);return
+    if data=="platform:ticket:new":
+        db.set_user_input_state(uid,"platform_ticket:subject")
+        send(chat,"Envie o assunto do atendimento (máximo 120 caracteres). /cancelar para interromper.");return
+    if data.startswith("platform:ticket:view:"):
+        try:
+            import systems_platform as ps
+            tid=int(data.rsplit(":",1)[1]);rows=ps.ticket_list(DATABASE_PATH,user_id=uid,limit=100)
+            row=next((x for x in rows if x["id"]==tid),None)
+            if not row: send(chat,"Ticket não encontrado.",[[btn("⬅️ Suporte","platform:support")]]);return
+            send(chat,f"🛟 <b>Ticket #{tid}</b>\\n<b>{escape(row['subject'])}</b>\\nStatus: {escape(row['status'])}\\n\\n{escape(row['message'])}\\n\\nResposta da equipe:\\n{escape(row['response'] or 'Ainda não respondido.')}",[[btn("⬅️ Suporte","platform:support")],[btn("🏠 Menu","home")]])
+        except Exception as exc: send(chat,"Não foi possível abrir o ticket: "+escape(str(exc)))
+        return
+    if data=="platform:admin":
+        if not admin(uid):return
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH)
+        tickets=ps.ticket_list(DATABASE_PATH,status="open",limit=10)
+        reviews=ps.admin_logs(DATABASE_PATH,limit=5)
+        send(chat,f"🧩 <b>CONTROLES DE SISTEMAS ADICIONAIS</b>\\nTickets abertos: <b>{len(tickets)}</b>\\nÚltimos logs administrativos: <b>{len(reviews)}</b>",[[btn("🛟 Tickets abertos","platform:admin:tickets")],[btn("🛡️ Revisões antifraude","platform:admin:reviews")],[btn("📢 Avisos","platform:admin:announcement")],[btn("📊 Logs","platform:admin:logs")],[btn("⬅️ Painel","admin:back")]])
+        return
+    if data=="platform:admin:tickets":
+        if not admin(uid):return
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH);rows=ps.ticket_list(DATABASE_PATH,status="open",limit=20)
+        kb=[[btn(f"#{r['id']} U{r['user_id']} {r['subject'][:25]}","platform:admin:ticket:"+str(r["id"]))] for r in rows]
+        kb.append([btn("⬅️ Sistemas","platform:admin")])
+        send(chat,"🛟 <b>Tickets abertos</b>\\n"+("\\n".join(f"#{r['id']} • usuário {r['user_id']} • {escape(r['subject'])}" for r in rows) or "Nenhum ticket aberto."),kb);return
+    if data.startswith("platform:admin:ticket:"):
+        if not admin(uid):return
+        try:
+            import systems_platform as ps
+            ps.initialize(DATABASE_PATH);tid=int(data.rsplit(":",1)[1]);row=next((r for r in ps.ticket_list(DATABASE_PATH,limit=100) if r["id"]==tid),None)
+            if not row:send(chat,"Ticket não encontrado.");return
+            db.set_user_input_state(uid,"platform_ticket:reply:"+str(tid))
+            send(chat,f"Ticket #{tid} de {row['user_id']}\\n<b>{escape(row['subject'])}</b>\\n{escape(row['message'])}\\n\\nEnvie a resposta para o usuário (ou /cancelar).")
+        except Exception as exc:send(chat,"Erro: "+escape(str(exc)))
+        return
+    if data=="platform:admin:reviews":
+        if not admin(uid):return
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH);rows=ps.fraud_reviews(DATABASE_PATH)
+        kb=[[btn(f"#{r['id']} U{r['user_id']} {r['category'][:20]}","platform:review:"+str(r["id"]))] for r in rows[:15]]
+        kb.append([btn("⬅️ Sistemas","platform:admin")]);send(chat,"🛡️ Revisões pendentes\\n"+("\\n".join(f"#{r['id']} • U{r['user_id']} • {escape(r['category'])}" for r in rows) or "Sem revisões."),kb);return
+    if data.startswith("platform:review:"):
+        if not admin(uid):return
+        tid=int(data.rsplit(":",1)[1])
+        send(chat,"Decisão da revisão:",[[btn("🟢 Aprovar","platform:review:decision:"+str(tid)+":approved"),btn("🔴 Bloquear","platform:review:decision:"+str(tid)+":blocked")],[btn("❌ Rejeitar","platform:review:decision:"+str(tid)+":rejected")]])
+        return
+    if data.startswith("platform:review:decision:"):
+        if not admin(uid):return
+        import systems_platform as ps
+        parts=data.split(":");rid=int(parts[-2]);status=parts[-1]
+        if ps.review_flag(DATABASE_PATH,rid,uid,status):
+            ps.admin_log(DATABASE_PATH,uid,"fraud_review",f"{rid}:{status}")
+            send(chat,"Revisão atualizada.",[[btn("⬅️ Revisões","platform:admin:reviews")]])
+        else:send(chat,"Revisão já processada ou não encontrada.")
+        return
+    if data=="platform:admin:logs":
+        if not admin(uid):return
+        import systems_platform as ps
+        ps.initialize(DATABASE_PATH);rows=ps.admin_logs(DATABASE_PATH,20)
+        send(chat,"📊 <b>LOGS ADMINISTRATIVOS</b>\\n"+("\\n".join(f"{r['created_at']} • {r['admin_id']} • {escape(r['action'])}: {escape(r['details'][:120])}" for r in rows) or "Sem logs."),[[btn("⬅️ Sistemas","platform:admin")]])
+        return
+    if data=="platform:admin:announcement":
+        if not admin(uid):return
+        db.set_user_input_state(uid,"platform_announcement")
+        send(chat,"Envie título e mensagem separados por | (ou /cancelar).");return
     if data=="extras_create":
         if not admin(uid): return
         send(chat,"Escolha o tipo de campanha:",[[btn("📅 Calendário","extras_kind:calendar"),btn("🎉 Evento","extras_kind:event")],[btn("🎁 Surpresa","extras_kind:surprise"),btn("🏆 Desafio","extras_kind:challenge")],[btn("🤝 Meta coletiva","extras_kind:collective_goal"),btn("🎯 Missão especial","extras_kind:special_mission")],[btn("❌ Cancelar","admin:extras")]])
