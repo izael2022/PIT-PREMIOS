@@ -580,6 +580,10 @@ def history(uid,limit=8,offset=0):
     with connect() as db:
         return db.execute("SELECT amount,reason,created_at FROM point_history WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?",(uid,limit,offset)).fetchall()
 
+def history_count(uid):
+    with connect() as db:
+        row=db.execute("SELECT COUNT(*) AS total FROM point_history WHERE user_id=?",(int(uid),)).fetchone()
+        return int(row["total"])
 def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot=False,welcome_reward=0):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
