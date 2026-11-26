@@ -23,6 +23,25 @@ class PrivacyAndResilienceTests(unittest.TestCase):
     def tearDown(self):
         db.DATABASE_PATH = _original_database_path
         self.temp_dir.cleanup()
+
+    def test_financial_history_is_isolated_between_users(self):
+        db.register_user(43, "other", "Other User")
+        db.add_points(42, 120, "User 42 movement")
+        db.add_points(43, 500, "User 43 movement")
+        own = db.history(42, limit=10)
+        other = db.history(43, limit=10)
+        self.assertEqual([row["reason"] for row in own], ["User 42 movement"])
+        self.assertEqual([row["reason"] for row in other], ["User 43 movement"])
+
+    def test_notification_history_is_isolated_between_users(self):
+        db.register_user(43, "other", "Other User")
+        db.record_notification(42, "test", "Own notice", "Own message")
+        db.record_notification(43, "test", "Other notice", "Other message")
+        own = db.notification_history(42)
+        other = db.notification_history(43)
+        self.assertEqual([row["title"] for row in own], ["Own notice"])
+        self.assertEqual([row["title"] for row in other], ["Other notice"])
+
     def test_pix_key_validation(self):
         self.assertTrue(bot._valid_pix_key("CPF", "529.982.247-25"))
         self.assertFalse(bot._valid_pix_key("CPF", "111.111.111-11"))
