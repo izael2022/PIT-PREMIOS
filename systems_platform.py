@@ -107,6 +107,26 @@ def consume_limit(path,scope,scope_id,user_id,period_key,amount=1):
         c.execute("INSERT INTO platform_limit_usage(scope,scope_id,user_id,period_key,used) VALUES(?,?,?,?,?) ON CONFLICT(scope,scope_id,user_id,period_key) DO UPDATE SET used=used+excluded.used",(scope,scope_id,user_id,period_key,amount))
         c.commit();return True
 
+def consume_activity_limits(path,user_id,mission_id,period_key,amount=1):
+    _valid_id(user_id,"Usuário")
+    if isinstance(mission_id,bool) or not isinstance(mission_id,int) or mission_id<=0:raise ValueError("Missão inválida.")
+    if not isinstance(period_key,str) or not period_key.strip() or len(period_key)>100:raise ValueError("Período inválido.")
+    if not isinstance(amount,int) or isinstance(amount,bool) or amount<=0:raise ValueError("Quantidade inválida.")
+    scopes=[("mission",str(mission_id)),("user",str(user_id)),("period",period_key),("global","all")]
+    with sqlite3.connect(path,timeout=30) as c:
+        c.execute("BEGIN IMMEDIATE")
+        for scope,scope_id in scopes:
+            row=c.execute("SELECT limit_value FROM platform_limits WHERE scope=? AND scope_id=?",(scope,scope_id)).fetchone()
+            if row is None:continue
+            usage=c.execute("SELECT used FROM platform_limit_usage WHERE scope=? AND scope_id=? AND user_id=? AND period_key=?",(scope,scope_id,user_id,period_key)).fetchone()
+            current=usage[0] if usage else 0
+            if current+amount>row[0]:c.rollback();return False
+        for scope,scope_id in scopes:
+            row=c.execute("SELECT 1 FROM platform_limits WHERE scope=? AND scope_id=?",(scope,scope_id)).fetchone()
+            if row:
+                c.execute("INSERT INTO platform_limit_usage(scope,scope_id,user_id,period_key,used) VALUES(?,?,?,?,?) ON CONFLICT(scope,scope_id,user_id,period_key) DO UPDATE SET used=used+excluded.used",(scope,scope_id,user_id,period_key,amount))
+        c.commit();return True
+
 def flag_user(path,user_id,category,details):
     _valid_id(user_id,"Usuário")
     if not isinstance(category,str) or not category.strip() or len(category)>80:raise ValueError("Categoria inválida.")
