@@ -51,6 +51,7 @@ class PlatformSystemsTests(unittest.TestCase):
  def test_active_surprise_window_query(self):
   from datetime import datetime,timedelta,timezone
   import systems_extra as e
+  e.initialize(self.path)
   now=datetime.now(timezone.utc);start=(now-timedelta(days=1)).isoformat();end=(now+timedelta(days=2)).isoformat()
   cid=e.create_campaign(self.path,"surprise","Surpresa","",start,end,0,0,1)
   self.assertEqual(e.active_surprises(self.path)[0]["id"],cid)
