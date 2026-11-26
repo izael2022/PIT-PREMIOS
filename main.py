@@ -282,6 +282,7 @@ def menu():
         [btn("🎁 BAÚ SURPRESA","game:chest"),btn("🎡 ROLETA DE PONTOS","game:roulette")],
         [btn("🎟️ RASPADINHA VIRTUAL","game:scratch")],
         [btn("🎮 HISTÓRICO DOS JOGOS","game:history")],
+        [btn("📅 EVENTOS E RECOMPENSAS","extras:list")],
         [btn("🚀 CONVIDAR AMIGOS","invite"),btn("🏆 RANKING","ranking")],
         [btn("🎁 LOJA DE PRÊMIOS","shop"),btn("🎟️ RESGATAR CÓDIGO","user:redeem_code")],
         [btn("💎 CLUBE VIP","vip"),btn("👥 MEUS CONVIDADOS","myrefs")],
@@ -307,6 +308,7 @@ def admin_menu():
             [btn("📢 Enviar comunicado","admin:broadcast")],
             [btn("💹 Painel financeiro","admin:finance")],
             [btn("🩺 Monitoramento do bot","admin:health")],
+            [btn("📅 Gerenciar campanhas","admin:extras")],
             [btn("⬅️ Fechar painel","home")]]
 
 def admin_health_report(chat):
@@ -1116,6 +1118,17 @@ def callback(c,update_id=None):
             send(chat,f"📊 <b>PAINEL DE ESTATÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👥 Usuários cadastrados: <b>{st['users']:,}</b>\n💰 Pontos em circulação: <b>{st['points']:,}</b>\n\n⏳ <b>ITENS AGUARDANDO A EQUIPE</b>\n🎟️ Resgates: <b>{st['pending_redemptions']}</b>\n💸 Saques Pix: <b>{st['pending_payouts']}</b>\n🎁 Pedidos da loja: <b>{st['pending_reward_orders']}</b>\n📋 Tarefas: <b>{st['pending_tasks']}</b>\n🛡️ Análises antifraude: <b>{st['pending_fraud']}</b>\n\nUse os botões abaixo para abrir cada fila de análise.",admin_menu())
         elif action=="health":
             admin_health_report(chat)
+        elif action=="extras":
+            try:
+                import systems_extra as extras
+                rows=extras.list_campaigns(DATABASE_PATH,active_only=False)
+                if not rows: send(chat,"Nenhuma campanha registrada no módulo adicional.",admin_menu())
+                else:
+                    lines=["📅 <b>CAMPANHAS DO MÓDULO ADICIONAL</b>"]
+                    for row in rows[:30]: lines.append(f"#{row['id']} — {escape(row['title'])} ({row['kind']}) | {'ATIVA' if row['active'] else 'INATIVA'} | {row['reward_points']} pts")
+                    send(chat,"\\n".join(lines),admin_menu())
+            except Exception:
+                log.exception("Falha ao listar campanhas adicionais"); send(chat,"Falha ao carregar módulo adicional.",admin_menu())
         elif action=="finance":
             f=db.financial_dashboard()
             send(chat,f"💹 <b>PAINEL FINANCEIRO</b>\n━━━━━━━━━━━━━━━━━━\n🪙 Pontos creditados (histórico): <b>{f['points_issued']:,}</b>\n🪙 Pontos debitados (histórico): <b>{f['points_debited']:,}</b>\n🔒 Pontos reservados em saques pendentes: <b>{f['points_reserved']:,}</b>\n\n💸 Pix pagos e aprovados: <b>R$ {f['pix_paid_cents']/100:.2f}</b>\n⏳ Pix aguardando análise: <b>R$ {f['pix_pending_cents']/100:.2f}</b>\n↩️ Pontos de saques rejeitados: <b>{f['rejected_payout_points']:,}</b>\n\n🎟️ Resgates aprovados: <b>{f['approved_redemptions']:,}</b> pontos\n🎁 Loja aprovada: <b>{f['approved_store_points']:,}</b> pontos\n🎮 Pontos ganhos nos jogos: <b>{f['game_points']:,}</b>\n\n📚 <b>CONCILIAÇÃO DA CARTEIRA</b>\nSaldo atual dos usuários: <b>{f['wallet_balance_points']:,}</b>\nSaldo líquido do extrato: <b>{f['ledger_net_points']:,}</b>\nDiferença: <b>{f['ledger_difference']:,}</b>\nStatus: <b>{'✅ conciliado' if f['ledger_reconciled'] else '⚠️ requer conferência'}</b>\n\n⏳ Resgates pendentes: <b>{f['pending_redemption_points']:,}</b> pontos\n🎁 Pedidos da loja pendentes: <b>{f['pending_store_points']:,}</b> pontos\n\n<i>Pontos são créditos virtuais; somente Pix aprovado representa pagamento confirmado. Diferenças históricas devem ser investigadas antes de qualquer ajuste.</i>",admin_menu())
