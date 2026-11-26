@@ -1157,10 +1157,13 @@ def callback(c,update_id=None):
                 import systems_extra as extras
                 extras.initialize(DATABASE_PATH)
                 rows=extras.list_campaigns(DATABASE_PATH,active_only=False)
-                lines=["📅 <b>GERENCIAMENTO DE CAMPANHAS</b>","Selecione abaixo para ativar ou desativar:"]
+                lines=["📅 <b>GERENCIAMENTO DE CAMPANHAS</b>","Toque em uma campanha para alternar seu status.\n"]
                 kb=[]
                 for row in rows[:30]:
-                    status="🟢" if row["active"] else "⚪"
+                    status="🟢 ATIVA" if row["active"] else "⚪ INATIVA"
+                    lines.append(f"{status} • #{row['id']} • {escape(row['title'][:45])}")
+                    lines.append(f"Tipo: {escape(str(row['kind']))} | Prêmio: {int(row['reward_points'])} pontos | Meta: {int(row['target_value'])}")
+                    lines.append(f"Período: {escape(str(row['start_at']))} → {escape(str(row['end_at']))}\n")
                     kb.append([btn(f"{status} #{row['id']} {row['title'][:35]}","extras_toggle:"+str(row["id"]))])
                 kb.append([btn("➕ Criar campanha","extras_create")])
                 kb.append([btn("🔄 Atualizar lista","admin:extras")])
