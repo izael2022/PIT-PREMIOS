@@ -302,7 +302,7 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         with db.connect() as conn:
             stored = conn.execute("SELECT pix_key_encrypted FROM pix_profiles WHERE user_id=91001").fetchone()["pix_key_encrypted"]
         self.assertNotEqual(stored, "audit@example.com")
-        self.assertTrue(str(stored).startswith("enc:v1:"))
+        self.assertTrue(stored)\n        self.assertEqual(db._decrypt_pix_value(stored), "audit@example.com")
 
     def test_pix_profile_review_is_idempotent_and_delete_removes_profile(self):
         db.save_pix_profile(91001, "EMAIL", "audit@example.com", "Audit User")
