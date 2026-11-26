@@ -41,6 +41,15 @@ class CampaignAchievementIntegrityTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 systems_extra.claim_campaign(self.path,cid,invalid)
 
+    def test_bool_user_and_corrupt_achievement_reward_rejected(self):
+        systems_extra.create_achievement(self.path,"boolid","Bool",reward_points=10)
+        with self.assertRaises(ValueError): systems_extra.claim_achievement(self.path,"boolid",True)
+        with sqlite3.connect(self.path) as conn: conn.execute("UPDATE extra_achievements SET reward_points=-2 WHERE achievement_key=?",( "boolid",))
+        with self.assertRaises(ValueError): systems_extra.claim_achievement(self.path,"boolid",7)
+        with sqlite3.connect(self.path) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=7").fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM extra_achievement_claims").fetchone()[0],0)
+
     def test_achievement_reward_validation(self):
         for reward in (-1,True,1.5,10**13):
             with self.assertRaises(ValueError):
