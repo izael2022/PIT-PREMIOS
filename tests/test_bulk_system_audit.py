@@ -156,9 +156,6 @@ class BulkSystemRegressionAudit(unittest.TestCase):
         self.assertFalse(db.maintenance_mode_enabled())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     def test_redeem_code_enforces_global_use_limit_across_users(self):
         db.register_user(91002, "audit_second", "Audit Second")
         code = db.create_redeem_code(60, 2, 1)
@@ -179,3 +176,6 @@ if __name__ == "__main__":
         self.assertEqual(row["uses"], 2)
         self.assertEqual(row["max_uses"], 2)
         self.assertEqual(row["active"], 0)
+
+if __name__ == "__main__":
+    unittest.main()
