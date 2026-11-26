@@ -915,7 +915,10 @@ def referral_milestone_status(uid):
 
 def claim_referral_milestone(uid,milestone):
     bonuses={1:100,5:650,10:1400}
-    if milestone not in bonuses: raise ValueError("Meta inválida.")
+    if isinstance(uid,bool) or not isinstance(uid,int) or uid<=0:
+        raise ValueError("ID do usuário inválido.")
+    if isinstance(milestone,bool) or not isinstance(milestone,int) or milestone not in bonuses:
+        raise ValueError("Meta inválida.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         total=db.execute("SELECT COUNT(*) total FROM users x LEFT JOIN referral_reviews rr ON rr.referred_user_id=x.user_id WHERE x.referred_by=? AND (rr.status IS NULL OR rr.status='approved')",(uid,)).fetchone()["total"]
