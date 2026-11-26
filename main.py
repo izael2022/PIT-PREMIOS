@@ -1178,6 +1178,13 @@ def callback(c,update_id=None):
             kb=[]
             for row in visible[:25]:
                 lines.append(f"🎁 <b>{escape(row['title'])}</b>\n{escape(row['description'][:250])}\nRecompensa: {int(row['reward_points'])} pontos\n")
+                if row["kind"]=="collective_goal":
+                    with __import__("sqlite3").connect(DATABASE_PATH) as conn:
+                        total=conn.execute("SELECT COALESCE(SUM(progress),0) FROM extra_campaign_progress WHERE campaign_id=?",(row["id"],)).fetchone()[0]
+                    target=int(row["target_value"])
+                    lines.append(f"🤝 Meta coletiva: <b>{int(total):,}/{target:,}</b>\\n")
+                    lines.append("🏁 Meta alcançada!" if target>0 and total>=target else "⏳ A comunidade está avançando!")
+
                 kb.append([btn("🎁 Resgatar #"+str(row["id"]),"extras_claim:"+str(row["id"]))])
             if not visible: lines.append("Nenhuma campanha disponível agora.")
             kb.append([btn("⬅️ Menu principal","home")])
