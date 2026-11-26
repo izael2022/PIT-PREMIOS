@@ -121,6 +121,30 @@ class BulkSystemRegressionAudit(unittest.TestCase):
             rows = conn.execute("SELECT COUNT(*) FROM task_submission_history WHERE submission_id=?", (submission_id,)).fetchone()[0]
         self.assertEqual(rows, 1)
 
+
+    def test_user_cancel_reward_order_refunds_and_restores_stock_once(self):
+        db.add_points(91001, 200, "Fixture balance")
+        reward_id = db.create_reward("Cancelable audit reward", "Fixture", 200, stock=1)
+        order_id = db.create_reward_order(91001, reward_id)
+        first = db.cancel_reward_order(91001, order_id)
+        second = db.cancel_reward_order(91001, order_id)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 200)
+        reward = next(r for r in db.all_rewards() if r["id"] == reward_id)
+        self.assertEqual(reward["stock"], 1)
+
+    def test_referral_rejection_does_not_credit_and_is_idempotent(self):
+        db.register_user(91002, "referred_rejected", "Referred Rejected", referrer=91001, is_bot=True)
+        with db.connect() as conn:
+            row = conn.execute("SELECT id FROM referral_reviews WHERE referred_user_id=?", (91002,)).fetchone()
+        first = db.review_referral(row["id"], 1, False, 125)
+        second = db.review_referral(row["id"], 1, False, 125)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(db.get_user(91001)["points"], 0)
+        self.assertEqual(db.financial_dashboard()["ledger_difference"], 0)
+
     def test_notifications_and_maintenance_state_persist(self):
         db.record_notification(91001, "audit", "Audit notification", "Fixture message")
         self.assertEqual(db.notification_count(91001), 1)
