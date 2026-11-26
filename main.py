@@ -1314,18 +1314,27 @@ def callback(c,update_id=None):
                 import systems_extra as extras
                 extras.initialize(DATABASE_PATH)
                 rows=extras.list_campaigns(DATABASE_PATH,active_only=False)
-                lines=["📅 <b>GERENCIAMENTO DE CAMPANHAS</b>","Toque em uma campanha para alternar seu status.\n"]
+                active_count=sum(1 for row in rows if row["active"])
+                by_kind={}
+                for row in rows:
+                    kind=str(row.get("kind") or "outro")
+                    by_kind[kind]=by_kind.get(kind,0)+1
+                kind_labels={"calendar":"📅 Calendário","event":"🎉 Evento","surprise":"🎁 Surpresa","challenge":"🏆 Desafio","collective_goal":"🤝 Meta coletiva","special_mission":"🎯 Missão especial"}
+                lines=["📅 <b>CENTRAL DE CAMPANHAS E EVENTOS</b>","━━━━━━━━━━━━━━━━━━",f"📚 Total cadastradas: <b>{len(rows)}</b>",f"🟢 Ativas: <b>{active_count}</b> | ⚪ Inativas: <b>{len(rows)-active_count}</b>","\n<b>Resumo por categoria</b>"]
+                for kind,label in kind_labels.items():
+                    lines.append(f"{label}: <b>{by_kind.get(kind,0)}</b>")
+                lines.append("\n<i>Toque em uma campanha abaixo para ativar/desativar. Essa ação é reversível e não altera saldo, histórico de pontos ou dados de usuários.</i>\n")
                 kb=[]
-                for row in rows[:30]:
-                    status="🟢 ATIVA" if row["active"] else "⚪ INATIVA"
-                    lines.append(f"{status} • #{row['id']} • {escape(row['title'][:45])}")
-                    lines.append(f"Tipo: {escape(str(row['kind']))} | Prêmio: {int(row['reward_points'])} pontos | Meta: {int(row['target_value'])}")
-                    lines.append(f"Período: {escape(str(row['start_at']))} → {escape(str(row['end_at']))}\n")
-                    kb.append([btn(f"{status} #{row['id']} {row['title'][:35]}","extras_toggle:"+str(row["id"]))])
+                for row in rows[:25]:
+                    status="🟢" if row["active"] else "⚪"
+                    title=str(row["title"] or "")[:35]
+                    kb.append([btn(f"{status} #{row['id']} {title}","extras_toggle:"+str(row["id"]))])
+                if len(rows)>25: lines.append(f"\nMostrando as 25 mais recentes de {len(rows)} campanhas.")
                 kb.append([btn("➕ Criar campanha","extras_create")])
-                kb.append([btn("🔄 Atualizar lista","admin:extras")])
-                kb.append([btn("⬅️ Voltar","admin:back")])
-                if not rows: lines.append("Nenhuma campanha cadastrada.")
+                kb.append([btn("🏆 Gerenciar temporadas","admin:seasons")])
+                kb.append([btn("🔄 Atualizar central","admin:extras")])
+                kb.append([btn("⬅️ Voltar ao painel admin","admin:back")])
+                if not rows: lines.append("\nNenhuma campanha cadastrada.")
                 send(chat,"\n".join(lines),kb)
             except Exception:
                 log.exception("Falha ao listar campanhas adicionais"); send(chat,"Falha ao carregar módulo adicional.",admin_menu())
