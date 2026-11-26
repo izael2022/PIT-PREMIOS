@@ -43,6 +43,11 @@ class ExtraCampaignSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             systems_extra.contribute_goal(self.path,cid,-7,1)
 
+    def test_corrupted_goal_progress_rejected(self):
+        cid=systems_extra.create_campaign(self.path,"collective_goal","Meta","",self.start,self.end,0,5,1)
+        with sqlite3.connect(self.path) as conn: conn.execute("INSERT INTO extra_campaign_progress(campaign_id,user_id,progress) VALUES(?,?,?)",(cid,9,-3))
+        with self.assertRaises(ValueError): systems_extra.contribute_goal(self.path,cid,7,1)
+
     def test_corrupted_campaign_reward_is_rejected_without_credit(self):
         cid=systems_extra.create_campaign(self.path,"event","Evento","",self.start,self.end,100,0,1)
         with sqlite3.connect(self.path) as conn: conn.execute("UPDATE extra_campaigns SET reward_points=-5 WHERE id=?",(cid,))
