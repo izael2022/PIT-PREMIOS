@@ -1110,6 +1110,17 @@ def callback(c,update_id=None):
         else:
             send(chat,"Esse saque não está mais pendente.")
         return
+    if data=="extras_create":
+        if not admin(uid): return
+        send(chat,"Escolha o tipo de campanha:",[[btn("📅 Calendário","extras_kind:calendar"),btn("🎉 Evento","extras_kind:event")],[btn("🎁 Surpresa","extras_kind:surprise"),btn("🏆 Desafio","extras_kind:challenge")],[btn("🤝 Meta coletiva","extras_kind:collective_goal"),btn("🎯 Missão especial","extras_kind:special_mission")],[btn("❌ Cancelar","admin:extras")]])
+        return
+    if data.startswith("extras_kind:"):
+        if not admin(uid): return
+        kind=data.split(":",1)[1]
+        if kind not in {"calendar","event","surprise","challenge","collective_goal","special_mission"}: return
+        db.set_user_input_state(uid,"extra_create:title:"+kind)
+        send(chat,"Envie o título da campanha (ou /cancelar):")
+        return
     if data.startswith("extras_toggle:"):
         if not admin(uid): return
         try:
@@ -1144,7 +1155,7 @@ def callback(c,update_id=None):
                 for row in rows[:30]:
                     status="🟢" if row["active"] else "⚪"
                     kb.append([btn(f"{status} #{row['id']} {row['title'][:35]}","extras_toggle:"+str(row["id"]))])
-                kb.append([btn("🔄 Atualizar lista","admin:extras")])
+                kb.append([btn("➕ Criar campanha","extras_create")])\n                kb.append([btn("🔄 Atualizar lista","admin:extras")])
                 kb.append([btn("⬅️ Voltar","admin:back")])
                 if not rows: lines.append("Nenhuma campanha cadastrada.")
                 send(chat,"\\n".join(lines),kb)
@@ -1523,7 +1534,55 @@ def process_update(update):
                 input_state=db.get_user_input_state(uid)
                 if input_state:
                     value=(m.get("text") or "").strip()
-                    if input_state=="redeem_code":
+                    if input_state.startswith("extra_create:"):
+                        if not admin(uid):
+                            db.clear_user_input_state(uid)
+                            send(m["chat"]["id"],"Acesso não autorizado.")
+                        else:
+                            parts=input_state.split(":")
+                            stage=parts[1]; kind=parts[2] if len(parts)>2 else ""
+                            if stage=="title":
+                                if not value or len(value)>120: send(m["chat"]["id"],"Título inválido (1 a 120 caracteres).")
+                                else:
+                                    db.set_user_input_state(uid,"extra_create:description:"+kind+":"+value)
+                                    send(m["chat"]["id"],"Envie a descrição da campanha:")
+                            elif stage=="description":
+                                title=parts[3]
+                                db.set_user_input_state(uid,"extra_create:start:"+kind+":"+title+":"+value[:2000])
+                                send(m["chat"]["id"],"Informe início em ISO-8601 com fuso. Exemplo: 2026-12-01T00:00:00-03:00")
+                            elif stage=="start":
+                                title=parts[3]; desc=parts[4]
+                                try:
+                                    import systems_extra as extras
+                                    extras._parse_utc(value)
+                                    db.set_user_input_state(uid,"extra_create:end:"+kind+":"+title+":"+desc+":"+value)
+                                    send(m["chat"]["id"],"Informe término em ISO-8601 com fuso. Exemplo: 2026-12-31T23:59:00-03:00")
+                                except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
+                            elif stage=="end":
+                                title=parts[3]; desc=parts[4]; start=parts[5]
+                                try:
+                                    import systems_extra as extras
+                                    extras._parse_utc(value)
+                                    db.set_user_input_state(uid,"extra_create:reward:"+kind+":"+title+":"+desc+":"+start+":"+value)
+                                    send(m["chat"]["id"],"Informe a recompensa em pontos (somente número):")
+                                except ValueError as exc: send(m["chat"]["id"],"Data inválida: "+escape(str(exc)))
+                            elif stage=="reward":
+                                title=parts[3]; desc=parts[4]; start=parts[5]; end=parts[6]
+                                if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Recompensa inválida, envie somente números.")
+                                else:
+                                    db.set_user_input_state(uid,"extra_create:target:"+kind+":"+title+":"+desc+":"+start+":"+end+":"+value)
+                                    send(m["chat"]["id"],"Informe a meta numérica (0 se não se aplica):")
+                            elif stage=="target":
+                                title=parts[3]; desc=parts[4]; start=parts[5]; end=parts[6]; reward=parts[7]
+                                if not value.isdigit() or len(value)>12: send(m["chat"]["id"],"Meta inválida, envie somente números.")
+                                else:
+                                    try:
+                                        import systems_extra as extras
+                                        campaign_id=extras.create_campaign(DATABASE_PATH,kind,title,desc,start,end,int(reward),int(value),uid)
+                                        db.clear_user_input_state(uid)
+                                        send(m["chat"]["id"],f"✅ Campanha #{campaign_id} criada!\n\n<b>{escape(title)}</b>\nRecompensa: {reward} pontos\nMeta: {value}",[[btn("📅 Gerenciar campanhas","admin:extras")],[btn("⬅️ Painel admin","admin:back")]])
+                                    except Exception as exc: send(m["chat"]["id"],"Não foi possível criar: "+escape(str(exc)))
+                    elif input_state=="redeem_code":
                         db.clear_user_input_state(uid)
                         try:
                             result=db.redeem_code(value,uid)
