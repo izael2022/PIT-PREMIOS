@@ -33,6 +33,27 @@ class PlatformSystemsTests(unittest.TestCase):
   n=p.add_notification(self.path,5,"Aviso","Conteúdo")
   self.assertEqual(len(p.notifications(self.path,5)),1);self.assertTrue(p.mark_notification_read(self.path,5,n))
   self.assertEqual(p.notifications(self.path,5),[])
+ def test_month_calendar_queries_and_claim_status(self):
+  from datetime import datetime,timedelta,timezone
+  now=datetime.now(timezone.utc);start=(now-timedelta(days=1)).isoformat();end=(now+timedelta(days=2)).isoformat()
+  import systems_extra as e
+  e.initialize(self.path)
+  with sqlite3.connect(self.path) as conn:
+   conn.execute("CREATE TABLE users(user_id INTEGER PRIMARY KEY,points INTEGER NOT NULL DEFAULT 0)")
+   conn.execute("CREATE TABLE point_history(user_id INTEGER,amount INTEGER,reason TEXT)")
+   conn.execute("INSERT INTO users VALUES(5,0)")
+  cid=e.create_campaign(self.path,"calendar","Dia","",start,end,50,0,1)
+  self.assertEqual(len(e.calendar_month(self.path,now.year,now.month,5)),1)
+  self.assertFalse(e.calendar_month(self.path,now.year,now.month,5)[0]["claimed"])
+  self.assertEqual(e.claim_calendar_daily(self.path,cid,5,now.date().isoformat()),50)
+  self.assertTrue(e.calendar_month(self.path,now.year,now.month,5)[0]["claimed"])
+  with self.assertRaises(ValueError):e.claim_calendar_daily(self.path,cid,5,now.date().isoformat())
+ def test_active_surprise_window_query(self):
+  from datetime import datetime,timedelta,timezone
+  import systems_extra as e
+  now=datetime.now(timezone.utc);start=(now-timedelta(days=1)).isoformat();end=(now+timedelta(days=2)).isoformat()
+  cid=e.create_campaign(self.path,"surprise","Surpresa","",start,end,0,0,1)
+  self.assertEqual(e.active_surprises(self.path)[0]["id"],cid)
  def test_validation(self):
   with self.assertRaises(ValueError):p.open_ticket(self.path,True,"a","b")
   with self.assertRaises(ValueError):p.set_limit(self.path,"bad","x",1,9)
