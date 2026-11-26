@@ -20,6 +20,14 @@ class PlatformSystemsTests(unittest.TestCase):
   self.assertTrue(p.review_flag(self.path,r,9,"blocked"));self.assertFalse(p.review_flag(self.path,r,9,"approved"))
  def test_levels_are_xp_based_without_wallet(self):
   p.add_xp(self.path,5,1500);self.assertEqual(p.level_info(self.path,5),{"xp":1500,"level":2,"next_level_xp":2000})
+ def test_xp_thresholds_award_badges_automatically(self):
+  p.add_xp(self.path,5,1000)
+  with sqlite3.connect(self.path) as conn:
+   self.assertEqual(conn.execute("SELECT COUNT(*) FROM platform_user_badges WHERE user_id=5 AND badge_key='xp_1000'").fetchone()[0],1)
+  p.add_xp(self.path,5,9000)
+  with sqlite3.connect(self.path) as conn:
+   keys={r[0] for r in conn.execute("SELECT badge_key FROM platform_user_badges WHERE user_id=5")}
+  self.assertTrue({"xp_1000","xp_5000","xp_10000"}.issubset(keys))
  def test_badge_claim_once(self):
   p.create_badge(self.path,"early","Pioneiro")
   self.assertTrue(p.award_badge(self.path,5,"early"));self.assertFalse(p.award_badge(self.path,5,"early"))
