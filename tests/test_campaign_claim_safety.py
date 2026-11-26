@@ -54,6 +54,15 @@ class ExtraCampaignSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError): systems_extra.claim_campaign(self.path,cid,7)
         with sqlite3.connect(self.path) as conn: self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=7").fetchone()[0],0)
 
+    def test_campaign_claim_cannot_repeat_with_alternate_claim_key(self):
+        cid=systems_extra.create_campaign(self.path,"event","Evento","",self.start,self.end,100,0,1)
+        self.assertEqual(systems_extra.claim_campaign(self.path,cid,7,"standard"),100)
+        with self.assertRaises(ValueError):
+            systems_extra.claim_campaign(self.path,cid,7,"alternate")
+        with sqlite3.connect(self.path) as conn:
+            self.assertEqual(conn.execute("SELECT points FROM users WHERE user_id=7").fetchone()[0],100)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM extra_campaign_claims WHERE campaign_id=? AND user_id=?",(cid,7)).fetchone()[0],1)
+
     def test_campaign_claim_is_idempotent(self):
         cid=systems_extra.create_campaign(self.path,"event","Evento","",self.start,self.end,100,0,1)
         self.assertEqual(systems_extra.claim_campaign(self.path,cid,7),100)
