@@ -404,6 +404,14 @@ def start(m):
     welcome_text=(f"🎁 Você recebeu <b>{POINTS_WELCOME:,} pontos</b> de boas-vindas!" if created and not u.get("is_bot") and POINTS_WELCOME>0 else "")
     welcome_prefix=f"{welcome_text}\n\n" if welcome_text else ""
     send_photo(chat,BANNER_URL,f"🐾 <b>Olá, {first}!</b> Bem-vindo ao PIT PRÊMIOS.\n\n{welcome_prefix}💰 Carteira: <b>{pr['points']:,} pontos</b>\n👥 Convites: <b>{pr['referrals']}</b>\n🔥 Sequência: <b>{pr['daily_streak']} dias</b>\n\n<i>Seus pontos. Suas conquistas. Seus prêmios.</i>",menu())
+    try:
+        import systems_extra as extras
+        extras.initialize(DATABASE_PATH)
+        from datetime import datetime,timezone
+        surprises=extras.active_surprises(DATABASE_PATH,datetime.now(timezone.utc).isoformat())
+        for campaign in surprises[:3]:
+            send(chat,"🎁 <b>EVENTO SURPRESA ATIVO!</b>\\n<b>"+escape(campaign["title"])+"</b>\\n"+escape(campaign["description"][:300])+"\\nRecompensa: "+str(campaign["reward_points"])+" pontos",[[btn("Participar / resgatar","extras_claim:"+str(campaign["id"]))],[btn("📅 Ver eventos","extras:list")]])
+    except Exception: log.exception("Falha ao exibir eventos surpresa no /start")
 
 def balance(chat,uid):
     u=db.get_user(uid); points=int(u["points"] if u else 0)
