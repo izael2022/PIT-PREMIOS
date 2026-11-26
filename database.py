@@ -386,6 +386,13 @@ def pending_task_submissions():
         return db.execute("SELECT s.*,t.title,t.reward_points,u.first_name,u.username FROM task_submissions s JOIN tasks t ON t.id=s.task_id JOIN users u ON u.user_id=s.user_id WHERE s.status='pending' ORDER BY s.id").fetchall()
 
 def review_task_submission(submission_id,admin_id,approve):
+    # Validação de entrada antes de iniciar qualquer alteração financeira.
+    if not isinstance(submission_id,int) or isinstance(submission_id,bool) or submission_id<=0:
+        raise ValueError("Identificador da tarefa inválido.")
+    if not isinstance(admin_id,int) or isinstance(admin_id,bool) or admin_id<=0:
+        raise ValueError("Administrador inválido.")
+    if not isinstance(approve,bool):
+        raise ValueError("Decisão de análise inválida.")
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row=db.execute("SELECT s.*,t.title,t.reward_points FROM task_submissions s JOIN tasks t ON t.id=s.task_id WHERE s.id=? AND s.status='pending'",(submission_id,)).fetchone()
