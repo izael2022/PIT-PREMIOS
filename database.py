@@ -621,6 +621,8 @@ def register_user(uid,username,first_name,referrer=None,referral_reward=0,is_bot
             if manual_hold: reasons.append("Monitoramento manual: "+manual_hold["reason"])
             blocked=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(referrer,)).fetchone()
             if blocked: reasons.append("Indicador bloqueado: "+blocked["reason"])
+            referred_block=db.execute("SELECT reason FROM account_blocks WHERE user_id=?",(uid,)).fetchone()
+            if referred_block: reasons.append("Indicado bloqueado: "+referred_block["reason"])
             reviewed=db.execute("SELECT COUNT(*) n,COALESCE(SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END),0) rejected FROM referral_reviews WHERE referrer_id=? AND status IN ('approved','rejected')",(referrer,)).fetchone()
             if reviewed["rejected"]>=2: reasons.append("Histórico de rejeições: "+str(reviewed["rejected"])+" indicações não aprovadas")
             if reviewed["n"]>=4 and reviewed["rejected"]/reviewed["n"]>=0.5: reasons.append("Taxa histórica de rejeição elevada: "+str(reviewed["rejected"])+"/"+str(reviewed["n"])+" análises")
